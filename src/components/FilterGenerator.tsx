@@ -37,6 +37,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     loadHistory();
   }, [app.id]);
 
+  // Auto-load results from DB when entering results screen
+  useEffect(() => {
+    if (currentScreen === 'f2.1.2' && results.length === 0) {
+      dbService.getIdeas(app.id).then(ideas => {
+        setResults(ideas);
+        setSavedHistory(ideas);
+      });
+    }
+  }, [currentScreen]);
+
   const loadOptions = async () => {
     const fullOptions = await dbService.getFilterOptions(app);
     setOptions(fullOptions);
