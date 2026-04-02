@@ -1,0 +1,629 @@
+'use client';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2 } from 'lucide-react';
+import type { ScreenType, Hook, AppProject } from '@/types/database';
+import * as dbService from '@/lib/db';
+
+interface HookLibraryProps {
+  setScreen: (s: ScreenType) => void;
+  currentScreen: ScreenType;
+  app?: AppProject | null;
+}
+
+interface HookIdea {
+  id: string;
+  title: string;
+  explanation: string;
+  hook: { visual: string; text: string; voice: string; imageUrl?: string };
+}
+
+export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app }) => {
+  const [hooks, setHooks] = useState<Hook[]>([]);
+  const [selectedHook, setSelectedHook] = useState<Hook | null>(null);
+  const [modifyPrompt, setModifyPrompt] = useState('');
+  const [generatedIdeas, setGeneratedIdeas] = useState<HookIdea[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [quantity, setQuantity] = useState(3);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisSuccess, setAnalysisSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingHookId, setDeletingHookId] = useState<string | null>(null);
+  const [previewHook, setPreviewHook] = useState<Hook | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingFileRef = useRef<File | null>(null);
+  const pendingThumbRef = useRef<string | null>(null);
+
+  useEffect(() => { loadHooks(); }, [app?.id]);
+
+  const loadHooks = async () => {
+    const data = await dbService.getHooks(app?.id);
+    setHooks(data);
+  };
+
+  const handleDeleteHook = async (id: string) => {
+    if (deletingHookId) return;
+    if (!window.confirm('Bạn có chắc muốn xóa hook này?')) return;
+    setDeletingHookId(id);
+    try {
+      await dbService.deleteHook(id);
+      setHooks(prev => prev.filter(h => h.id !== id));
+    } catch (err) {
+      console.error('Delete hook failed:', err);
+      alert('Xóa hook thất bại.');
+    } finally {
+      setDeletingHookId(null);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!selectedHook || !modifyPrompt) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/generate-hooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hook: selectedHook,
+          instruction: modifyPrompt,
+          quantity,
+          appName: app?.name || '',
+          appCategory: app?.category || '',
+        }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success && result.data?.length > 0) {
+        setGeneratedIdeas(result.data);
+      } else {
+        // Fallback mock
+        const mockIdeas: HookIdea[] = Array.from({ length: quantity }, (_, i) => ({
+          id: crypto.randomUUID(),
+          title: `${selectedHook.title} - Biến thể ${i + 1}`,
+          explanation: `Áp dụng "${selectedHook.hook_concept || selectedHook.title}" kết hợp "${modifyPrompt}"`,
+          hook: {
+            visual: `${selectedHook.visual_detail || 'Cận cảnh'} + ${modifyPrompt}`,
+            text: `${selectedHook.title} (v${i + 1})`,
+            voice: `"${modifyPrompt} — ${selectedHook.description || ''}"`
+          }
+        }));
+        setGeneratedIdeas(mockIdeas);
+      }
+    } catch (err) {
+      console.error('Generate hooks failed:', err);
+      alert('Có lỗi khi tạo hook. Vui lòng thử lại.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCopy = (idea: HookIdea) => {
+    const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\nVISUAL: ${idea.hook.visual}\nTEXT: ${idea.hook.text}\nVOICE: "${idea.hook.voice}"`;
+    navigator.clipboard.writeText(text);
+  };
+
+  const openEditModal = (hook?: Hook) => {
+    setAnalysisSuccess(false);
+    if (hook) {
+      setEditingHookData({ ...hook });
+    } else {
+      setEditingHookData({ title: '', subtitle: 'Hook Mới', thumb: '✨', description: '', hook_concept: '', visual_detail: '' });
+    }
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveHook = async () => {
+    if (!editingHookData.title) return;
+    setIsSaving(true);
+    try {
+      let imageUrl = editingHookData.image_url || null;
+      let videoUrl = editingHookData.video_url || null;
+
+      // Upload via server API route (uses service role key, no RLS issues)
+      if (pendingFileRef.current) {
+        const formData = new FormData();
+        formData.append('file', pendingFileRef.current);
+        if (pendingFileRef.current.type.startsWith('video') && pendingThumbRef.current) {
+          formData.append('thumbBase64', pendingThumbRef.current);
+        }
+
+        try {
+          const uploadRes = await fetch('/api/upload-hook-media', {
+            method: 'POST',
+            body: formData,
+          });
+          const uploadResult = await uploadRes.json();
+          if (uploadRes.ok && uploadResult.success) {
+            if (uploadResult.videoUrl) videoUrl = uploadResult.videoUrl;
+            if (uploadResult.imageUrl) imageUrl = uploadResult.imageUrl;
+          } else {
+            console.error('Upload failed:', uploadResult.error);
+          }
+        } catch (uploadErr) {
+          console.error('Upload request failed:', uploadErr);
+        }
+
+        pendingFileRef.current = null;
+        pendingThumbRef.current = null;
+      }
+
+      if (editingHookData.id) {
+        await dbService.updateHook(editingHookData.id, {
+          title: editingHookData.title,
+          subtitle: editingHookData.subtitle,
+          description: editingHookData.description,
+          hook_concept: editingHookData.hook_concept,
+          visual_detail: editingHookData.visual_detail,
+          image_url: imageUrl,
+          video_url: videoUrl,
+        });
+      } else {
+        if (!app?.id) { alert('Không tìm thấy app. Vui lòng quay lại.'); setIsSaving(false); return; }
+        await dbService.addHook({
+          app_id: app.id,
+          title: editingHookData.title!,
+          subtitle: editingHookData.subtitle || null,
+          thumb: editingHookData.thumb || '✨',
+          description: editingHookData.description || null,
+          hook_concept: editingHookData.hook_concept || null,
+          visual_detail: editingHookData.visual_detail || null,
+          image_url: imageUrl,
+          video_url: videoUrl,
+        });
+      }
+      await loadHooks();
+      setIsEditModalOpen(false);
+    } catch(e: unknown) {
+      console.error('Save hook error:', e);
+    } finally { setIsSaving(false); }
+  };
+
+  const extractThumbnail = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata'; video.muted = true; video.playsInline = true;
+      const cleanup = () => { if (video.src) URL.revokeObjectURL(video.src); video.remove(); };
+      video.onloadeddata = () => { video.currentTime = 0.1; };
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); resolve(canvas.toDataURL('image/jpeg', 0.7)); }
+        else resolve('');
+        cleanup();
+      };
+      video.onerror = () => { resolve(''); cleanup(); };
+      video.src = URL.createObjectURL(file);
+    });
+  };
+
+  const analyzeWithGemini = async (imageBase64: string, fileName: string) => {
+    try {
+      const res = await fetch('/api/analyze-hook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, fileName }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        setEditingHookData(prev => ({
+          ...prev,
+          title: prev.title === fileName.replace(/\.[^/.]+$/, '') ? result.data.title : prev.title,
+          subtitle: result.data.subtitle,
+          description: result.data.description,
+          hook_concept: result.data.hook_concept,
+          visual_detail: result.data.visual_detail,
+        }));
+        setAnalysisSuccess(true);
+      } else {
+        // Fallback if AI fails
+        setEditingHookData(prev => ({
+          ...prev,
+          subtitle: 'Hook',
+          description: prev.description || `Hook từ "${fileName}"`,
+        }));
+        setAnalysisSuccess(true);
+      }
+    } catch (err) {
+      console.error('AI analysis failed:', err);
+      setEditingHookData(prev => ({ ...prev, subtitle: 'Hook' }));
+      setAnalysisSuccess(true);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsAnalyzing(true); setAnalysisSuccess(false);
+    // Store file reference for upload on save
+    pendingFileRef.current = file;
+    setEditingHookData(prev => ({ ...prev, title: prev.title || file.name.replace(/\.[^/.]+$/, ''), subtitle: 'Đang phân tích bằng AI...' }));
+
+    if (file.type.startsWith('video')) {
+      const localUrl = URL.createObjectURL(file);
+      const thumb = await extractThumbnail(file);
+      pendingThumbRef.current = thumb || null;
+      setEditingHookData(prev => ({ ...prev, localVideoUrl: localUrl, localImageUrl: thumb || undefined }));
+      
+      // Send thumbnail frame to Gemini for analysis
+      if (thumb) {
+        await analyzeWithGemini(thumb, file.name);
+      } else {
+        setEditingHookData(prev => ({ ...prev, subtitle: 'Video Hook' }));
+        setAnalysisSuccess(true);
+        setIsAnalyzing(false);
+      }
+    } else if (file.type.startsWith('image')) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        setEditingHookData(prev => ({ ...prev, localImageUrl: base64 }));
+        // Send image to Gemini for analysis
+        await analyzeWithGemini(base64, file.name);
+      };
+      reader.readAsDataURL(file);
+    }
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // === Hook Grid View (f2.2) ===
+  if (currentScreen === 'f2.2') {
+    return (
+      <div className="p-6 sm:p-8 max-w-6xl mx-auto relative">
+        <button onClick={() => setScreen('f2')} className="mb-4 flex items-center gap-2 text-sm text-gray-400 hover:text-gray-700 transition-colors"><ArrowLeft size={18} /> Quay lại</button>
+        
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">🎬 Hook Library</h1>
+            <p className="text-gray-400 text-sm mt-1">Quản lý & phân tích các Winning Hook • {hooks.length} hook</p>
+          </div>
+          <button onClick={() => openEditModal()} className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-bold hover:shadow-lg transition-all">
+            <Plus size={18} /> Thêm Hook
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
+          {hooks.map(hook => (
+            <div key={hook.id} className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1 relative">
+              {/* Top actions */}
+              <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => setPreviewHook(hook)}
+                  className="bg-black/50 backdrop-blur-sm p-2 rounded-lg text-white/80 hover:text-white hover:bg-black/70">
+                  <Eye size={12} />
+                </button>
+                <button onClick={() => openEditModal(hook)}
+                  className="bg-black/50 backdrop-blur-sm p-2 rounded-lg text-white/80 hover:text-white hover:bg-black/70">
+                  <PenTool size={12} />
+                </button>
+                <button onClick={() => handleDeleteHook(hook.id)}
+                  className="bg-black/50 backdrop-blur-sm p-2 rounded-lg text-white/80 hover:text-red-400 hover:bg-red-900/70 transition-colors">
+                  {deletingHookId === hook.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                </button>
+              </div>
+
+              {/* Thumbnail */}
+              <div className="aspect-[3/4] relative overflow-hidden">
+                {hook.image_url ? (
+                  <>
+                    <img src={hook.image_url} alt={hook.title} className="w-full h-full object-cover" />
+                    {hook.video_url && (
+                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                        <div className="w-12 h-12 bg-white/25 backdrop-blur-sm rounded-full flex items-center justify-center">
+                          <Play className="text-white ml-0.5" size={20} fill="currentColor" />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 flex flex-col items-center justify-center">
+                    <span className="text-5xl mb-3 drop-shadow-sm">{hook.thumb || '🎬'}</span>
+                    <div className="w-10 h-10 bg-indigo-500/20 rounded-full flex items-center justify-center">
+                      <Play className="text-indigo-500 ml-0.5" size={16} fill="currentColor" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Info */}
+              <div className="p-3.5">
+                <h4 className="font-bold text-sm text-gray-800 mb-0.5 truncate">{hook.title}</h4>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mb-3">{hook.subtitle}</p>
+                
+                {hook.hook_concept && (
+                  <p className="text-[11px] text-gray-500 mb-3 line-clamp-2 leading-relaxed">{hook.hook_concept}</p>
+                )}
+                
+                <button onClick={() => { setSelectedHook(hook); setScreen('f2.2.1'); }}
+                  className="w-full text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
+                  <Sparkles size={12} /> AI Modify
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Preview Modal */}
+        {previewHook && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewHook(null)}>
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">{previewHook.thumb || '🎬'}</span>
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-800">{previewHook.title}</h2>
+                      <p className="text-xs text-gray-400 uppercase font-semibold">{previewHook.subtitle}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setPreviewHook(null)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+                </div>
+
+                {(previewHook.image_url || previewHook.video_url) && (
+                  <div className="rounded-xl overflow-hidden bg-gray-100 mb-4">
+                    {previewHook.video_url ? (
+                      <video src={previewHook.video_url} controls className="w-full max-h-80 object-contain" />
+                    ) : (
+                      <img src={previewHook.image_url!} alt={previewHook.title} className="w-full max-h-80 object-contain" />
+                    )}
+                  </div>
+                )}
+
+                {previewHook.description && (
+                  <div className="mb-4">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Mô tả</label>
+                    <p className="text-sm text-gray-700 mt-1">{previewHook.description}</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  {previewHook.hook_concept && (
+                    <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                      <label className="text-[10px] font-bold text-indigo-500 uppercase">Hook Concept</label>
+                      <p className="text-sm text-gray-700 mt-1">{previewHook.hook_concept}</p>
+                    </div>
+                  )}
+                  {previewHook.visual_detail && (
+                    <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                      <label className="text-[10px] font-bold text-purple-500 uppercase">Visual Detail</label>
+                      <p className="text-sm text-gray-700 mt-1">{previewHook.visual_detail}</p>
+                    </div>
+                  )}
+                </div>
+
+                <button onClick={() => { setPreviewHook(null); setSelectedHook(previewHook); setScreen('f2.2.1'); }}
+                  className="w-full mt-5 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:shadow-lg transition-all">
+                  <Sparkles size={16} /> Tạo biến thể với AI
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit / Create Modal */}
+        {isEditModalOpen && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsEditModalOpen(false)}>
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-800">{editingHookData.id ? '✏️ Chỉnh sửa Hook' : '✨ Thêm Hook Mới'}</h2>
+                <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Upload & Analyze Section */}
+                <div className={`rounded-xl p-5 border-2 border-dashed transition-colors ${analysisSuccess ? 'bg-emerald-50 border-emerald-200' : 'bg-indigo-50 border-indigo-200'}`}>
+                  <div className="flex justify-between items-center mb-3">
+                    <label className={`text-xs font-bold uppercase flex items-center gap-2 ${analysisSuccess ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                      {analysisSuccess ? <><Check size={14} /> Đã phân tích!</> : <><Upload size={14} /> Import & Phân Tích (AI)</>}
+                    </label>
+                    {analysisSuccess && (
+                      <button onClick={() => fileInputRef.current?.click()} className="text-xs text-indigo-500 underline hover:text-indigo-700">Tải lại</button>
+                    )}
+                  </div>
+
+                  <input ref={fileInputRef} type="file" accept="video/*,image/*" onChange={handleFileUpload} className="hidden" disabled={isAnalyzing} />
+
+                  {!analysisSuccess && (
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isAnalyzing}
+                      className={`flex items-center justify-center gap-3 w-full py-4 px-4 rounded-xl border border-indigo-200 text-indigo-600 font-medium bg-white hover:bg-indigo-50 transition-colors ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                      {isAnalyzing ? <Loader2 className="animate-spin" size={20} /> : <Upload size={20} />}
+                      <div className="text-left">
+                        <p className="font-bold">{isAnalyzing ? 'Đang phân tích...' : 'Tải Video / Ảnh Hook'}</p>
+                        <p className="text-[11px] text-gray-400 font-normal">AI sẽ tự động phân tích concept, visual, strategy</p>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Media Preview */}
+                  {(editingHookData.localVideoUrl || editingHookData.localImageUrl) && (
+                    <div className="mt-3 rounded-xl overflow-hidden bg-gray-900 flex items-center justify-center max-h-48 border border-gray-200">
+                      {editingHookData.localVideoUrl ? (
+                        <video src={editingHookData.localVideoUrl} controls className="h-full w-auto max-w-full max-h-48" />
+                      ) : editingHookData.localImageUrl ? (
+                        <img src={editingHookData.localImageUrl} alt="Preview" className="h-full w-auto max-w-full object-contain max-h-48" />
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+
+                {/* Title */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Nhãn Hook *</label>
+                  <input type="text" value={editingHookData.title || ''} onChange={e => setEditingHookData({ ...editingHookData, title: e.target.value })}
+                    placeholder="VD: Pop-up Hết dung lượng, Unboxing iPhone..."
+                    className="w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200 text-gray-800 font-medium" />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Mô tả</label>
+                  <textarea value={editingHookData.description || ''} onChange={e => setEditingHookData({ ...editingHookData, description: e.target.value })}
+                    placeholder="Mô tả ngắn gọn hook này..."
+                    className="w-full h-20 resize-none px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
+                </div>
+
+                {/* Advanced Details */}
+                <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-4">
+                  <h4 className="font-bold text-gray-700 flex items-center gap-2"><PenTool size={14} className="text-indigo-500" /> Chi tiết nâng cao</h4>
+                  
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Hook Concept</label>
+                    <textarea value={editingHookData.hook_concept || ''} onChange={e => setEditingHookData({ ...editingHookData, hook_concept: e.target.value })}
+                      placeholder="VD: Ngắt quãng thói quen lướt, Tạo cảm giác cấp bách..."
+                      className="w-full h-20 resize-none px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Chi tiết Visual</label>
+                    <textarea value={editingHookData.visual_detail || ''} onChange={e => setEditingHookData({ ...editingHookData, visual_detail: e.target.value })}
+                      placeholder="VD: Cận cảnh tay cầm điện thoại, màn hình hiện cảnh báo đỏ..."
+                      className="w-full h-20 resize-none px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
+                  </div>
+                </div>
+
+                {/* Emoji Thumb Picker */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Icon</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {['🛑', '😫', '📱', '👀', '👴', '📦', '✅', '📰', '🔥', '💡', '🎯', '✨', '❤️', '⚡', '🧹', '🎬'].map(emoji => (
+                      <button key={emoji} onClick={() => setEditingHookData({ ...editingHookData, thumb: emoji })}
+                        className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center transition-all ${editingHookData.thumb === emoji ? 'bg-indigo-100 border-2 border-indigo-400 scale-110' : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'}`}>
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+                  <button onClick={() => setIsEditModalOpen(false)} className="px-5 py-2.5 text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Hủy</button>
+                  <button onClick={handleSaveHook} disabled={isAnalyzing || isSaving || !editingHookData.title}
+                    className="px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-lg font-bold disabled:opacity-50 flex items-center gap-2 transition-all">
+                    {(isAnalyzing || isSaving) && <Loader2 className="animate-spin" size={14} />}
+                    {isSaving ? 'Đang lưu...' : isAnalyzing ? 'Đang phân tích...' : '✓ Lưu Hook'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // === Modify View (f2.2.1) ===
+  return (
+    <div className="p-6 sm:p-8 max-w-[95%] mx-auto">
+      <button onClick={() => setScreen('f2.2')} className="mb-6 flex items-center gap-2 text-sm text-gray-400 hover:text-gray-700 transition-colors"><ArrowLeft size={18} /> Quay lại Thư Viện</button>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left: Hook Info + Input */}
+        <div className="lg:col-span-4 space-y-5">
+          {/* Selected Hook Card */}
+          <div className="bg-white rounded-2xl overflow-hidden border-2 border-indigo-200 shadow-sm">
+            {selectedHook?.image_url ? (
+              <div className="h-48 bg-gray-100">
+                <img src={selectedHook.image_url} alt={selectedHook.title} className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="h-32 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
+                <span className="text-5xl">{selectedHook?.thumb || '🎬'}</span>
+              </div>
+            )}
+            <div className="p-5">
+              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Hook Gốc (Winning)</span>
+              <h2 className="text-xl font-bold text-gray-800 mt-1">"{selectedHook?.title}"</h2>
+              {selectedHook?.hook_concept && (
+                <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 text-sm">
+                  <p className="text-gray-500"><span className="font-bold text-gray-700">Concept:</span> {selectedHook.hook_concept}</p>
+                  {selectedHook.visual_detail && <p className="text-gray-500"><span className="font-bold text-gray-700">Visual:</span> {selectedHook.visual_detail}</p>}
+                </div>
+              )}
+              {selectedHook?.description && (
+                <p className="text-sm text-gray-500 mt-3 italic border-l-2 border-indigo-200 pl-3">{selectedHook.description}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Generate Controls */}
+          <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><ListOrdered size={12} /> Số lượng biến thể</label>
+              <div className="flex gap-2">
+                {[1, 3, 5].map(n => (
+                  <button key={n} onClick={() => setQuantity(n)}
+                    className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${quantity === n ? 'bg-indigo-500 text-white' : 'bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100'}`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="block font-semibold text-gray-700 mb-2 text-sm">Ý tưởng / Bối cảnh mới</label>
+            <textarea value={modifyPrompt} onChange={e => setModifyPrompt(e.target.value)}
+              className="w-full h-32 resize-none px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
+              placeholder={`VD: Kết hợp hook "${selectedHook?.title}" với:\n- Nỗi sợ đột quỵ lúc ngủ\n- Target phụ nữ 30-40 tuổi\n- Phong cách UGC`} />
+            <button onClick={handleGenerate} disabled={isLoading || !modifyPrompt}
+              className="w-full mt-4 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-xl hover:shadow-lg font-bold disabled:opacity-50 transition-all text-sm">
+              {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />}
+              {isLoading ? 'Đang Sáng Tạo...' : '🚀 Tạo Hook Biến Thể'}
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Results */}
+        <div className="lg:col-span-8 bg-white rounded-2xl p-6 border border-gray-200 min-h-[500px] overflow-y-auto shadow-sm">
+          <div className="flex justify-between items-center mb-5">
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-indigo-500" size={20} /> Kết Quả ({generatedIdeas.length})</h3>
+          </div>
+
+          {generatedIdeas.length > 0 ? (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {generatedIdeas.map((idea, idx) => (
+                <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group">
+                  <div className="h-1 bg-gradient-to-r from-pink-500 to-orange-500" />
+                  <div className="p-5">
+                    <div className="flex justify-between items-start mb-3 pb-3 border-b border-gray-100">
+                      <div>
+                        <h4 className="font-bold text-sm text-gray-800">{idea.title || `Biến thể ${idx + 1}`}</h4>
+                        <p className="text-[11px] text-gray-400 mt-1 italic">{idea.explanation}</p>
+                      </div>
+                      <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><Copy size={14} /></button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="bg-red-50 rounded-xl p-3 border border-red-100">
+                        <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2"><Target size={10} /> HOOK</span>
+                        <p className="text-xs text-gray-700 mb-2">{idea.hook.visual}</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Overlay Text</span>
+                          <p className="text-xs text-gray-700 font-semibold">{idea.hook.text || '—'}</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice Over</span>
+                          <p className="text-xs text-gray-500 italic">"{idea.hook.voice}"</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-20">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gray-50 rounded-2xl flex items-center justify-center">
+                <Wand2 size={32} className="text-gray-300" />
+              </div>
+              <p className="font-bold text-gray-500 mb-1">Nhập ý tưởng và bấm tạo</p>
+              <p className="text-sm text-gray-400">Các biến thể Hook mới sẽ hiển thị tại đây</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

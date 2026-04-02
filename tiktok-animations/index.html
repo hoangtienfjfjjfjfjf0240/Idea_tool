@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Text Animations</title>
+    <meta name="description" content="TikTok-style text animation tool with 25+ effects, speed control, and editable text">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">▶</div>
+                <h1>TikTok <span class="accent">Animations</span></h1>
+            </div>
+            <div class="header-right">
+                <button class="btn-icon" id="copyCSS" title="Copy CSS">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    CSS
+                </button>
+                <button class="btn-icon" id="fullscreenBtn" title="Fullscreen">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="layout">
+            <!-- ===== LEFT: Preview ===== -->
+            <div class="preview-wrap">
+                <div class="preview-area" id="previewArea">
+                    <div class="animation-text" id="animationText">Hello TikTok!</div>
+                </div>
+                <div class="preview-bar">
+                    <span class="anim-label" id="currentAnimName">Typewriter</span>
+                    <span class="dot">•</span>
+                    <span id="currentSpeed">1.0x</span>
+                </div>
+            </div>
+
+            <!-- ===== RIGHT: Controls ===== -->
+            <aside class="sidebar">
+                <div class="sidebar-scroll">
+                    
+                    <!-- ── Text + Voice ── -->
+                    <div class="card">
+                        <div class="card-head">TEXT / VOICE</div>
+                        <div class="input-row">
+                            <textarea id="textInput" rows="2" placeholder="Nhập text hoặc bấm mic…">Hello TikTok!</textarea>
+                            <button class="mic-btn" id="voiceBtn" title="Voice-to-Text">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                <span class="rec-dot"></span>
+                            </button>
+                        </div>
+                        <div class="voice-status" id="voiceStatus">
+                            <span class="pulse-dot"></span>
+                            <span id="voiceStatusText">Đang nghe…</span>
+                        </div>
+                        <div class="lang-row">
+                            <button class="lang active" data-lang="vi-VN">VI</button>
+                            <button class="lang" data-lang="en-US">EN</button>
+                            <button class="lang" data-lang="ja-JP">JP</button>
+                            <button class="lang" data-lang="ko-KR">KR</button>
+                            <button class="lang" data-lang="zh-CN">CN</button>
+                        </div>
+                    </div>
+
+                    <!-- ── Animation Type ── -->
+                    <div class="card">
+                        <div class="card-head">ANIMATION TYPE</div>
+                        <div class="anim-list" id="animationGrid"></div>
+                    </div>
+
+                    <!-- ── Controls ── -->
+                    <div class="card">
+                        <div class="card-head">CONTROLS</div>
+
+                        <label class="ctrl-label">Speed <span class="val" id="speedValue">1.0x</span></label>
+                        <input type="range" id="speedSlider" class="range" min="0.1" max="5" step="0.1" value="1">
+                        <div class="preset-row">
+                            <button class="preset" data-speed="0.3">0.3×</button>
+                            <button class="preset" data-speed="0.5">0.5×</button>
+                            <button class="preset active" data-speed="1">1×</button>
+                            <button class="preset" data-speed="2">2×</button>
+                            <button class="preset" data-speed="3">3×</button>
+                        </div>
+
+                        <label class="ctrl-label">Duration <span class="val" id="durationValue">1.0s</span></label>
+                        <input type="range" id="durationSlider" class="range" min="0.2" max="5" step="0.1" value="1">
+
+                        <label class="ctrl-label">Font Size <span class="val" id="fontSizeValue">48px</span></label>
+                        <input type="range" id="fontSizeSlider" class="range" min="16" max="120" step="2" value="48">
+                    </div>
+
+                    <!-- ── Style ── -->
+                    <div class="card">
+                        <div class="card-head">STYLE</div>
+                        <div class="style-grid">
+                            <div class="style-field">
+                                <span>Font</span>
+                                <select id="fontFamily">
+                                    <option value="'Outfit', sans-serif">Outfit</option>
+                                    <option value="'Inter', sans-serif">Inter</option>
+                                    <option value="'Space Grotesk', sans-serif">Space Grotesk</option>
+                                    <option value="Arial, sans-serif">Arial</option>
+                                    <option value="'Georgia', serif">Georgia</option>
+                                    <option value="'Courier New', monospace">Courier New</option>
+                                    <option value="'Impact', sans-serif">Impact</option>
+                                </select>
+                            </div>
+                            <div class="style-field">
+                                <span>Weight</span>
+                                <select id="fontWeight">
+                                    <option value="300">Light</option>
+                                    <option value="400">Regular</option>
+                                    <option value="600">Semibold</option>
+                                    <option value="700" selected>Bold</option>
+                                    <option value="900">Black</option>
+                                </select>
+                            </div>
+                            <div class="style-field">
+                                <span>Text</span>
+                                <input type="color" id="textColor" value="#ffffff">
+                            </div>
+                            <div class="style-field">
+                                <span>BG</span>
+                                <input type="color" id="bgColor" value="#0a0a0f">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Loop ── -->
+                    <div class="card">
+                        <div class="card-head">LOOP</div>
+                        <div class="preset-row">
+                            <button class="preset active" data-loop="infinite">∞</button>
+                            <button class="preset" data-loop="1">1×</button>
+                            <button class="preset" data-loop="3">3×</button>
+                            <button class="preset" data-loop="5">5×</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Playback -->
+                <div class="playback">
+                    <button class="pb-btn secondary" id="resetBtn" title="Reset">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                    </button>
+                    <button class="pb-btn primary" id="playBtn" title="Play">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+                    </button>
+                    <button class="pb-btn secondary" id="pauseBtn" title="Pause">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    </button>
+                </div>
+            </aside>
+        </div>
+
+        <div id="toast" class="toast">Copied!</div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
