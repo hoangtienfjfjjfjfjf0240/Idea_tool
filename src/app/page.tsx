@@ -19,6 +19,8 @@ export default function Home() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('f1');
   const [selectedApp, setSelectedApp] = useState<AppProject | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
+  const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
 
   // Check existing session on mount
   useEffect(() => {
@@ -48,6 +50,14 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Load ChatAgent context when app is selected
+  useEffect(() => {
+    if (selectedApp) {
+      getHooks(selectedApp.id).then(setChatHooks).catch(() => {});
+      getFilterOptions(selectedApp).then(setChatFilters).catch(() => {});
+    }
+  }, [selectedApp?.id]);
 
   const handleLogin = (name: string) => {
     setUserName(name);
@@ -127,17 +137,6 @@ export default function Home() {
 
     return <Dashboard onSelectApp={handleAppSelect} />;
   };
-
-  // Build app context for ChatAgent
-  const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
-  const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
-
-  useEffect(() => {
-    if (selectedApp) {
-      getHooks(selectedApp.id).then(setChatHooks).catch(() => {});
-      getFilterOptions(selectedApp).then(setChatFilters).catch(() => {});
-    }
-  }, [selectedApp?.id]);
 
   const handleOpenIdeas = () => {
     if (selectedApp) {
