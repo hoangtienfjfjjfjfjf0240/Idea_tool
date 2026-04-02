@@ -8,37 +8,37 @@ const CATEGORY_SEEDS: Record<string, Partial<FilterState>> = {
   'Sức khỏe & Thể hình': {
     coreUser: ['Người 35-50 tuổi (Lo sức khỏe)', 'Người có tiền sử tim mạch', 'Người sống độc thân', 'Gymer / Vận động viên', 'Phụ nữ mang thai'],
     painPoint: ['Sợ đột quỵ bất ngờ', 'Lo lắng khi ở nhà một mình', 'Không tin tưởng bác sĩ', 'Chi phí y tế quá cao', 'Cơ thể mệt mỏi không rõ lý do', 'Nhịp tim tăng cao khi hồi hộp'],
-    motivation: ['Sợ chết (Fear of Death)', 'Muốn kiểm soát cơ thể', 'An tâm cho gia đình', 'Tiết kiệm tiền khám bệnh']
+    emotion: ['Sợ hãi (Fear)', 'Lo lắng (Anxiety)', 'An tâm (Relief)', 'Shock / Bất ngờ']
   },
   'Tiện ích': {
     coreUser: ['Nam 35-45 (Cần Update iOS)', 'Nữ 35-45 (Lưu giữ kỷ niệm con cái)', 'Người cao tuổi 55+ (Cần trợ giúp công nghệ)', 'Người dùng 22-55+ (Thích quay chụp/ASMR)', 'Người bận rộn (Nhiều Email/File rác)'],
     painPoint: ['Đầy bộ nhớ không thể Update iOS mới', 'Bỏ lỡ khoảnh khắc con cái vì máy đầy', 'Điện thoại báo đầy dung lượng liên tục', 'Email rác lấp mất hóa đơn quan trọng', 'Xóa ảnh thủ công quá tốn thời gian', 'Máy nóng, chai pin do dữ liệu rác', 'Không thể tải thêm ứng dụng mới'],
-    motivation: ['Máy mượt mà như lúc mới mua', 'An tâm lưu trữ mọi khoảnh khắc', 'Không phải nhờ vả con cháu', 'Tiết kiệm thời gian dọn dẹp', 'Cảm giác thỏa mãn (ASMR)']
+    emotion: ['Thỏa mãn (ASMR)', 'Nhẹ nhõm (Relief)', 'Tò mò (Curiosity)', 'Bực bội → Hài lòng']
   },
   'Trò chơi': {
     coreUser: ['Gen Z (Thích thử thách)', 'Nhân viên văn phòng (Giải trí)', 'Hardcore Gamer', 'Người thích giải đố'],
     painPoint: ['Chán nản, không có gì làm', 'Cần xả stress nhanh', 'Muốn khẳng định bản thân', 'Game cũ quá nhàm chán'],
-    motivation: ['Cảm giác chiến thắng', 'Thỏa mãn thị giác (ASMR)', 'Tính cạnh tranh', 'Thoát khỏi thực tại']
+    emotion: ['Hưng phấn (Excitement)', 'Thỏa mãn (Satisfaction)', 'Tò mò (Curiosity)', 'FOMO']
   },
   'Tài chính': {
     coreUser: ['Người muốn tiết kiệm', 'Nhà đầu tư F0', 'Chủ shop nhỏ', 'Sinh viên mới ra trường'],
     painPoint: ['Không biết tiền đi đâu hết', 'Nợ nần chồng chất', 'Sợ lạm phát mất giá', 'Thủ tục vay vốn phức tạp'],
-    motivation: ['Tự do tài chính', 'Kiểm soát dòng tiền', 'Làm giàu nhanh', 'An toàn cho tương lai']
+    emotion: ['Lo lắng (Anxiety)', 'FOMO', 'Tự hào (Pride)', 'An tâm (Relief)']
   },
   'Giáo dục': {
     coreUser: ['Cha mẹ có con nhỏ', 'Người đi làm bận rộn', 'Học sinh mất gốc', 'Người muốn thăng tiến'],
     painPoint: ['Học mãi không vào', 'Không có thời gian đến lớp', 'Sợ tụt hậu so với bạn bè', 'Chi phí khóa học đắt đỏ'],
-    motivation: ['Cơ hội nghề nghiệp', 'Tự hào về bản thân', 'Tiết kiệm thời gian học', 'Phương pháp thú vị']
+    emotion: ['Tự hào (Pride)', 'Sợ tụt hậu (FOMO)', 'Đồng cảm (Empathy)', 'Hy vọng (Hope)']
   },
   'Mạng xã hội': {
     coreUser: ['Người tìm kiếm người yêu', 'Người hướng nội', 'KOLs / Creators', 'Gen Z thích trend'],
     painPoint: ['Cô đơn, khó kết bạn', 'Sợ bị lừa đảo qua mạng', 'Bị bóp tương tác', 'Nội dung kém hấp dẫn'],
-    motivation: ['Được kết nối', 'Tìm kiếm tình yêu', 'Nổi tiếng / Được chú ý', 'Sợ bị bỏ lỡ (FOMO)']
+    emotion: ['Tò mò (Curiosity)', 'FOMO', 'Đồng cảm (Empathy)', 'Hưng phấn (Excitement)']
   },
   'Tổng hợp': {
     coreUser: ['Người dùng phổ thông', 'Người thích công nghệ'],
     painPoint: ['Vấn đề nan giải hàng ngày', 'Tốn thời gian làm thủ công', 'Chi phí đắt đỏ'],
-    motivation: ['Tiết kiệm thời gian', 'Tiết kiệm tiền', 'Sự tiện lợi']
+    emotion: ['Tò mò (Curiosity)', 'Thỏa mãn (Satisfaction)', 'Shock / Bất ngờ']
   }
 };
 
@@ -249,7 +249,7 @@ export async function getFilterOptions(app: AppProject): Promise<Record<keyof Fi
     coreUser: customOptions.coreUser?.length ? customOptions.coreUser : (categorySeeds.coreUser || []),
     painPoint: customOptions.painPoint?.length ? customOptions.painPoint : (categorySeeds.painPoint || []),
     solution: featureNames.length ? featureNames : (customOptions.solution || []),
-    motivation: customOptions.motivation?.length ? customOptions.motivation : (categorySeeds.motivation || []),
+    emotion: customOptions.emotion?.length ? customOptions.emotion : (categorySeeds.emotion || []),
     videoStructure: GLOBAL_VIDEO_STRUCTURE,
   };
 }

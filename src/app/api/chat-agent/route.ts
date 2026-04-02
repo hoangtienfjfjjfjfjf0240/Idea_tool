@@ -69,7 +69,7 @@ CÁCH HOẠT ĐỘNG:
 
 NẾU USER YÊU CẦU TẠO IDEAS, trả JSON dạng:
 \`\`\`json
-[{"id":1,"title":"...","duration":"30s","explanation":"...","hook":{"visual":"...","text":"...","voice":"..."},"demo":{"step1_prep":{"visual":"...","voice":"..."},"step2_action":{"visual":"...","voice":"..."},"step3_result":{"visual":"...","voice":"..."}},"cta":{"voice":"...","text":"..."}}]
+[{"id":1,"title":"...","duration":"30s","framework":{"coreUser":"...","painpoint":"...","emotion":"...","psp":"..."},"explanation":"...","hook":{"visual":"...","content":"...","voice":"..."},"body":{"visual":"...","content":"...","voice":"..."},"cta":{"voice":"...","text":"...","endCard":"..."}}]
 \`\`\``;
 
     // Build messages array with history

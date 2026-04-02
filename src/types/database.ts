@@ -43,29 +43,29 @@ export interface GeneratedIdea {
 }
 
 export interface IdeaContent {
-  explanation: string;
+  // 4 yếu tố framework
+  framework: {
+    coreUser: string;    // Chân dung user nhắm tới
+    painpoint: string;   // Nỗi đau / nhu cầu
+    emotion: string;     // Cảm xúc tạo cho user
+    psp: string;         // Giải pháp sản phẩm (Product Solution)
+  };
+  explanation: string;   // Giải thích tại sao idea hiệu quả
+  // Video structure: Hook + Body + CTA
   hook: {
-    visual: string;
-    text: string;
-    voice: string;
-    imageUrl?: string;
+    visual: string;      // Hình ảnh / cảnh quay
+    content: string;     // Text on screen
+    voice: string;       // Voice-over
   };
-  problem: {
-    scenes: { visual: string; text?: string; voice: string }[];
-  };
-  solution: {
-    visual: string;
-    voice: string;
-    text: string;
-  };
-  demo: {
-    step1_prep: { visual: string; voice?: string };
-    step2_action: { visual: string; voice?: string };
-    step3_result: { visual: string; voice: string };
+  body: {
+    visual: string;      // Demo PSP giải quyết painpoint
+    content: string;     // Text on screen
+    voice: string;       // Voice-over
   };
   cta: {
-    voice: string;
-    text: string;
+    voice: string;       // Voice-over kêu gọi
+    text: string;        // Text on screen
+    endCard: string;     // End card content
   };
 }
 
@@ -92,7 +92,7 @@ export interface FilterState {
   coreUser: string[];
   painPoint: string[];
   solution: string[];
-  motivation: string[];
+  emotion: string[];
   videoStructure: string[];
 }
 

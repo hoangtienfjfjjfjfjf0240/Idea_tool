@@ -14,13 +14,13 @@ const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementTyp
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
   { id: 'solution', label: 'Tính năng / Giải pháp', icon: Lightbulb },
-  { id: 'motivation', label: 'Động lực', icon: Target },
+  { id: 'emotion', label: 'Cảm xúc', icon: Target },
   { id: 'videoStructure', label: 'Cấu trúc', icon: Layout },
 ];
 
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen }) => {
-  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], motivation: [], videoStructure: [] });
-  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], motivation: [], videoStructure: [] });
+  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [] });
+  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [] });
   const [newItem, setNewItem] = useState<{ cat: keyof FilterState | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [results, setResults] = useState<GeneratedIdea[]>([]);
@@ -96,11 +96,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     try {
       // Prepare previous ideas summary for AI to learn from (richer data for better learning)
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
-        const c = idea.content as IdeaContent;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const c = idea.content as any;
         return `${i + 1}. "${idea.title}" (${idea.duration})
-   Concept: ${c?.explanation || ''}
-   Hook: visual="${c?.hook?.visual || ''}", text="${c?.hook?.text || ''}", voice="${c?.hook?.voice || ''}"
-   Demo: ${c?.demo?.step1_prep?.visual || ''} → ${c?.demo?.step2_action?.visual || ''} → ${c?.demo?.step3_result?.visual || ''}
+   Framework: CoreUser="${c?.framework?.coreUser || ''}", Painpoint="${c?.framework?.painpoint || ''}", Emotion="${c?.framework?.emotion || ''}", PSP="${c?.framework?.psp || ''}"
+   Hook: visual="${c?.hook?.visual || ''}", content="${c?.hook?.content || ''}", voice="${c?.hook?.voice || ''}"
+   Body: visual="${c?.body?.visual || ''}", voice="${c?.body?.voice || ''}"
    CTA: "${c?.cta?.voice || ''}"`;
       }).join('\n');
 
@@ -127,16 +128,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           title: item.title || `Ý tưởng: ${app.name}`,
           duration: item.duration || duration,
           content: {
+            framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
-            hook: item.hook || { visual: '', text: '', voice: '' },
-            problem: item.problem || { scenes: [] },
-            solution: item.solution || { visual: '', voice: '', text: '' },
-            demo: item.demo || {
-              step1_prep: { visual: '' },
-              step2_action: { visual: '' },
-              step3_result: { visual: '', voice: '' },
-            },
-            cta: item.cta || { voice: '', text: '' },
+            hook: { visual: item.hook?.visual || '', content: item.hook?.content || item.hook?.text || '', voice: item.hook?.voice || '' },
+            body: { visual: item.body?.visual || '', content: item.body?.content || '', voice: item.body?.voice || '' },
+            cta: { voice: item.cta?.voice || '', text: item.cta?.text || '', endCard: item.cta?.endCard || item.cta?.end_card || '' },
           },
         }));
       } else {
@@ -145,16 +141,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           title: `Ý tưởng ${i + 1}: ${app.name}`,
           duration: duration,
           content: {
-            explanation: `Video ${duration} kết hợp ${filters.painPoint[0] || 'nỗi đau phổ biến'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
-            hook: { visual: 'Cận cảnh tay cầm điện thoại, màn hình hiện cảnh báo', text: filters.painPoint[0] || 'Bạn có biết?', voice: `"${filters.painPoint[0] || 'Điều gì sẽ xảy ra nếu...'}"` },
-            problem: { scenes: [{ visual: 'Người dùng lo lắng nhìn màn hình', voice: `"${filters.motivation[0] || 'Tôi cần giải pháp ngay'}"` }] },
-            solution: { visual: `Mở app ${app.name}, giao diện sáng`, voice: `"Chỉ cần 1 phút với ${filters.solution[0] || app.name}"`, text: 'Giải pháp đơn giản' },
-            demo: {
-              step1_prep: { visual: 'Tải app từ App Store', voice: '"Bước 1: Tải app miễn phí"' },
-              step2_action: { visual: `Sử dụng ${filters.solution[0] || 'tính năng chính'}`, voice: '"Bước 2: Bắt đầu sử dụng"' },
-              step3_result: { visual: 'Kết quả hiện trên màn hình', voice: '"Kết quả chỉ trong 30 giây!"' },
+            framework: {
+              coreUser: filters.coreUser[0] || 'Người dùng phổ thông',
+              painpoint: filters.painPoint[0] || 'Nỗi đau phổ biến',
+              emotion: filters.emotion[0] || 'Tò mò',
+              psp: filters.solution[0] || app.name,
             },
-            cta: { voice: '"Tải ngay link ở bio!"', text: `Tải ${app.name} Miễn Phí` },
+            explanation: `Video ${duration} kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
+            hook: { visual: 'Cận cảnh tay cầm điện thoại', content: filters.painPoint[0] || 'Bạn có biết?', voice: `"${filters.painPoint[0] || 'Điều gì sẽ xảy ra nếu...'}"` },
+            body: { visual: `Mở app ${app.name}, demo tính năng`, content: `${filters.solution[0] || 'Tính năng chính'}`, voice: `"Chỉ cần 1 phút với ${app.name}"` },
+            cta: { voice: '"Tải ngay link ở bio!"', text: `Tải ${app.name} Miễn Phí`, endCard: `${app.name} - Tải miễn phí` },
           },
         }));
       }
@@ -187,7 +183,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const handleCopy = (idea: GeneratedIdea) => {
     const c = idea.content;
-    const text = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\nSCENARIO: ${c.explanation}\n\n1. HOOK\n- Visual: ${c.hook.visual}\n- Text: ${c.hook.text || ''}\n- Voice: "${c.hook.voice}"\n\n2. PROBLEM\n${c.problem?.scenes?.map(s => `- ${s.visual} ("${s.voice}")`).join('\n') || 'N/A'}\n\n3. SOLUTION\n- Visual: ${c.solution?.visual || ''}\n- Voice: "${c.solution?.voice || ''}"\n\n4. DEMO\n- Prep: ${c.demo.step1_prep.visual}\n- Action: ${c.demo.step2_action.visual}\n- Result: ${c.demo.step3_result.visual}\n\n5. CTA\n- Voice: "${c.cta.voice}"\n- Text: ${c.cta.text}`;
+    const fw = c.framework;
+    const text = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n- Visual: ${c.hook?.visual || ''}\n- Content: ${c.hook?.content || ''}\n- Voice: "${c.hook?.voice || ''}"\n\n📖 BODY - PSP (10-25s)\n- Visual: ${c.body?.visual || ''}\n- Content: ${c.body?.content || ''}\n- Voice: "${c.body?.voice || ''}"\n\n🔥 CTA (3-5s)\n- Voice: "${c.cta?.voice || ''}"\n- Text: ${c.cta?.text || ''}\n- End Card: ${c.cta?.endCard || ''}`;
     navigator.clipboard.writeText(text);
   };
 
@@ -411,7 +408,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       {results.length > 0 ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {results.map((idea, idx) => {
-            const c = idea.content;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const c = idea.content as any;
             return (
             <div key={idea.id || idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
               <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500 w-full" />
@@ -419,76 +417,68 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title}</h4>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
-                      <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded">Viral Script</span>
                       <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-400 rounded">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                     </div>
-                    <p className="text-gray-400 italic text-sm mt-2 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
                   </div>
                   <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
                     <Copy size={16} />
                   </button>
                 </div>
 
-                {/* Hook */}
+                {/* Framework 4 yếu tố */}
+                {c.framework && (
+                  <div className="mb-4 grid grid-cols-2 gap-2">
+                    <div className="bg-blue-50 rounded-lg p-2 border border-blue-100">
+                      <span className="text-[9px] font-bold text-blue-500 uppercase">👤 Core User</span>
+                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.coreUser}</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-2 border border-red-100">
+                      <span className="text-[9px] font-bold text-red-500 uppercase">💔 Painpoint</span>
+                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.painpoint}</p>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-2 border border-purple-100">
+                      <span className="text-[9px] font-bold text-purple-500 uppercase">😱 Emotion</span>
+                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.emotion}</p>
+                    </div>
+                    <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-100">
+                      <span className="text-[9px] font-bold text-emerald-500 uppercase">💊 PSP</span>
+                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.psp}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Why it works */}
+                <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
+
+                {/* HOOK */}
                 <div className="mb-4 bg-red-50 rounded-xl p-4 border border-red-100">
-                  <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2"><Target size={10} /> HOOK (3s)</span>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Visual</span><p className="text-gray-700">{c.hook.visual}</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Text</span><p className="text-gray-700">{c.hook.text || '—'}</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.hook.voice}"</p></div>
+                  <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2">🎣 HOOK (3-5s)</span>
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Visual</span><p className="text-gray-700">{c.hook?.visual}</p></div>
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Content</span><p className="text-gray-700">{c.hook?.content || c.hook?.text || '—'}</p></div>
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.hook?.voice}"</p></div>
                   </div>
                 </div>
 
-                {/* Problem */}
-                {c.problem?.scenes?.length > 0 && (
-                  <div className="mb-4 bg-amber-50 rounded-xl p-4 border border-amber-100">
-                    <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-2 block">PROBLEM</span>
-                    {c.problem.scenes.map((s, i) => (
-                      <div key={i} className="grid grid-cols-3 gap-4 text-sm mb-2">
-                        <p className="col-span-2 text-gray-700">- {s.visual}</p>
-                        <p className="text-amber-600 italic">"{s.voice}"</p>
-                      </div>
-                    ))}
+                {/* BODY */}
+                <div className="mb-4 bg-sky-50 rounded-xl p-4 border border-sky-100">
+                  <span className="text-[10px] font-bold text-sky-600 uppercase tracking-widest flex items-center gap-1 mb-2">📖 BODY — PSP (10-25s)</span>
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Visual</span><p className="text-gray-700">{c.body?.visual || c.demo?.step1_prep?.visual || c.solution?.visual || '—'}</p></div>
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Content</span><p className="text-gray-700">{c.body?.content || c.solution?.text || '—'}</p></div>
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.body?.voice || c.solution?.voice || '—'}"</p></div>
                   </div>
-                )}
-
-                {/* Solution */}
-                {(c.solution?.visual || c.solution?.voice) && (
-                  <div className="mb-4 bg-sky-50 rounded-xl p-4 border border-sky-100">
-                    <span className="text-[10px] font-bold text-sky-600 uppercase tracking-widest mb-2 block">SOLUTION</span>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <p className="col-span-2 text-gray-700">{c.solution.visual}</p>
-                      <p className="text-sky-600 italic">"{c.solution.voice}"</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Demo */}
-                <div className="mb-4 bg-indigo-50 rounded-xl p-4 border border-indigo-100">
-                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-2 block">DEMO (3 Steps)</span>
-                  {[
-                    { n: '01', data: c.demo.step1_prep },
-                    { n: '02', data: c.demo.step2_action },
-                    { n: '03', data: c.demo.step3_result }
-                  ].map(step => (
-                    <div key={step.n} className="flex gap-3 mb-2 last:mb-0">
-                      <span className="font-bold text-indigo-300 text-sm">{step.n}</span>
-                      <div className="grid grid-cols-3 gap-4 flex-1 text-sm">
-                        <p className="col-span-2 text-gray-700">{step.data.visual}</p>
-                        {step.data.voice ? <p className="text-indigo-500 italic">"{step.data.voice}"</p> : <p className="text-gray-300">—</p>}
-                      </div>
-                    </div>
-                  ))}
                 </div>
 
                 {/* CTA */}
                 <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2 block">CTA</span>
-                  <div className="grid grid-cols-2 gap-4 text-sm items-center">
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.cta.voice}"</p></div>
-                    <div className="bg-white rounded-lg p-3 text-center border border-emerald-200"><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">End Card</span><p className="font-bold text-emerald-600">{c.cta.text}</p></div>
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2 block">🔥 CTA (3-5s)</span>
+                  <div className="grid grid-cols-3 gap-3 text-sm items-center">
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.cta?.voice}"</p></div>
+                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Text</span><p className="text-gray-700">{c.cta?.text}</p></div>
+                    <div className="bg-white rounded-lg p-2 text-center border border-emerald-200"><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">End Card</span><p className="font-bold text-emerald-600 text-xs">{c.cta?.endCard || c.cta?.text || '—'}</p></div>
                   </div>
                 </div>
               </div>
