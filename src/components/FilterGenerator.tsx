@@ -1,7 +1,7 @@
 'use client';
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, Send, Sparkles, MessageCircle, Bot } from 'lucide-react';
-import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent, Hook } from '@/types/database';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil } from 'lucide-react';
+import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import * as dbService from '@/lib/db';
 
 interface FilterGeneratorProps {
@@ -31,18 +31,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [editingItemText, setEditingItemText] = useState<{ original: string; current: string } | null>(null);
   const [savedHistory, setSavedHistory] = useState<GeneratedIdea[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  // AI Command Bar
-  const [aiInput, setAiInput] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiMessages, setAiMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
-  const [hooks, setHooks] = useState<Hook[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
-  const aiInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     loadOptions();
     loadHistory();
-    loadHooks();
   }, [app.id]);
 
   const loadOptions = async () => {
@@ -53,81 +45,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const loadHistory = async () => {
     const ideas = await dbService.getIdeas(app.id);
     setSavedHistory(ideas);
-  };
-
-  const loadHooks = async () => {
-    const h = await dbService.getHooks(app.id);
-    setHooks(h);
-  };
-
-  // AI Command Bar: send message
-  const handleAiSend = async (text?: string) => {
-    const msg = text || aiInput.trim();
-    if (!msg || aiLoading) return;
-    setAiInput('');
-    setAiLoading(true);
-    setAiMessages(prev => [...prev, { role: 'user', content: msg }]);
-
-    try {
-      const res = await fetch('/api/chat-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: msg,
-          appContext: {
-            name: app.name,
-            category: app.category,
-            features: options.solution || [],
-            storeLink: app.store_link || '',
-            appKnowledge: app.app_knowledge || '',
-            recentIdeas: savedHistory.slice(0, 5),
-            hooks: hooks.slice(0, 5),
-            filters: options,
-          },
-          chatHistory: aiMessages.slice(-10),
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-
-        // If AI generated ideas, parse and show them in full-size results
-        if (data.ideas && Array.isArray(data.ideas) && data.ideas.length > 0) {
-          const mapped = data.ideas.map((item: Record<string, unknown>) => ({
-            title: (item.title as string) || 'Ý tưởng AI',
-            duration: (item.duration as string) || '30s',
-            content: {
-              explanation: (item.explanation as string) || '',
-              hook: (item.hook as IdeaContent['hook']) || { visual: '', text: '', voice: '' },
-              problem: (item.problem as IdeaContent['problem']) || { scenes: [] },
-              solution: (item.solution as IdeaContent['solution']) || { visual: '', voice: '', text: '' },
-              demo: (item.demo as IdeaContent['demo']) || { step1_prep: { visual: '' }, step2_action: { visual: '' }, step3_result: { visual: '', voice: '' } },
-              cta: (item.cta as IdeaContent['cta']) || { voice: '', text: '' },
-            },
-          }));
-          const saved = await dbService.saveIdeas(app.id, mapped);
-          setResults(prev => [...saved, ...prev]);
-          setSavedHistory(prev => [...saved, ...prev]);
-          setScreen('f2.1.2');
-
-          // Background learn
-          fetch('/api/learn-app', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              appId: app.id, appName: app.name, appCategory: app.category,
-              newIdeas: mapped.slice(0, 5), existingKnowledge: app.app_knowledge || '',
-            }),
-          }).catch(() => {});
-        }
-      } else {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: '⚠️ ' + (data.error || 'Lỗi AI') }]);
-      }
-    } catch {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Không thể kết nối AI' }]);
-    }
-    setAiLoading(false);
   };
 
   const toggleFilter = (category: keyof FilterState, item: string) => {
@@ -581,116 +498,23 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   return (
     <div className={`p-6 sm:p-8 mx-auto transition-all duration-300 w-full ${currentScreen === 'f2.1.2' ? 'max-w-[95%]' : 'max-w-7xl'}`}>
-      <div className="flex items-center gap-4 mb-4">
+      <div className="flex items-center gap-4 mb-8">
         <button onClick={() => setScreen('f2')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400"><ArrowLeft /></button>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-800">Tạo Ý Tưởng <span className="text-gray-400 font-normal text-sm">/ {app.name}</span></h1>
-        </div>
-      </div>
-
-      {/* AI COMMAND BAR */}
-      <div className="mb-6">
-        <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-2xl border border-indigo-200/50 p-4 shadow-sm">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center flex-shrink-0">
-              <Sparkles size={16} color="white" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-bold text-gray-800">🧠 Creative Agent <span className="text-xs font-normal text-gray-400">• Pro Model</span></div>
-            </div>
-            <button onClick={() => setShowFilters(!showFilters)} className={`text-xs px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${showFilters ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300'}`}>
-              <Filter size={12} /> Bộ lọc
-            </button>
-            {savedHistory.length > 0 && (
-              <button onClick={() => { setResults(savedHistory); setScreen('f2.1.2'); }} className="text-xs px-3 py-1.5 rounded-lg border bg-white text-gray-500 border-gray-200 hover:border-indigo-300 transition-all">
-                📜 Lịch sử ({savedHistory.length})
-              </button>
-            )}
-          </div>
-
-          {/* Quick prompts */}
-          {aiMessages.length === 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {[
-                { text: `Tạo 3 ideas creative cho ${app.name}`, icon: '💡' },
-                { text: 'Gợi ý hook viral dễ quay', icon: '🎬' },
-                { text: 'Phân tích chiến lược tốt nhất', icon: '📊' },
-                { text: 'Ideas focus đối tượng mới', icon: '🎯' },
-              ].map((q, i) => (
-                <button key={i} onClick={() => handleAiSend(q.text)}
-                  className="text-xs px-3 py-1.5 rounded-full bg-white border border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-indigo-50 transition-all cursor-pointer">
-                  {q.icon} {q.text}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* AI Response area */}
-          {aiMessages.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-100 p-3 mb-3 max-h-60 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-              {aiMessages.map((msg, i) => (
-                <div key={i} className={`flex gap-2 mb-2 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                  {msg.role === 'assistant' && <Bot size={16} className="text-purple-500 mt-1 flex-shrink-0" />}
-                  <div className={`text-xs leading-relaxed max-w-[85%] px-3 py-2 rounded-xl ${
-                    msg.role === 'user' 
-                      ? 'bg-indigo-500 text-white rounded-br-sm' 
-                      : 'bg-gray-50 text-gray-700 rounded-bl-sm'
-                  }`}>
-                    {msg.content.replace(/```json[\s\S]*?```/g, '✅ Ideas đã tạo — xem bên dưới ↓').split('\n').map((line, j) => (
-                      <span key={j}>{line}<br/></span>
-                    ))}
-                  </div>
-                  {msg.role === 'user' && <MessageCircle size={16} className="text-indigo-400 mt-1 flex-shrink-0" />}
-                </div>
-              ))}
-              {aiLoading && (
-                <div className="flex gap-2 items-center text-xs text-gray-400">
-                  <Loader2 size={14} className="animate-spin text-purple-500" /> Đang suy nghĩ (Pro model)...
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Input bar */}
-          <div className="flex gap-2">
-            <textarea
-              ref={aiInputRef}
-              value={aiInput}
-              onChange={e => setAiInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiSend(); } }}
-              placeholder={`Yêu cầu AI tạo ideas, phân tích, tư vấn cho ${app.name}...`}
-              rows={1}
-              className="flex-1 resize-none text-sm py-2.5 px-4 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
-              style={{ minHeight: 40, maxHeight: 80 }}
-              onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 80) + 'px'; }}
-            />
-            <button onClick={() => handleAiSend()} disabled={aiLoading || !aiInput.trim()}
-              className={`px-4 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${
-                aiInput.trim() ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg' : 'bg-gray-100 text-gray-400'
-              }`}>
-              {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter/Config sections (collapsible) */}
-      {showFilters && (
-        <div className="w-full">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mt-2">
             {['f2.1', 'f2.1.1', 'f2.1.2'].map(s => (
               <div key={s} className={`h-1 rounded-full transition-all duration-500 ${currentScreen === s ? 'w-10 bg-indigo-500' : 'w-6 bg-gray-200'}`} />
             ))}
           </div>
-          {currentScreen === 'f2.1' && renderFilterDashboard()}
-          {currentScreen === 'f2.1.1' && renderConfigScreen()}
         </div>
-      )}
+      </div>
 
-      {/* Results always visible below */}
-      {currentScreen === 'f2.1.2' && (
-        <div className="w-full">{renderResult()}</div>
-      )}
+      <div className="w-full">
+        {currentScreen === 'f2.1' && renderFilterDashboard()}
+        {currentScreen === 'f2.1.1' && renderConfigScreen()}
+        {currentScreen === 'f2.1.2' && renderResult()}
+      </div>
     </div>
   );
 };
