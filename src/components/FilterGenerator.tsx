@@ -338,8 +338,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
               <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><ListOrdered size={14} /> Số lượng Idea</label>
-              <input type="number" min="1" max="10" value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+              <input type="number" min="1" value={quantity}
+                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-full text-center text-xl font-bold py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
             </div>
           </div>
