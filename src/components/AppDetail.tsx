@@ -1,10 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
-import type { AppProject, Feature, SyncLog, Hook } from '@/types/database';
-import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getHooks, getFilterOptions } from '@/lib/db';
-import { ChatAgent } from './ChatAgent';
-import type { ScreenType } from '@/types/database';
+import type { AppProject, Feature, SyncLog } from '@/types/database';
+import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs } from '@/lib/db';
 
 interface AppDetailProps {
   app: AppProject;
@@ -15,8 +13,6 @@ interface AppDetailProps {
 
 export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, onAppUpdated }) => {
   const [features, setFeatures] = useState<Feature[]>([]);
-  const [hooks, setHooks] = useState<Hook[]>([]);
-  const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFeatureModal, setShowFeatureModal] = useState(false);
@@ -31,14 +27,11 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
 
   const loadData = async () => {
     setLoading(true);
-    const [feats, logs, hks, flts] = await Promise.all([
+    const [feats, logs] = await Promise.all([
       getFeatures(app.id), getSyncLogs(app.id, 5),
-      getHooks(app.id), getFilterOptions(app),
     ]);
     setFeatures(feats);
     setSyncLogs(logs);
-    setHooks(hks);
-    setFilters(flts);
     setLoading(false);
   };
 
@@ -68,12 +61,6 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
       }
     } catch (e) { console.error(e); }
     setSyncing(false);
-  };
-
-  const handleOpenIdeas = () => {
-    onNavigate('f2.1' as ScreenType);
-    // Small delay then navigate to results
-    setTimeout(() => onNavigate('f2.1.2' as ScreenType), 100);
   };
 
   return (
@@ -236,21 +223,6 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
           </div>
         </div>
       )}
-
-      {/* Chat Agent */}
-      <ChatAgent
-        app={app}
-        appContext={{
-          name: app.name,
-          category: app.category,
-          features: features.map(f => f.name),
-          storeLink: app.store_link || undefined,
-          appKnowledge: app.app_knowledge || undefined,
-          hooks: hooks,
-          filters: filters,
-        }}
-        onOpenIdeas={handleOpenIdeas}
-      />
     </div>
   );
 };

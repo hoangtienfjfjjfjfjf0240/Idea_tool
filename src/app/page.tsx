@@ -6,9 +6,11 @@ import { Dashboard } from '@/components/Dashboard';
 import { AppDetail } from '@/components/AppDetail';
 import { FilterGenerator } from '@/components/FilterGenerator';
 import { HookLibrary } from '@/components/HookLibrary';
+import { ChatAgent } from '@/components/ChatAgent';
 
 import { supabase } from '@/lib/supabase';
 import type { AppProject, ScreenType } from '@/types/database';
+import { getHooks, getFilterOptions } from '@/lib/db';
 import { Loader2 } from 'lucide-react';
 
 export default function Home() {
@@ -126,12 +128,46 @@ export default function Home() {
     return <Dashboard onSelectApp={handleAppSelect} />;
   };
 
+  // Build app context for ChatAgent
+  const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
+  const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (selectedApp) {
+      getHooks(selectedApp.id).then(setChatHooks).catch(() => {});
+      getFilterOptions(selectedApp).then(setChatFilters).catch(() => {});
+    }
+  }, [selectedApp?.id]);
+
+  const handleOpenIdeas = () => {
+    if (selectedApp) {
+      setCurrentScreen('f2.1.2');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       <NavBar currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} userName={userName} onLogout={handleLogout} />
       <main className="py-4">
         {renderScreen()}
       </main>
+
+      {/* Global Chat Agent - always visible */}
+      {selectedApp && (
+        <ChatAgent
+          app={selectedApp}
+          appContext={{
+            name: selectedApp.name,
+            category: selectedApp.category,
+            features: [],
+            storeLink: selectedApp.store_link || undefined,
+            appKnowledge: selectedApp.app_knowledge || undefined,
+            hooks: chatHooks,
+            filters: chatFilters,
+          }}
+          onOpenIdeas={handleOpenIdeas}
+        />
+      )}
     </div>
   );
 }
