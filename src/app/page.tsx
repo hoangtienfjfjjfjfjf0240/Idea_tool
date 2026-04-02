@@ -81,17 +81,14 @@ export default function Home() {
     setSelectedApp(updatedApp);
   };
 
-  // Loading state while checking auth
+  // Skip auth - go straight to app
   if (checkingAuth) {
+    // Still check in background for user name display
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-indigo-950 to-purple-950">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
       </div>
     );
-  }
-
-  if (!isLoggedIn) {
-    return <LoginScreen onLogin={handleLogin} />;
   }
 
   const renderScreen = () => {
