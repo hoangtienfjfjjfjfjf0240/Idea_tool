@@ -211,14 +211,85 @@ export async function getIdeas(appId: string): Promise<GeneratedIdea[]> {
   return data || [];
 }
 
-export async function saveIdeas(appId: string, ideas: { title: string; duration: string; content: object }[]): Promise<GeneratedIdea[]> {
-  const rows = ideas.map(idea => ({ app_id: appId, title: idea.title, duration: idea.duration, content: idea.content }));
+export async function saveIdeas(
+  appId: string, 
+  ideas: { title: string; duration: string; content: object }[],
+  sessionId?: string,
+  filtersSnapshot?: object
+): Promise<GeneratedIdea[]> {
+  const sid = sessionId || crypto.randomUUID();
+  const rows = ideas.map(idea => ({ 
+    app_id: appId, 
+    title: idea.title, 
+    duration: idea.duration, 
+    content: idea.content,
+    session_id: sid,
+    filters_snapshot: filtersSnapshot || {},
+  }));
   const { data, error } = await supabase
     .from('generated_ideas')
     .insert(rows)
     .select();
   if (error) { console.error('saveIdeas error:', error); return []; }
   return data || [];
+}
+
+// Strategy History — group ideas by session
+export interface IdeaSession {
+  sessionId: string;
+  filters: FilterState | null;
+  ideas: GeneratedIdea[];
+  createdAt: string;
+  ideaCount: number;
+}
+
+export async function getIdeaSessions(appId: string): Promise<IdeaSession[]> {
+  const { data, error } = await supabase
+    .from('generated_ideas')
+    .select('*')
+    .eq('app_id', appId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('getIdeaSessions error:', error); return []; }
+
+  // Group by session_id
+  const sessionMap = new Map<string, GeneratedIdea[]>();
+  (data || []).forEach((idea: GeneratedIdea) => {
+    const sid = idea.session_id || 'legacy';
+    if (!sessionMap.has(sid)) sessionMap.set(sid, []);
+    sessionMap.get(sid)!.push(idea);
+  });
+
+  // Convert to session list
+  const sessions: IdeaSession[] = [];
+  sessionMap.forEach((ideas, sessionId) => {
+    sessions.push({
+      sessionId,
+      filters: ideas[0]?.filters_snapshot || null,
+      ideas,
+      createdAt: ideas[0]?.created_at || '',
+      ideaCount: ideas.length,
+    });
+  });
+
+  return sessions;
+}
+
+export async function updateIdeaResult(ideaId: string, result: string | null): Promise<boolean> {
+  const { error } = await supabase
+    .from('generated_ideas')
+    .update({ result })
+    .eq('id', ideaId);
+  if (error) { console.error('updateIdeaResult error:', error); return false; }
+  return true;
+}
+
+export async function updateIdeaContent(ideaId: string, title: string, content: any): Promise<boolean> {
+  const { error } = await supabase
+    .from('generated_ideas')
+    .update({ title, content })
+    .eq('id', ideaId);
+  if (error) { console.error('updateIdeaContent error:', error); return false; }
+  return true;
 }
 
 // ============================================

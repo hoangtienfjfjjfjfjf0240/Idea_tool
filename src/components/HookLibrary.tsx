@@ -31,6 +31,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [isSaving, setIsSaving] = useState(false);
   const [deletingHookId, setDeletingHookId] = useState<string | null>(null);
   const [previewHook, setPreviewHook] = useState<Hook | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('');
+  const progressRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const pendingThumbRef = useRef<string | null>(null);
@@ -57,9 +60,39 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     }
   };
 
+  const startProgress = () => {
+    setProgress(0);
+    setProgressLabel('Đang phân tích hook gốc...');
+    const steps = [
+      { at: 5, label: 'Đang phân tích hook gốc...' },
+      { at: 15, label: 'Đang xây dựng biến thể mới...' },
+      { at: 35, label: 'Đang viết Visual chi tiết...' },
+      { at: 55, label: 'Đang tạo Voice & Text...' },
+      { at: 75, label: 'Đang hoàn thiện kết quả...' },
+      { at: 90, label: 'Đang kiểm tra chất lượng...' },
+    ];
+    let current = 0;
+    progressRef.current = setInterval(() => {
+      current += Math.random() * 2.5 + 0.5;
+      if (current > 95) current = 95;
+      setProgress(Math.round(current));
+      const step = [...steps].reverse().find(s => current >= s.at);
+      if (step) setProgressLabel(step.label);
+    }, 500);
+  };
+
+  const stopProgress = () => {
+    if (progressRef.current) clearInterval(progressRef.current);
+    progressRef.current = null;
+    setProgress(100);
+    setProgressLabel('Hoàn thành! ✨');
+    setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1500);
+  };
+
   const handleGenerate = async () => {
     if (!selectedHook || !modifyPrompt) return;
     setIsLoading(true);
+    startProgress();
     try {
       const res = await fetch('/api/generate-hooks', {
         method: 'POST',
@@ -93,6 +126,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       console.error('Generate hooks failed:', err);
       alert('Có lỗi khi tạo hook. Vui lòng thử lại.');
     } finally {
+      stopProgress();
       setIsLoading(false);
     }
   };
@@ -154,6 +188,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           description: editingHookData.description,
           hook_concept: editingHookData.hook_concept,
           visual_detail: editingHookData.visual_detail,
+          core_user: editingHookData.core_user || null,
+          painpoint: editingHookData.painpoint || null,
+          emotion: editingHookData.emotion || null,
+          creative_type: editingHookData.creative_type || null,
           image_url: imageUrl,
           video_url: videoUrl,
         });
@@ -167,6 +205,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           description: editingHookData.description || null,
           hook_concept: editingHookData.hook_concept || null,
           visual_detail: editingHookData.visual_detail || null,
+          core_user: editingHookData.core_user || null,
+          painpoint: editingHookData.painpoint || null,
+          emotion: editingHookData.emotion || null,
+          creative_type: editingHookData.creative_type || null,
           image_url: imageUrl,
           video_url: videoUrl,
         });
@@ -213,6 +255,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           description: result.data.description,
           hook_concept: result.data.hook_concept,
           visual_detail: result.data.visual_detail,
+          core_user: result.data.core_user,
+          painpoint: result.data.painpoint,
+          emotion: result.data.emotion,
+          creative_type: result.data.creative_type,
         }));
         setAnalysisSuccess(true);
       } else {
@@ -483,6 +529,38 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   </div>
                 </div>
 
+                {/* Framework Analysis */}
+                <div className="bg-amber-50 rounded-xl p-5 border border-amber-200 space-y-4">
+                  <h4 className="font-bold text-amber-700 flex items-center gap-2"><Target size={14} className="text-amber-500" /> Framework Analysis</h4>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">👤 Core User</label>
+                      <input type="text" value={editingHookData.core_user || ''} onChange={e => setEditingHookData({ ...editingHookData, core_user: e.target.value })}
+                        placeholder="VD: Người già 45+, EN, lowtech"
+                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 border-gray-200 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">💔 Painpoint</label>
+                      <input type="text" value={editingHookData.painpoint || ''} onChange={e => setEditingHookData({ ...editingHookData, painpoint: e.target.value })}
+                        placeholder="VD: Điện thoại đầy bộ nhớ"
+                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 border-gray-200 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">😱 Emotion</label>
+                      <input type="text" value={editingHookData.emotion || ''} onChange={e => setEditingHookData({ ...editingHookData, emotion: e.target.value })}
+                        placeholder="VD: Sợ hãi + Lo lắng"
+                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 border-gray-200 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">🎬 Creative Type</label>
+                      <input type="text" value={editingHookData.creative_type || ''} onChange={e => setEditingHookData({ ...editingHookData, creative_type: e.target.value })}
+                        placeholder="VD: UGC Expert Apple, Hỏi Alexa"
+                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-200 border-gray-200 text-sm" />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Emoji Thumb Picker */}
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Icon</label>
@@ -569,6 +647,28 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />}
               {isLoading ? 'Đang Sáng Tạo...' : '🚀 Tạo Hook Biến Thể'}
             </button>
+
+            {/* Progress bar */}
+            {isLoading && progress > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-pink-600 font-medium flex items-center gap-2">
+                    <Loader2 className="animate-spin" size={14} /> {progressLabel}
+                  </span>
+                  <span className="font-bold text-pink-700">{progress}%</span>
+                </div>
+                <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-pink-500 via-orange-400 to-amber-400 rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${progress}%` }} />
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-400">
+                  <span>Phân tích</span>
+                  <span>Biến thể</span>
+                  <span>Visual & Voice</span>
+                  <span>Hoàn thiện</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

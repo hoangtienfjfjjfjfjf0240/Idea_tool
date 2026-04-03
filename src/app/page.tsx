@@ -6,6 +6,7 @@ import { Dashboard } from '@/components/Dashboard';
 import { AppDetail } from '@/components/AppDetail';
 import { FilterGenerator } from '@/components/FilterGenerator';
 import { HookLibrary } from '@/components/HookLibrary';
+import { StrategyHistory } from '@/components/StrategyHistory';
 import { ChatAgent } from '@/components/ChatAgent';
 
 import { supabase } from '@/lib/supabase';
@@ -126,6 +127,15 @@ export default function Home() {
           setScreen={setCurrentScreen}
           currentScreen={currentScreen}
           app={selectedApp}
+        />
+      );
+    }
+    // Strategy History (f2.3)
+    if (currentScreen === 'f2.3' && selectedApp) {
+      return (
+        <StrategyHistory
+          app={selectedApp}
+          onBack={() => setCurrentScreen('f2')}
         />
       );
     }

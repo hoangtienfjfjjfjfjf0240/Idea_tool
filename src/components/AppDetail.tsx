@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3 } from 'lucide-react';
 import type { AppProject, Feature, SyncLog } from '@/types/database';
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs } from '@/lib/db';
 
@@ -106,7 +106,7 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
       </div>
 
       {/* Action Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <button onClick={() => onNavigate('f2.1')}
           className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-2xl p-6 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all group">
           <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -114,6 +114,14 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
           </div>
           <h3 className="font-bold text-gray-800 text-lg mb-1">Tạo Ý Tưởng</h3>
           <p className="text-sm text-gray-500">Filter → Generate → Kịch bản chi tiết</p>
+        </button>
+        <button onClick={() => onNavigate('f2.3')}
+          className="bg-gradient-to-br from-sky-50 to-indigo-50 border border-sky-100 rounded-2xl p-6 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all group">
+          <div className="w-12 h-12 bg-sky-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+            <BarChart3 className="text-sky-600" size={24} />
+          </div>
+          <h3 className="font-bold text-gray-800 text-lg mb-1">Plan Overview</h3>
+          <p className="text-sm text-gray-500">Biểu đồ Painpoint · Emotion · PSP</p>
         </button>
         <button onClick={() => onNavigate('f2.2')}
           className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100 rounded-2xl p-6 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all group">

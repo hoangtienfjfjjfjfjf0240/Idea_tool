@@ -30,6 +30,10 @@ export interface Hook {
   visual_detail: string | null;
   image_url: string | null;
   video_url: string | null;
+  painpoint: string | null;
+  emotion: string | null;
+  core_user: string | null;
+  creative_type: string | null;
   created_at: string;
 }
 
@@ -39,6 +43,8 @@ export interface GeneratedIdea {
   title: string | null;
   duration: string | null;
   content: IdeaContent;
+  session_id: string | null;
+  filters_snapshot: FilterState | null;
   created_at: string;
 }
 
@@ -54,13 +60,13 @@ export interface IdeaContent {
   // Video structure: Hook + Body + CTA
   hook: {
     visual: string;      // Hình ảnh / cảnh quay
-    content: string;     // Text on screen
-    voice: string;       // Voice-over
+    text: string;        // Text on screen (liên quan voice)
+    voice: string;       // Voice-over (liên quan text)
   };
   body: {
     visual: string;      // Demo PSP giải quyết painpoint
-    content: string;     // Text on screen
-    voice: string;       // Voice-over
+    text: string;        // Text on screen (liên quan voice)
+    voice: string;       // Voice-over (liên quan text)
   };
   cta: {
     voice: string;       // Voice-over kêu gọi
@@ -104,7 +110,8 @@ export type ScreenType =
   | 'f2.1.2'
   | 'f2.2'
   | 'f2.2.1'
-  | 'f2.2.2';
+  | 'f2.2.2'
+  | 'f2.3';
 
 // Supabase Database types helper
 export interface Database {

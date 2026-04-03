@@ -1,6 +1,6 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, ChevronDown, ChevronUp, Save, History } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import * as dbService from '@/lib/db';
 
@@ -15,7 +15,6 @@ const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementTyp
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
   { id: 'solution', label: 'Tính năng / Giải pháp', icon: Lightbulb },
   { id: 'emotion', label: 'Cảm xúc', icon: Target },
-  { id: 'videoStructure', label: 'Cấu trúc', icon: Layout },
 ];
 
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen }) => {
@@ -23,6 +22,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [] });
   const [newItem, setNewItem] = useState<{ cat: keyof FilterState | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('');
+  const progressRef = useRef<NodeJS.Timeout | null>(null);
   const [results, setResults] = useState<GeneratedIdea[]>([]);
   const [duration, setDuration] = useState('30s');
   const [quantity, setQuantity] = useState(3);
@@ -31,6 +33,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [editingItemText, setEditingItemText] = useState<{ original: string; current: string } | null>(null);
   const [savedHistory, setSavedHistory] = useState<GeneratedIdea[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [editingIdea, setEditingIdea] = useState<string | null>(null);
+  const [editBuffer, setEditBuffer] = useState<any>(null);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
 
   useEffect(() => {
     loadOptions();
@@ -91,8 +96,39 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditingItemText(null);
   };
 
+  const startProgress = () => {
+    setProgress(0);
+    setProgressLabel('Đang phân tích bối cảnh...');
+    const steps = [
+      { at: 5, label: 'Đang phân tích bối cảnh...' },
+      { at: 15, label: 'Đang xây dựng Hook Formula...' },
+      { at: 30, label: 'Đang viết Visual chi tiết...' },
+      { at: 50, label: 'Đang tạo Voice & Text...' },
+      { at: 70, label: 'Đang hoàn thiện Body & CTA...' },
+      { at: 85, label: 'Đang kiểm tra chất lượng...' },
+      { at: 92, label: 'Đang lưu vào database...' },
+    ];
+    let current = 0;
+    progressRef.current = setInterval(() => {
+      current += Math.random() * 2.5 + 0.5;
+      if (current > 95) current = 95;
+      setProgress(Math.round(current));
+      const step = [...steps].reverse().find(s => current >= s.at);
+      if (step) setProgressLabel(step.label);
+    }, 500);
+  };
+
+  const stopProgress = () => {
+    if (progressRef.current) clearInterval(progressRef.current);
+    progressRef.current = null;
+    setProgress(100);
+    setProgressLabel('Hoàn thành! ✨');
+    setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1500);
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
+    startProgress();
     try {
       // Prepare previous ideas summary for AI to learn from (richer data for better learning)
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
@@ -130,8 +166,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           content: {
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
-            hook: { visual: item.hook?.visual || '', content: item.hook?.content || item.hook?.text || '', voice: item.hook?.voice || '' },
-            body: { visual: item.body?.visual || '', content: item.body?.content || '', voice: item.body?.voice || '' },
+            hook: { visual: item.hook?.visual || '', text: item.hook?.text || item.hook?.content || '', voice: item.hook?.voice || '' },
+            body: { visual: item.body?.visual || '', text: item.body?.text || item.body?.content || '', voice: item.body?.voice || '' },
             cta: { voice: item.cta?.voice || '', text: item.cta?.text || '', endCard: item.cta?.endCard || item.cta?.end_card || '' },
           },
         }));
@@ -148,15 +184,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               psp: filters.solution[0] || app.name,
             },
             explanation: `Video ${duration} kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
-            hook: { visual: 'Cận cảnh tay cầm điện thoại', content: filters.painPoint[0] || 'Bạn có biết?', voice: `"${filters.painPoint[0] || 'Điều gì sẽ xảy ra nếu...'}"` },
-            body: { visual: `Mở app ${app.name}, demo tính năng`, content: `${filters.solution[0] || 'Tính năng chính'}`, voice: `"Chỉ cần 1 phút với ${app.name}"` },
+            hook: { visual: 'Cận cảnh tay cầm điện thoại', text: filters.painPoint[0] || 'Bạn có biết?', voice: `"${filters.painPoint[0] || 'Điều gì sẽ xảy ra nếu...'}"` },
+            body: { visual: `Mở app ${app.name}, demo tính năng`, text: `${filters.solution[0] || 'Tính năng chính'}`, voice: `"Chỉ cần 1 phút với ${app.name}"` },
             cta: { voice: '"Tải ngay link ở bio!"', text: `Tải ${app.name} Miễn Phí`, endCard: `${app.name} - Tải miễn phí` },
           },
         }));
       }
 
-      // Save to Supabase DB
-      const saved = await dbService.saveIdeas(app.id, ideas);
+      // Save to Supabase DB with session tracking
+      const sessionId = crypto.randomUUID();
+      const saved = await dbService.saveIdeas(app.id, ideas, sessionId, filters);
       setResults(prev => [...saved, ...prev]);
       setSavedHistory(prev => [...saved, ...prev]);
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
@@ -177,6 +214,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       console.error('Generate failed:', err);
       alert('Có lỗi khi tạo ý tưởng. Vui lòng thử lại.');
     } finally {
+      stopProgress();
       setIsGenerating(false);
     }
   };
@@ -184,9 +222,46 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const handleCopy = (idea: GeneratedIdea) => {
     const c = idea.content;
     const fw = c.framework;
-    const text = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n- Visual: ${c.hook?.visual || ''}\n- Content: ${c.hook?.content || ''}\n- Voice: "${c.hook?.voice || ''}"\n\n📖 BODY - PSP (10-25s)\n- Visual: ${c.body?.visual || ''}\n- Content: ${c.body?.content || ''}\n- Voice: "${c.body?.voice || ''}"\n\n🔥 CTA (3-5s)\n- Voice: "${c.cta?.voice || ''}"\n- Text: ${c.cta?.text || ''}\n- End Card: ${c.cta?.endCard || ''}`;
-    navigator.clipboard.writeText(text);
+    const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n- Visual: ${c.hook?.visual || ''}\n- Text: ${(c.hook as any)?.text || (c.hook as any)?.content || ''}\n- Voice: "${c.hook?.voice || ''}"\n\n📖 BODY (10-25s)\n- Visual: ${c.body?.visual || ''}\n- Text: ${(c.body as any)?.text || (c.body as any)?.content || ''}\n- Voice: "${c.body?.voice || ''}"\n\n🔥 CTA (3-5s)\n- Voice: "${c.cta?.voice || ''}"\n- Text: ${c.cta?.text || ''}\n- End Card: ${c.cta?.endCard || ''}`;
+    navigator.clipboard.writeText(copyText);
   };
+
+  const startEditIdea = (idea: GeneratedIdea) => {
+    setEditingIdea(idea.id);
+    const c = idea.content as any;
+    setEditBuffer({
+      title: idea.title,
+      explanation: c.explanation || '',
+      hook: { visual: c.hook?.visual || '', text: c.hook?.text || c.hook?.content || '', voice: c.hook?.voice || '' },
+      body: { visual: c.body?.visual || '', text: c.body?.text || c.body?.content || '', voice: c.body?.voice || '' },
+      cta: { voice: c.cta?.voice || '', text: c.cta?.text || '', endCard: c.cta?.endCard || '' },
+    });
+  };
+
+  const saveEditIdea = async (idea: GeneratedIdea) => {
+    if (!editBuffer) return;
+    const newContent = {
+      ...idea.content,
+      explanation: editBuffer.explanation,
+      hook: editBuffer.hook,
+      body: editBuffer.body,
+      cta: editBuffer.cta,
+    };
+    await dbService.updateIdeaContent(idea.id, editBuffer.title, newContent);
+    // Update local state
+    const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: editBuffer.title, content: newContent } : i);
+    setResults(updater);
+    setSavedHistory(updater);
+    setEditingIdea(null);
+    setEditBuffer(null);
+  };
+
+  const STEPS = [
+    { id: 'f2.1' as ScreenType, label: 'Bộ lọc', icon: Filter },
+    { id: 'f2.1.1' as ScreenType, label: 'Cấu hình', icon: Settings2 },
+    { id: 'f2.1.2' as ScreenType, label: 'Kết quả', icon: Wand2 },
+  ];
+  const currentStepIdx = STEPS.findIndex(s => s.id === currentScreen);
 
   // === RENDER: Filter Dashboard ===
   const renderFilterDashboard = () => (
@@ -366,13 +441,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             {isGenerating ? 'Đang Sáng Tạo & Lưu...' : 'BẮT ĐẦU TẠO IDEA'}
           </button>
 
-          {/* History count */}
-          {savedHistory.length > 0 && (
-            <button onClick={() => { setResults(savedHistory); setScreen('f2.1.2'); }}
-              className="w-full mt-3 text-sm text-gray-400 hover:text-indigo-500 transition-colors flex items-center justify-center gap-2">
-              📜 Xem lịch sử ({savedHistory.length} ý tưởng đã tạo)
-            </button>
+          {/* Progress bar */}
+          {isGenerating && progress > 0 && (
+            <div className="mt-4 space-y-2">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-indigo-600 font-medium flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={14} /> {progressLabel}
+                </span>
+                <span className="font-bold text-indigo-700">{progress}%</span>
+              </div>
+              <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${progress}%` }} />
+              </div>
+              <div className="flex justify-between text-[10px] text-gray-400">
+                <span>Phân tích</span>
+                <span>Hook & Visual</span>
+                <span>Voice & Text</span>
+                <span>Lưu DB</span>
+              </div>
+            </div>
           )}
+
         </div>
       </div>
     </div>
@@ -408,79 +498,87 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       {results.length > 0 ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {results.map((idea, idx) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const c = idea.content as any;
+            const isEditing = editingIdea === idea.id;
             return (
             <div key={idea.id || idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
               <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500 w-full" />
               <div className="p-6">
                 <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title}</h4>
+                  <div className="flex-1 min-w-0">
+                    {isEditing ? (
+                      <input value={editBuffer?.title || ''} onChange={e => setEditBuffer({...editBuffer, title: e.target.value})}
+                        className="font-bold text-lg text-gray-800 mb-1 w-full border-b-2 border-indigo-300 focus:outline-none bg-transparent" />
+                    ) : (
+                      <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title}</h4>
+                    )}
                     <div className="flex gap-2 flex-wrap">
                       <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
                       <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-400 rounded">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                     </div>
                   </div>
-                  <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
-                    <Copy size={16} />
-                  </button>
+                  <div className="flex gap-1">
+                    {isEditing ? (
+                      <>
+                        <button onClick={() => saveEditIdea(idea)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Lưu">
+                          <Save size={16} />
+                        </button>
+                        <button onClick={() => { setEditingIdea(null); setEditBuffer(null); }} className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg transition-colors" title="Hủy">
+                          <X size={16} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEditIdea(idea)} className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Chỉnh sửa">
+                          <Pencil size={16} />
+                        </button>
+                        <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
+                          <Copy size={16} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* Framework 4 yếu tố */}
-                {c.framework && (
-                  <div className="mb-4 grid grid-cols-2 gap-2">
-                    <div className="bg-blue-50 rounded-lg p-2 border border-blue-100">
-                      <span className="text-[9px] font-bold text-blue-500 uppercase">👤 Core User</span>
-                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.coreUser}</p>
-                    </div>
-                    <div className="bg-red-50 rounded-lg p-2 border border-red-100">
-                      <span className="text-[9px] font-bold text-red-500 uppercase">💔 Painpoint</span>
-                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.painpoint}</p>
-                    </div>
-                    <div className="bg-purple-50 rounded-lg p-2 border border-purple-100">
-                      <span className="text-[9px] font-bold text-purple-500 uppercase">😱 Emotion</span>
-                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.emotion}</p>
-                    </div>
-                    <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-100">
-                      <span className="text-[9px] font-bold text-emerald-500 uppercase">💊 PSP</span>
-                      <p className="text-xs text-gray-700 mt-0.5">{c.framework.psp}</p>
-                    </div>
-                  </div>
+                {/* Explanation */}
+                {isEditing ? (
+                  <textarea value={editBuffer?.explanation || ''} onChange={e => setEditBuffer({...editBuffer, explanation: e.target.value})}
+                    className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
+                ) : (
+                  <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
                 )}
 
-                {/* Why it works */}
-                <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
-
-                {/* HOOK */}
-                <div className="mb-4 bg-red-50 rounded-xl p-4 border border-red-100">
-                  <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2">🎣 HOOK (3-5s)</span>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Visual</span><p className="text-gray-700">{c.hook?.visual}</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Content</span><p className="text-gray-700">{c.hook?.content || c.hook?.text || '—'}</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.hook?.voice}"</p></div>
-                  </div>
-                </div>
-
-                {/* BODY */}
-                <div className="mb-4 bg-sky-50 rounded-xl p-4 border border-sky-100">
-                  <span className="text-[10px] font-bold text-sky-600 uppercase tracking-widest flex items-center gap-1 mb-2">📖 BODY — PSP (10-25s)</span>
-                  <div className="grid grid-cols-3 gap-3 text-sm">
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Visual</span><p className="text-gray-700">{c.body?.visual || c.demo?.step1_prep?.visual || c.solution?.visual || '—'}</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Content</span><p className="text-gray-700">{c.body?.content || c.solution?.text || '—'}</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.body?.voice || c.solution?.voice || '—'}"</p></div>
-                  </div>
-                </div>
-
-                {/* CTA */}
-                <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2 block">🔥 CTA (3-5s)</span>
-                  <div className="grid grid-cols-3 gap-3 text-sm items-center">
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice</span><p className="text-gray-500 italic">"{c.cta?.voice}"</p></div>
-                    <div><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Text</span><p className="text-gray-700">{c.cta?.text}</p></div>
-                    <div className="bg-white rounded-lg p-2 text-center border border-emerald-200"><span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">End Card</span><p className="font-bold text-emerald-600 text-xs">{c.cta?.endCard || c.cta?.text || '—'}</p></div>
-                  </div>
-                </div>
+                {/* Sections: HOOK, BODY, CTA */}
+                {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
+                  { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
+                  { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
+                ].map(sec => {
+                  const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
+                  const fields = sec.key === 'cta' 
+                    ? [{ k: 'voice', l: 'Voice' }, { k: 'text', l: 'Text' }, { k: 'endCard', l: 'End Card' }]
+                    : [{ k: 'visual', l: 'Visual' }, { k: 'text', l: 'Text' }, { k: 'voice', l: 'Voice' }];
+                  return (
+                    <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
+                      <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        {fields.map(f => (
+                          <div key={f.k}>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{f.l}</span>
+                            {isEditing ? (
+                              <textarea value={secData?.[f.k] || ''}
+                                onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], [f.k]: e.target.value}})}
+                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white" />
+                            ) : (
+                              <p className={f.k === 'voice' ? 'text-gray-500 italic' : 'text-gray-700'}>
+                                {f.k === 'voice' ? `"${secData?.[f.k] || secData?.content || '—'}"` : (secData?.[f.k] || secData?.content || '—')}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             );
@@ -496,24 +594,75 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     </div>
   );
 
+  // History sidebar
+  const renderHistorySidebar = () => {
+    if (savedHistory.length === 0) return null;
+    return (
+      <div className={`bg-white rounded-2xl border border-gray-200 shadow-sm transition-all ${historyCollapsed ? 'p-3' : 'p-4'}`}>
+        <button onClick={() => setHistoryCollapsed(!historyCollapsed)}
+          className="w-full flex items-center justify-between gap-2 text-sm font-bold text-gray-600 hover:text-indigo-500 transition-colors">
+          <span className="flex items-center gap-2"><History size={16} /> Lịch sử ({savedHistory.length})</span>
+          {historyCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
+        {!historyCollapsed && (
+          <div className="mt-3 space-y-1.5 max-h-[50vh] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+            {savedHistory.slice(0, 20).map(idea => (
+              <button key={idea.id} onClick={() => { setResults(savedHistory); setScreen('f2.1.2'); }}
+                className="w-full text-left p-2 rounded-lg hover:bg-indigo-50 transition-colors group">
+                <p className="text-xs font-medium text-gray-700 truncate group-hover:text-indigo-600">{idea.title}</p>
+                <p className="text-[10px] text-gray-400">{idea.duration} · {new Date(idea.created_at).toLocaleDateString('vi-VN')}</p>
+              </button>
+            ))}
+            {savedHistory.length > 20 && <p className="text-[10px] text-gray-400 text-center pt-1">+{savedHistory.length - 20} ideas khác</p>}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={`p-6 sm:p-8 mx-auto transition-all duration-300 w-full ${currentScreen === 'f2.1.2' ? 'max-w-[95%]' : 'max-w-7xl'}`}>
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex items-center gap-4 mb-6">
         <button onClick={() => setScreen('f2')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400"><ArrowLeft /></button>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-800">Tạo Ý Tưởng <span className="text-gray-400 font-normal text-sm">/ {app.name}</span></h1>
-          <div className="flex items-center gap-2 mt-2">
-            {['f2.1', 'f2.1.1', 'f2.1.2'].map(s => (
-              <div key={s} className={`h-1 rounded-full transition-all duration-500 ${currentScreen === s ? 'w-10 bg-indigo-500' : 'w-6 bg-gray-200'}`} />
-            ))}
+          {/* Clickable step navigation */}
+          <div className="flex items-center gap-1 mt-2">
+            {STEPS.map((step, i) => {
+              const StepIcon = step.icon;
+              const isCurrent = currentScreen === step.id;
+              const isPast = i < currentStepIdx;
+              return (
+                <React.Fragment key={step.id}>
+                  {i > 0 && <ChevronRight size={14} className="text-gray-300 mx-0.5" />}
+                  <button onClick={() => setScreen(step.id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      isCurrent ? 'bg-indigo-100 text-indigo-700 shadow-sm' : isPast ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                    }`}>
+                    <StepIcon size={13} /> {step.label}
+                    {isPast && <Check size={12} className="text-emerald-500" />}
+                  </button>
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      <div className="w-full">
-        {currentScreen === 'f2.1' && renderFilterDashboard()}
-        {currentScreen === 'f2.1.1' && renderConfigScreen()}
-        {currentScreen === 'f2.1.2' && renderResult()}
+      <div className="flex gap-6">
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          {currentScreen === 'f2.1' && renderFilterDashboard()}
+          {currentScreen === 'f2.1.1' && renderConfigScreen()}
+          {currentScreen === 'f2.1.2' && renderResult()}
+        </div>
+
+        {/* History sidebar - always visible when not on results */}
+        {currentScreen !== 'f2.1.2' && savedHistory.length > 0 && (
+          <div className="w-72 flex-shrink-0 hidden xl:block">
+            {renderHistorySidebar()}
+          </div>
+        )}
       </div>
     </div>
   );
