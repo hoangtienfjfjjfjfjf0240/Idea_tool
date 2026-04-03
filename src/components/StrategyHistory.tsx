@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Copy, ChevronDown, ChevronUp, Trophy, XCircle, Eye, ArrowRight } from 'lucide-react';
 import type { AppProject } from '@/types/database';
 import { getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
@@ -13,23 +13,38 @@ const RESULT_CONFIG: Record<string, { label: string; color: string; bg: string; 
   none: { label: '—', color: 'text-gray-400', bg: 'bg-gray-100', icon: '' },
 };
 
-// Standalone dropdown — no hooks inside parent render
+// Standalone dropdown — fixed position to avoid parent clipping
 function ResultSelect({ value, onChange }: { value: ResultType; onChange: (v: ResultType) => void }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
   const cfg = RESULT_CONFIG[value || 'none'];
+
+  const handleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.right - 128 }); // 128 = dropdown width
+    }
+    setOpen(!open);
+  };
 
   return (
     <div className="relative">
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        ref={btnRef}
+        onClick={handleOpen}
         className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg w-full justify-center ${cfg.bg} ${cfg.color} hover:shadow-sm transition-all`}
       >
         {cfg.icon} {cfg.label} <ChevronDown size={10} />
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden w-32">
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed bg-white border border-gray-200 rounded-xl shadow-xl z-[9999] overflow-hidden w-32"
+            style={{ top: pos.top, left: pos.left }}
+          >
             {(['win', 'failed', 'monitoring', null] as ResultType[]).map(v => {
               const c = RESULT_CONFIG[v || 'none'];
               return (
