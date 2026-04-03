@@ -55,7 +55,7 @@ ${ideasBlock}
 [PSP] ${featureContext}
 [CORE USER] ${filters?.coreUser?.join(', ') || 'General'}
 [PAINPOINT] ${filters?.painPoint?.join(', ') || 'General'}
-[EMOTION] ${filters?.emotion?.join(', ') || 'General'}
+[EMOTION MỤC TIÊU — CẢM XÚC PHẢI TẠO RA CHO NGƯỜI XEM] ${filters?.emotion?.join(', ') || 'General'}
 [NGÔN NGỮ MỤC TIÊU] ${targetLang}
 [MÔ TẢ BỔ SUNG] ${config?.ideaDescription || 'Creative Freedom'}
 [SỐ LƯỢNG] ${quantity} ideas
@@ -63,8 +63,13 @@ ${ideasBlock}
 ═══════════════════════════════════════
 RULE #1: HOOK FORMULA (BẮT BUỘC)
 ═══════════════════════════════════════
-Hook = Nơi mà CORE USER cảm thấy EMOTION khi thấy PAINPOINT được thể hiện qua visual/text/voice.
-→ Hook KHÔNG giới thiệu app. Hook KỂ CHUYỆN về vấn đề của user.
+Hook = Visual/Text/Voice khiến NGƯỜI XEM (viewer) cảm thấy đúng EMOTION MỤC TIÊU khi nhìn thấy PAINPOINT của CORE USER.
+
+⚠️ PHÂN BIỆT QUAN TRỌNG:
+- EMOTION = cảm xúc hook tạo ra CHO NGƯỜI XEM khi xem video (VD: người xem phải cảm thấy SỢ HÃI, LO LẮNG, TÒ MÒ)
+- EMOTION ≠ cảm xúc của nhân vật trong video (nhân vật có thể bình thường, nhưng TÌNH HUỐNG phải khiến NGƯỜI XEM lo sợ)
+
+→ Hook KHÔNG giới thiệu app. Hook KỂ CHUYỆN tạo EMOTION cho viewer.
 → App chỉ xuất hiện ở BODY và CTA.
 
 ═══════════════════════════════════════
@@ -125,7 +130,7 @@ RULE #6: ANTI-TVC (KHÔNG vi phạm)
 ═══════════════════════════════════════
 CẤU TRÚC VIDEO ${duration}
 ═══════════════════════════════════════
-🎣 HOOK (3-5s): visual + text (3 options) + voice → TẠO EMOTION từ PAINPOINT
+🎣 HOOK (3-5s): visual + text (3 options) + voice → TẠO ĐÚNG EMOTION MỤC TIÊU CHO NGƯỜI XEM từ PAINPOINT
 📖 BODY (10-25s): visual + text + voice → DEMO PSP giải quyết Painpoint
 🔥 CTA (3-5s): voice + text + end card → KÊU GỌI HÀNH ĐỘNG
 
@@ -145,7 +150,7 @@ Voice + Text = ${targetLang} (cho production).
   "framework": {
     "coreUser": "Chân dung user cụ thể (tiếng Việt)",
     "painpoint": "Nỗi đau cụ thể (tiếng Việt)",
-    "emotion": "Cảm xúc hook tạo ra (tiếng Việt)",
+    "emotion": "Cảm xúc mà hook TẠO RA CHO NGƯỜI XEM — không phải cảm xúc nhân vật (tiếng Việt)",
     "psp": "Tính năng giải quyết (tiếng Việt)"
   },
   "explanation": "Tại sao idea hiệu quả + concept hook lấy cảm hứng từ đâu (tiếng Việt)",
