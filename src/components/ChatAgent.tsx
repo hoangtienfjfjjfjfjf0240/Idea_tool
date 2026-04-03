@@ -89,12 +89,11 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
             title: (item.title as string) || 'Ý tưởng AI',
             duration: (item.duration as string) || '30s',
             content: {
+              framework: (item.framework as IdeaContent['framework']) || { coreUser: '', painpoint: '', emotion: '', psp: '' },
               explanation: (item.explanation as string) || '',
               hook: (item.hook as IdeaContent['hook']) || { visual: '', text: '', voice: '' },
-              problem: (item.problem as IdeaContent['problem']) || { scenes: [] },
-              solution: (item.solution as IdeaContent['solution']) || { visual: '', voice: '', text: '' },
-              demo: (item.demo as IdeaContent['demo']) || { step1_prep: { visual: '' }, step2_action: { visual: '' }, step3_result: { visual: '', voice: '' } },
-              cta: (item.cta as IdeaContent['cta']) || { voice: '', text: '' },
+              body: (item.body as IdeaContent['body']) || { visual: '', text: '', voice: '' },
+              cta: (item.cta as IdeaContent['cta']) || { voice: '', text: '', endCard: '' },
             },
           }));
           savedIdeas = await dbService.saveIdeas(app.id, mapped);
