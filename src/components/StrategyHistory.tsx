@@ -34,7 +34,7 @@ function ResultSelect({ value, onChange }: { value: ResultType; onChange: (v: Re
       <button
         ref={btnRef}
         onClick={handleOpen}
-        className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg w-full justify-center ${cfg.bg} ${cfg.color} hover:shadow-sm transition-all`}
+        className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg w-full justify-center ${cfg.bg} ${cfg.color} hover:shadow-sm transition-all`}
       >
         {cfg.icon} {cfg.label} <ChevronDown size={10} />
       </button>
@@ -71,7 +71,7 @@ interface CombinationRow {
   ideas: any[];
 }
 
-export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> = ({ app, onBack }) => {
+export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; inline?: boolean }> = ({ app, onBack, inline = false }) => {
   const [sessions, setSessions] = useState<IdeaSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -90,26 +90,29 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
     })();
   }, [app.id]);
 
-  // Build combination rows
+  // Build combination rows — group by filters_snapshot (bộ lọc đã chọn ở bước 2)
   const rows = useMemo(() => {
     const map = new Map<string, CombinationRow>();
     sessions.forEach(session => {
-      const f = session.filters;
+      const f = session.filters as any;
       if (!f) return;
+
+      // Use filters_snapshot values (what user selected at step 2)
+      const cuArr = (f.coreUser || []) as string[];
+      const ppArr = (f.painPoint || []) as string[];
+      const emArr = (f.emotion || []) as string[];
+      const pspArr = (f.solution || []) as string[];
+
+      const cuLabel = cuArr.length > 0 ? cuArr.join(' + ') : 'Không rõ';
+      const ppLabel = ppArr.length > 0 ? ppArr.join(' + ') : 'Không rõ';
+      const emLabel = emArr.length > 0 ? emArr.join(' + ') : 'Không rõ';
+      const pspLabel = pspArr.length > 0 ? pspArr.join(' + ') : 'Không rõ';
+
+      const key = `${cuLabel}|||${ppLabel}|||${emLabel}|||${pspLabel}`;
+      if (!map.has(key)) map.set(key, { key, coreUser: cuLabel, painpoint: ppLabel, emotion: emLabel, psp: pspLabel, count: 0, ideas: [] });
+
+      // All ideas in this session share the same filter combination
       session.ideas.forEach(idea => {
-        const c = idea.content as any;
-        const cu = c?.framework?.coreUser || f.coreUser?.[0] || '';
-        const pp = c?.framework?.painpoint || f.painPoint?.[0] || '';
-        const em = c?.framework?.emotion || f.emotion?.[0] || '';
-        const psp = c?.framework?.psp || f.solution?.[0] || '';
-        // Skip legacy ideas with no framework data
-        if (!cu && !pp && !em && !psp) return;
-        const cuLabel = cu || 'Không rõ';
-        const ppLabel = pp || 'Không rõ';
-        const emLabel = em || 'Không rõ';
-        const pspLabel = psp || 'Không rõ';
-        const key = `${cuLabel}|||${ppLabel}|||${emLabel}|||${pspLabel}`;
-        if (!map.has(key)) map.set(key, { key, coreUser: cuLabel, painpoint: ppLabel, emotion: emLabel, psp: pspLabel, count: 0, ideas: [] });
         map.get(key)!.count++;
         map.get(key)!.ideas.push(idea);
       });
@@ -151,6 +154,7 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
   };
 
   if (loading) {
+    if (inline) return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-indigo-400" /></div>;
     return (
       <div className="p-8 max-w-7xl mx-auto">
         <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6"><ArrowLeft size={18} /> Quay lại</button>
@@ -162,19 +166,23 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
   const gridCols = 'grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)_16px_minmax(0,1fr)_16px_minmax(0,1fr)_36px_80px]';
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto animate-in fade-in duration-500">
-      <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6"><ArrowLeft size={18} /> Quay lại</button>
+    <div className={inline ? 'animate-in fade-in duration-300' : 'p-6 md:p-8 max-w-7xl mx-auto animate-in fade-in duration-500'}>
+      {!inline && (
+        <>
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6"><ArrowLeft size={18} /> Quay lại</button>
 
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center bg-gray-50">
-          {app.icon_url.startsWith('http') ? <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover" /> : <span className="text-3xl">{app.icon_url}</span>}
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">📊 Plan Overview</h1>
-          <p className="text-sm text-gray-500">{app.name} — {sessions.length} phiên · {stats.totalIdeas} ideas · {rows.length} bộ kết hợp</p>
-        </div>
-      </div>
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center bg-gray-50">
+              {app.icon_url.startsWith('http') ? <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover" /> : <span className="text-3xl">{app.icon_url}</span>}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">📊 Plan Overview</h1>
+              <p className="text-sm text-gray-500">{app.name} — {sessions.length} phiên · {stats.totalIdeas} ideas · {rows.length} bộ kết hợp</p>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-7 gap-2 mb-8">
@@ -201,15 +209,15 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
 
         {/* Header */}
         <div className={`grid ${gridCols} gap-1 mb-2 px-2`}>
-          <span className="text-[9px] font-bold text-blue-500 uppercase text-center bg-blue-50 py-1 rounded-full">👤 Core User</span>
+          <span className="text-[11px] font-bold text-blue-500 uppercase text-center bg-blue-50 py-1.5 rounded-full">👤 Core User</span>
           <span />
-          <span className="text-[9px] font-bold text-red-500 uppercase text-center bg-red-50 py-1 rounded-full">💔 Painpoint</span>
+          <span className="text-[11px] font-bold text-red-500 uppercase text-center bg-red-50 py-1.5 rounded-full">💔 Painpoint</span>
           <span />
-          <span className="text-[9px] font-bold text-purple-500 uppercase text-center bg-purple-50 py-1 rounded-full">😱 Emotion</span>
+          <span className="text-[11px] font-bold text-purple-500 uppercase text-center bg-purple-50 py-1.5 rounded-full">😱 Emotion</span>
           <span />
-          <span className="text-[9px] font-bold text-emerald-500 uppercase text-center bg-emerald-50 py-1 rounded-full">💊 PSP</span>
-          <span className="text-[9px] font-bold text-gray-400 uppercase text-center">SL</span>
-          <span className="text-[9px] font-bold text-gray-400 uppercase text-center">Kết quả</span>
+          <span className="text-[11px] font-bold text-emerald-500 uppercase text-center bg-emerald-50 py-1.5 rounded-full">💊 PSP</span>
+          <span className="text-[11px] font-bold text-gray-400 uppercase text-center">SL</span>
+          <span className="text-[11px] font-bold text-gray-400 uppercase text-center">Kết quả</span>
         </div>
 
         {/* Rows */}
@@ -220,13 +228,13 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
 
             return (
               <div key={row.key} style={{ overflow: 'visible' }}>
-                <div style={{ overflow: 'visible' }} className={`grid ${gridCols} gap-1 items-center px-2 py-1.5 rounded-xl border transition-all cursor-pointer ${
+                <div style={{ overflow: 'visible' }} className={`grid ${gridCols} gap-1 items-center px-3 py-2.5 rounded-xl border transition-all cursor-pointer ${
                   isOpen ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'
                 }`}>
                   {/* CU */}
                   <div onClick={() => setExpandedRow(isOpen ? null : row.key)}
-                    className={`rounded-lg px-2 py-1 border overflow-hidden ${isOpen ? 'bg-blue-100 border-blue-200' : 'bg-blue-50/60 border-blue-100/80'}`}>
-                    <p className="text-[10px] font-medium text-gray-700 truncate" title={row.coreUser}>{row.coreUser}</p>
+                    className={`rounded-lg px-3 py-2 border overflow-hidden ${isOpen ? 'bg-blue-100 border-blue-200' : 'bg-blue-50/60 border-blue-100/80'}`}>
+                    <p className="text-xs font-medium text-gray-700 truncate" title={row.coreUser}>{row.coreUser}</p>
                   </div>
                   <div className="flex justify-center" onClick={() => setExpandedRow(isOpen ? null : row.key)}>
                     <ArrowRight size={12} className={isOpen ? 'text-indigo-400' : 'text-gray-300'} strokeWidth={2.5} />
@@ -234,8 +242,8 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
 
                   {/* PP */}
                   <div onClick={() => setExpandedRow(isOpen ? null : row.key)}
-                    className={`rounded-lg px-2 py-1 border overflow-hidden ${isOpen ? 'bg-red-100 border-red-200' : 'bg-red-50/60 border-red-100/80'}`}>
-                    <p className="text-[10px] font-medium text-gray-700 truncate" title={row.painpoint}>{row.painpoint}</p>
+                    className={`rounded-lg px-3 py-2 border overflow-hidden ${isOpen ? 'bg-red-100 border-red-200' : 'bg-red-50/60 border-red-100/80'}`}>
+                    <p className="text-xs font-medium text-gray-700 truncate" title={row.painpoint}>{row.painpoint}</p>
                   </div>
                   <div className="flex justify-center" onClick={() => setExpandedRow(isOpen ? null : row.key)}>
                     <ArrowRight size={12} className={isOpen ? 'text-indigo-400' : 'text-gray-300'} strokeWidth={2.5} />
@@ -243,8 +251,8 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
 
                   {/* EM */}
                   <div onClick={() => setExpandedRow(isOpen ? null : row.key)}
-                    className={`rounded-lg px-2 py-1 border overflow-hidden ${isOpen ? 'bg-purple-100 border-purple-200' : 'bg-purple-50/60 border-purple-100/80'}`}>
-                    <p className="text-[10px] font-medium text-gray-700 truncate" title={row.emotion}>{row.emotion}</p>
+                    className={`rounded-lg px-3 py-2 border overflow-hidden ${isOpen ? 'bg-purple-100 border-purple-200' : 'bg-purple-50/60 border-purple-100/80'}`}>
+                    <p className="text-xs font-medium text-gray-700 truncate" title={row.emotion}>{row.emotion}</p>
                   </div>
                   <div className="flex justify-center" onClick={() => setExpandedRow(isOpen ? null : row.key)}>
                     <ArrowRight size={12} className={isOpen ? 'text-indigo-400' : 'text-gray-300'} strokeWidth={2.5} />
@@ -252,13 +260,13 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void }> 
 
                   {/* PSP */}
                   <div onClick={() => setExpandedRow(isOpen ? null : row.key)}
-                    className={`rounded-lg px-2 py-1 border overflow-hidden ${isOpen ? 'bg-emerald-100 border-emerald-200' : 'bg-emerald-50/60 border-emerald-100/80'}`}>
-                    <p className="text-[10px] font-medium text-gray-700 truncate" title={row.psp}>{row.psp}</p>
+                    className={`rounded-lg px-3 py-2 border overflow-hidden ${isOpen ? 'bg-emerald-100 border-emerald-200' : 'bg-emerald-50/60 border-emerald-100/80'}`}>
+                    <p className="text-xs font-medium text-gray-700 truncate" title={row.psp}>{row.psp}</p>
                   </div>
 
                   {/* Count */}
                   <div className="text-center" onClick={() => setExpandedRow(isOpen ? null : row.key)}>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isOpen ? 'bg-indigo-200 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>{row.count}</span>
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${isOpen ? 'bg-indigo-200 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>{row.count}</span>
                   </div>
 
                   {/* Result */}

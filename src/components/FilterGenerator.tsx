@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, ChevronDown, ChevronUp, Save, History } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import * as dbService from '@/lib/db';
 
@@ -15,11 +15,12 @@ const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementTyp
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
   { id: 'solution', label: 'Tính năng / Giải pháp', icon: Lightbulb },
   { id: 'emotion', label: 'Cảm xúc', icon: Target },
+  { id: 'visualType', label: 'Dạng Visual', icon: Video },
 ];
 
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen }) => {
-  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [] });
-  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [] });
+  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [] });
+  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [] });
   const [newItem, setNewItem] = useState<{ cat: keyof FilterState | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -35,7 +36,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [showHistory, setShowHistory] = useState(false);
   const [editingIdea, setEditingIdea] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState<any>(null);
-  const [historyCollapsed, setHistoryCollapsed] = useState(false);
 
   useEffect(() => {
     loadOptions();
@@ -78,13 +78,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const handleDeleteOption = async (category: keyof FilterState, item: string) => {
-    if (!window.confirm(`Xóa mục "${item}"?`)) return;
-    // Persist deletion to DB
-    await dbService.deleteFilterOptionByValue(app.id, category, item);
+    // Immediately update UI
     setOptions(prev => ({ ...prev, [category]: prev[category].filter(i => i !== item) }));
     if (filters[category].includes(item)) {
       setFilters(prev => ({ ...prev, [category]: prev[category].filter(i => i !== item) }));
     }
+    // Persist deletion to DB
+    const ok = await dbService.deleteFilterOptionByValue(app.id, category, item);
+    console.log(`Delete filter option [${category}] "${item}":`, ok ? 'success' : 'failed');
   };
 
   const handleUpdateOption = (category: keyof FilterState, oldItem: string, newItemText: string) => {
@@ -148,7 +149,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           appName: app.name,
           appCategory: app.category,
           filters,
-          config: { quantity, duration, ideaDescription },
+          config: { quantity, duration, ideaDescription, visualType: filters.visualType?.join(', ') || 'UGC (Người thật)' },
           previousIdeas: previousIdeasSummary || null,
           appKnowledge: app.app_knowledge || null,
         }),
@@ -426,6 +427,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             </div>
           </div>
 
+
           <div className="mb-8">
             <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><FileEdit size={14} /> Mô tả ý tưởng (Tùy chọn)</label>
             <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)}
@@ -594,31 +596,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     </div>
   );
 
-  // History sidebar
-  const renderHistorySidebar = () => {
-    if (savedHistory.length === 0) return null;
-    return (
-      <div className={`bg-white rounded-2xl border border-gray-200 shadow-sm transition-all ${historyCollapsed ? 'p-3' : 'p-4'}`}>
-        <button onClick={() => setHistoryCollapsed(!historyCollapsed)}
-          className="w-full flex items-center justify-between gap-2 text-sm font-bold text-gray-600 hover:text-indigo-500 transition-colors">
-          <span className="flex items-center gap-2"><History size={16} /> Lịch sử ({savedHistory.length})</span>
-          {historyCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </button>
-        {!historyCollapsed && (
-          <div className="mt-3 space-y-1.5 max-h-[50vh] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-            {savedHistory.slice(0, 20).map(idea => (
-              <button key={idea.id} onClick={() => { setResults(savedHistory); setScreen('f2.1.2'); }}
-                className="w-full text-left p-2 rounded-lg hover:bg-indigo-50 transition-colors group">
-                <p className="text-xs font-medium text-gray-700 truncate group-hover:text-indigo-600">{idea.title}</p>
-                <p className="text-[10px] text-gray-400">{idea.duration} · {new Date(idea.created_at).toLocaleDateString('vi-VN')}</p>
-              </button>
-            ))}
-            {savedHistory.length > 20 && <p className="text-[10px] text-gray-400 text-center pt-1">+{savedHistory.length - 20} ideas khác</p>}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className={`p-6 sm:p-8 mx-auto transition-all duration-300 w-full ${currentScreen === 'f2.1.2' ? 'max-w-[95%]' : 'max-w-7xl'}`}>
@@ -649,20 +626,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         </div>
       </div>
 
-      <div className="flex gap-6">
-        {/* Main content */}
-        <div className="flex-1 min-w-0">
-          {currentScreen === 'f2.1' && renderFilterDashboard()}
-          {currentScreen === 'f2.1.1' && renderConfigScreen()}
-          {currentScreen === 'f2.1.2' && renderResult()}
-        </div>
-
-        {/* History sidebar - always visible when not on results */}
-        {currentScreen !== 'f2.1.2' && savedHistory.length > 0 && (
-          <div className="w-72 flex-shrink-0 hidden xl:block">
-            {renderHistorySidebar()}
-          </div>
-        )}
+      {/* Main content */}
+      <div className="flex-1 min-w-0">
+        {currentScreen === 'f2.1' && renderFilterDashboard()}
+        {currentScreen === 'f2.1.1' && renderConfigScreen()}
+        {currentScreen === 'f2.1.2' && renderResult()}
       </div>
     </div>
   );

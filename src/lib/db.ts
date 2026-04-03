@@ -52,6 +52,17 @@ const GLOBAL_VIDEO_STRUCTURE = [
   'Phong cách Đời thường (UGC)'
 ];
 
+const GLOBAL_VISUAL_TYPES = [
+  'UGC (Người thật)',
+  'Screen Recording',
+  'Green Screen',
+  '2D Motion Graphics',
+  '3D Render',
+  'Mixed Media',
+  'ASMR',
+  'Trend Format',
+];
+
 // ============================================
 //  APPS
 // ============================================
@@ -322,6 +333,7 @@ export async function getFilterOptions(app: AppProject): Promise<Record<keyof Fi
     solution: featureNames.length ? featureNames : (customOptions.solution || []),
     emotion: customOptions.emotion?.length ? customOptions.emotion : (categorySeeds.emotion || []),
     videoStructure: GLOBAL_VIDEO_STRUCTURE,
+    visualType: customOptions.visualType?.length ? customOptions.visualType : GLOBAL_VISUAL_TYPES,
   };
 }
 
@@ -428,5 +440,5 @@ export async function deleteFilterOptionByValue(appId: string, category: string,
   return true;
 }
 
-export { CATEGORY_SEEDS, GLOBAL_VIDEO_STRUCTURE };
+export { CATEGORY_SEEDS, GLOBAL_VIDEO_STRUCTURE, GLOBAL_VISUAL_TYPES };
 

@@ -100,6 +100,7 @@ export interface FilterState {
   solution: string[];
   emotion: string[];
   videoStructure: string[];
+  visualType: string[];
 }
 
 export type ScreenType =

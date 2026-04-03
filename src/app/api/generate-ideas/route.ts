@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     const featureContext = filters?.solution?.length ? filters.solution.join(', ') : "General App Features";
     const quantity = config?.quantity || 3;
     const duration = config?.duration || '30s';
+    const visualType = config?.visualType || 'UGC (Người thật)';
     const targetLang = detectLang(filters?.coreUser);
 
     // Truncate knowledge to avoid prompt overflow
@@ -56,6 +57,7 @@ ${ideasBlock}
 [CORE USER] ${filters?.coreUser?.join(', ') || 'General'}
 [PAINPOINT] ${filters?.painPoint?.join(', ') || 'General'}
 [EMOTION MỤC TIÊU — CẢM XÚC PHẢI TẠO RA CHO NGƯỜI XEM] ${filters?.emotion?.join(', ') || 'General'}
+[DẠNG VISUAL] ${visualType}
 [NGÔN NGỮ MỤC TIÊU] ${targetLang}
 [MÔ TẢ BỔ SUNG] ${config?.ideaDescription || 'Creative Freedom'}
 [SỐ LƯỢNG] ${quantity} ideas
@@ -75,6 +77,17 @@ Hook = Visual/Text/Voice khiến NGƯỜI XEM (viewer) cảm thấy đúng EMOTI
 ═══════════════════════════════════════
 RULE #2: VISUAL — Mô tả CHI TIẾT cho Production
 ═══════════════════════════════════════
+⚠️ DẠNG VISUAL BẮT BUỘC: ${visualType}
+→ Mọi visual PHẢI tuân theo dạng "${visualType}" đã chọn:
+• UGC (Người thật): Quay bằng điện thoại, góc selfie/handheld, ánh sáng tự nhiên, setting đời thường
+• Screen Recording: Quay màn hình điện thoại/tablet, finger tap, highlight tính năng app
+• Green Screen: Người thật đứng/ngồi trước nền xanh, background đồ họa/gradient
+• 2D Motion Graphics: Icon animated, infographic, text animation, flat design, không có người
+• 3D Render: Mockup điện thoại 3D xoay, UI float, hiệu ứng nổi, không có người
+• Mixed Media: Kết hợp cảnh quay thật + overlay đồ họa 2D/3D + text animation
+• ASMR: Cận cảnh extreme close-up, âm thanh thỏa mãn (tap, swipe, click), chậm rãi, không voice-over, focus vào hành động tay + màn hình
+• Trend Format: Theo format viral TikTok đang hot (CapCut template, trending sound, meme format, duet style)
+
 Visual PHẢI ghi rõ (đến mức editor đọc xong biết quay gì):
 ✅ Ai: bao nhiêu người, giới tính, tuổi, trang phục, ngoại hình cụ thể
 ✅ Ở đâu: bối cảnh chi tiết (phòng bếp kiểu US, tiệm nail hiện đại, sân bóng rổ...)

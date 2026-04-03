@@ -161,6 +161,7 @@ export default function Home() {
       {/* Global Chat Agent - always visible */}
       {selectedApp && (
         <ChatAgent
+          key={selectedApp.id}
           app={selectedApp}
           appContext={{
             name: selectedApp.name,

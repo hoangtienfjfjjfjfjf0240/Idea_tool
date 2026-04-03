@@ -37,7 +37,7 @@ const QUICK_PROMPTS = [
 ];
 
 export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGenerated, onOpenIdeas }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);

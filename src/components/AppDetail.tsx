@@ -1,8 +1,19 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3 } from 'lucide-react';
-import type { AppProject, Feature, SyncLog } from '@/types/database';
-import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs } from '@/lib/db';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles } from 'lucide-react';
+import type { AppProject, Feature, SyncLog, ScreenType } from '@/types/database';
+import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
+import { StrategyHistory } from '@/components/StrategyHistory';
+
+type AppTab = 'overview' | 'ideas' | 'hooks' | 'brain' | 'config';
+
+const TABS: { id: AppTab; label: string; icon: React.ElementType }[] = [
+  { id: 'overview', label: 'Overview', icon: BarChart3 },
+  { id: 'ideas', label: 'Tạo Ý Tưởng', icon: Lightbulb },
+  { id: 'hooks', label: 'Thư Viện Hook', icon: Film },
+  { id: 'brain', label: 'AI Brain', icon: Brain },
+  { id: 'config', label: 'Cấu hình', icon: Settings },
+];
 
 interface AppDetailProps {
   app: AppProject;
@@ -12,6 +23,7 @@ interface AppDetailProps {
 }
 
 export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, onAppUpdated }) => {
+  const [activeTab, setActiveTab] = useState<AppTab>('overview');
   const [features, setFeatures] = useState<Feature[]>([]);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +33,13 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
   const [editingFeature, setEditingFeature] = useState<Feature | null>(null);
   const [syncing, setSyncing] = useState(false);
 
+  // Quick stats
+  const [sessions, setSessions] = useState<IdeaSession[]>([]);
+  const [statsLoading, setStatsLoading] = useState(true);
+
   useEffect(() => {
     loadData();
+    loadStats();
   }, [app.id]);
 
   const loadData = async () => {
@@ -34,6 +51,26 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
     setSyncLogs(logs);
     setLoading(false);
   };
+
+  const loadStats = async () => {
+    setStatsLoading(true);
+    try {
+      const data = await getIdeaSessions(app.id);
+      setSessions(data);
+    } catch { /* ignore */ }
+    setStatsLoading(false);
+  };
+
+  const stats = useMemo(() => {
+    let totalIdeas = 0, wins = 0, failed = 0;
+    sessions.forEach(s => s.ideas.forEach((i: any) => {
+      totalIdeas++;
+      if (i.result === 'win') wins++;
+      if (i.result === 'failed') failed++;
+    }));
+    const winRate = totalIdeas > 0 ? Math.round((wins / totalIdeas) * 100) : 0;
+    return { totalIdeas, wins, failed, winRate, sessions: sessions.length };
+  }, [sessions]);
 
   const handleAddFeature = async () => {
     if (!featureName.trim()) return;
@@ -63,110 +100,122 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
     setSyncing(false);
   };
 
-  return (
-    <div className="p-6 md:p-8 max-w-4xl mx-auto animate-in fade-in duration-500">
-      {/* Header */}
-      <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6 transition-colors">
-        <ArrowLeft size={18} /> Quay lại
-      </button>
+  const handleTabClick = (tab: AppTab) => {
+    setActiveTab(tab);
+    // For ideas and hooks, navigate to the existing full-screen components
+    if (tab === 'ideas') {
+      onNavigate('f2.1');
+      return;
+    }
+    if (tab === 'hooks') {
+      onNavigate('f2.2');
+      return;
+    }
+  };
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8 mb-6">
-        <div className="flex items-start gap-6">
-          <div className="w-24 h-24 rounded-2xl overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center bg-gray-50">
-            {app.icon_url.startsWith('http') ? (
-              <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-5xl">{app.icon_url}</span>
-            )}
+  // =====================
+  //  TAB: Overview
+  // =====================
+  const renderOverview = () => (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { n: stats.totalIdeas, label: 'Tổng Ideas', icon: '💡', bg: 'from-blue-50 to-indigo-50', border: 'border-blue-100', text: 'text-blue-600' },
+          { n: stats.wins, label: 'Winning', icon: '🏆', bg: 'from-emerald-50 to-green-50', border: 'border-emerald-100', text: 'text-emerald-600' },
+          { n: `${stats.winRate}%`, label: 'Win Rate', icon: '📈', bg: 'from-purple-50 to-violet-50', border: 'border-purple-100', text: 'text-purple-600' },
+          { n: stats.sessions, label: 'Phiên', icon: '📊', bg: 'from-amber-50 to-orange-50', border: 'border-amber-100', text: 'text-amber-600' },
+        ].map(s => (
+          <div key={s.label} className={`bg-gradient-to-br ${s.bg} border ${s.border} rounded-2xl p-4 text-center`}>
+            <span className="text-lg">{s.icon}</span>
+            <p className={`text-2xl font-bold ${s.text} mt-1`}>{statsLoading ? '…' : s.n}</p>
+            <p className="text-xs text-gray-500 font-medium mt-1">{s.label}</p>
           </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900">{app.name}</h1>
-              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full uppercase tracking-wider">{app.category}</span>
-            </div>
-            {app.store_link && (
-              <a href={app.store_link} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-500 hover:underline break-all">
-                {app.store_link}
-              </a>
-            )}
-            {app.last_synced_at && (
-              <p className="text-xs text-gray-400 mt-2">
-                Đồng bộ lần cuối: {new Date(app.last_synced_at).toLocaleString('vi-VN')}
-              </p>
-            )}
-          </div>
-          {app.store_link && (
-            <button onClick={handleManualSync} disabled={syncing}
-              className="px-4 py-2 text-sm bg-green-50 text-green-600 border border-green-100 rounded-xl hover:bg-green-100 transition-colors flex items-center gap-2 disabled:opacity-50">
-              <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-              {syncing ? 'Đang sync...' : 'Sync Now'}
-            </button>
-          )}
-        </div>
+        ))}
       </div>
 
-      {/* Action Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      {/* Quick Actions — Hero Buttons */}
+      <div className="grid grid-cols-2 gap-4">
         <button onClick={() => onNavigate('f2.1')}
-          className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-2xl p-6 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all group">
-          <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <Lightbulb className="text-amber-600" size={24} />
-          </div>
-          <h3 className="font-bold text-gray-800 text-lg mb-1">Tạo Ý Tưởng</h3>
-          <p className="text-sm text-gray-500">Filter → Generate → Kịch bản chi tiết</p>
-        </button>
-        <button onClick={() => onNavigate('f2.3')}
-          className="bg-gradient-to-br from-sky-50 to-indigo-50 border border-sky-100 rounded-2xl p-6 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all group">
-          <div className="w-12 h-12 bg-sky-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <BarChart3 className="text-sky-600" size={24} />
-          </div>
-          <h3 className="font-bold text-gray-800 text-lg mb-1">Plan Overview</h3>
-          <p className="text-sm text-gray-500">Biểu đồ Painpoint · Emotion · PSP</p>
+          className="bg-gradient-to-r from-pink-500 via-rose-500 to-orange-500 text-white px-6 py-5 rounded-2xl font-extrabold text-lg hover:shadow-xl hover:shadow-orange-200 hover:scale-[1.02] transition-all flex items-center justify-center gap-3 group">
+          <Sparkles size={24} className="group-hover:animate-pulse" /> Tạo Ý Tưởng Mới
         </button>
         <button onClick={() => onNavigate('f2.2')}
-          className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100 rounded-2xl p-6 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all group">
-          <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            <Film className="text-purple-600" size={24} />
-          </div>
-          <h3 className="font-bold text-gray-800 text-lg mb-1">Thư Viện Hook</h3>
-          <p className="text-sm text-gray-500">Quản lý & phân tích các Winning Hook</p>
+          className="bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500 text-white px-6 py-5 rounded-2xl font-extrabold text-lg hover:shadow-xl hover:shadow-indigo-200 hover:scale-[1.02] transition-all flex items-center justify-center gap-3 group">
+          <Film size={24} className="group-hover:animate-pulse" /> Thư Viện Hook
         </button>
       </div>
 
-      {/* AI Brain Status */}
-      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl p-6 mb-8">
-        <div className="flex items-center justify-between mb-3">
+      {/* Strategy History / Plan Overview — inline */}
+      <StrategyHistory app={app} onBack={() => {}} inline />
+    </div>
+  );
+
+  // =====================
+  //  TAB: AI Brain
+  // =====================
+  const renderBrain = () => (
+    <div className="space-y-4 animate-in fade-in duration-300">
+      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-              <span className="text-xl">🧠</span>
+            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
+              <span className="text-2xl">🧠</span>
             </div>
             <div>
-              <h3 className="font-bold text-gray-800">Bộ Não AI</h3>
-              <p className="text-xs text-gray-500">
+              <h3 className="font-bold text-gray-800 text-lg">Bộ Não AI</h3>
+              <p className="text-sm text-gray-500">
                 {app.app_knowledge ? 'Đã học — AI hiểu app của bạn' : 'Chưa học — Gen ideas để AI bắt đầu học'}
               </p>
             </div>
           </div>
-          <div className={`px-3 py-1 rounded-full text-xs font-semibold ${app.app_knowledge ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+          <div className={`px-4 py-1.5 rounded-full text-sm font-semibold ${app.app_knowledge ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
             {app.app_knowledge ? '✅ Active' : '⏹ Empty'}
           </div>
         </div>
-        {app.app_knowledge && (
-          <details className="mt-2">
-            <summary className="text-sm text-emerald-600 cursor-pointer hover:text-emerald-800 font-medium">
-              Xem kiến thức AI đã học →
-            </summary>
-            <div className="mt-3 p-4 bg-white/70 rounded-xl text-sm text-gray-600 whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">
-              {app.app_knowledge}
-            </div>
-          </details>
+        {app.app_knowledge ? (
+          <div className="p-4 bg-white/70 rounded-xl text-sm text-gray-600 whitespace-pre-wrap max-h-96 overflow-y-auto leading-relaxed border border-emerald-100">
+            {app.app_knowledge}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400">
+            <p className="text-sm">AI chưa có kiến thức về app này.</p>
+            <p className="text-xs mt-1">Tạo ý tưởng để AI bắt đầu học và cải thiện kết quả.</p>
+          </div>
         )}
       </div>
+    </div>
+  );
+
+  // =====================
+  //  TAB: Cấu hình
+  // =====================
+  const renderConfig = () => (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Sync info */}
+      {app.store_link && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-gray-700">Store Link</h3>
+            <button onClick={handleManualSync} disabled={syncing}
+              className="px-4 py-2 text-sm bg-green-50 text-green-600 border border-green-100 rounded-xl hover:bg-green-100 transition-colors flex items-center gap-2 disabled:opacity-50">
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
+          <a href={app.store_link} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-500 hover:underline break-all">
+            {app.store_link}
+          </a>
+          {app.last_synced_at && (
+            <p className="text-xs text-gray-400 mt-2">Sync lần cuối: {new Date(app.last_synced_at).toLocaleString('vi-VN')}</p>
+          )}
+        </div>
+      )}
 
       {/* Features */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold text-gray-800">Tính năng ({features.length})</h2>
+          <h3 className="font-bold text-gray-700 text-lg">Tính năng ({features.length})</h3>
           <button onClick={() => { setEditingFeature(null); setFeatureName(''); setFeatureDesc(''); setShowFeatureModal(true); }}
             className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1">
             <Plus size={16} /> Thêm
@@ -177,9 +226,9 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
         ) : features.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-8">Chưa có tính năng nào. Thêm thủ công hoặc quét từ Store.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {features.map(f => (
-              <div key={f.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl group">
+              <div key={f.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl group hover:bg-gray-100 transition-colors">
                 <div className="flex-1">
                   <h4 className="font-medium text-gray-800 text-sm">{f.name}</h4>
                   {f.description && <p className="text-xs text-gray-500 mt-0.5">{f.description}</p>}
@@ -196,8 +245,8 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
 
       {/* Sync Logs */}
       {syncLogs.length > 0 && (
-        <div className="mt-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">Lịch sử Sync</h2>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <h3 className="font-bold text-gray-700 mb-3">Lịch sử Sync</h3>
           <div className="space-y-2">
             {syncLogs.map(log => (
               <div key={log.id} className="flex items-center gap-3 p-2 text-sm">
@@ -211,6 +260,78 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
           </div>
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <div className="p-6 md:p-8 max-w-6xl mx-auto animate-in fade-in duration-500">
+      {/* Back */}
+      <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-4 transition-colors">
+        <ArrowLeft size={18} /> Quay lại
+      </button>
+
+      {/* App Header — compact */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-0">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center bg-gray-50">
+            {app.icon_url.startsWith('http') ? (
+              <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-4xl">{app.icon_url}</span>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold text-gray-900 truncate">{app.name}</h1>
+              <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full uppercase tracking-wider flex-shrink-0">{app.category}</span>
+            </div>
+            {app.store_link && (
+              <p className="text-xs text-gray-400 truncate mt-1">{app.store_link}</p>
+            )}
+          </div>
+          {app.store_link && (
+            <button onClick={handleManualSync} disabled={syncing}
+              className="px-4 py-2 text-sm bg-green-50 text-green-600 border border-green-100 rounded-xl hover:bg-green-100 transition-colors flex items-center gap-2 disabled:opacity-50 flex-shrink-0">
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing...' : 'Sync'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="bg-white border border-gray-100 border-t-0 rounded-b-2xl shadow-sm px-2 mb-6">
+        <div className="flex gap-1">
+          {TABS.map(tab => {
+            const TabIcon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={() => handleTabClick(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all border-b-2 ${
+                  isActive
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-400 hover:text-gray-600 hover:border-gray-200'
+                }`}>
+                <TabIcon size={16} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tab Content — all tabs stay mounted, hidden via CSS for instant switching */}
+      <div>
+        <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
+          {renderOverview()}
+        </div>
+        <div style={{ display: activeTab === 'brain' ? 'block' : 'none' }}>
+          {renderBrain()}
+        </div>
+        <div style={{ display: activeTab === 'config' ? 'block' : 'none' }}>
+          {renderConfig()}
+        </div>
+      </div>
 
       {/* Feature Modal */}
       {showFeatureModal && (
