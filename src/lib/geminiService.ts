@@ -104,7 +104,7 @@ You are a Senior Performance Marketing Creative Strategist.
 3. USER CONTEXT: "${config.ideaDescription || "Creative Freedom"}" 
 4. Target Audience: ${filters.coreUser?.join(', ') || "General"}
 5. Pain Points: ${filters.painPoint?.join(', ') || "General"}
-6. Motivation: ${filters.motivation?.join(', ') || "General"}
+6. Emotion: ${filters.emotion?.join(', ') || "General"}
 7. REQUIRED QUANTITY: ${config.quantity}
 
 [OBJECTIVE]
