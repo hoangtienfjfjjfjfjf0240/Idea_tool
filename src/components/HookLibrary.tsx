@@ -642,8 +642,66 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             <textarea value={modifyPrompt} onChange={e => setModifyPrompt(e.target.value)}
               className="w-full h-32 resize-none px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
               placeholder={`VD: Kết hợp hook "${selectedHook?.title}" với:\n- Nỗi sợ đột quỵ lúc ngủ\n- Target phụ nữ 30-40 tuổi\n- Phong cách UGC`} />
+
+            {/* Smart Suggestions — auto-generated from hook analysis */}
+            {selectedHook && (() => {
+              const suggestions: { emoji: string; label: string; prompt: string; color: string }[] = [];
+              // From hook framework data
+              if (selectedHook.core_user) {
+                suggestions.push({ emoji: '👤', label: `Target: ${selectedHook.core_user}`, prompt: `Target ${selectedHook.core_user}`, color: '#6366f1' });
+                // Suggest a different target
+                const altTargets = ['Phụ nữ 25-35, Social Media', 'Nam 18-25, Gamer', 'Người già 55+, lowtech', 'Gen Z, Lifestyle'];
+                const current = selectedHook.core_user.toLowerCase();
+                const alt = altTargets.find(t => !current.includes(t.split(',')[0].toLowerCase()));
+                if (alt) suggestions.push({ emoji: '🔄', label: `Đổi target: ${alt}`, prompt: `Đổi target sang ${alt}`, color: '#8b5cf6' });
+              }
+              if (selectedHook.painpoint) {
+                suggestions.push({ emoji: '💔', label: selectedHook.painpoint, prompt: `Nỗi đau: ${selectedHook.painpoint}`, color: '#ef4444' });
+                // Suggest related painpoints
+                suggestions.push({ emoji: '😰', label: 'Kết hợp nỗi sợ mất dữ liệu', prompt: 'Kết hợp thêm nỗi sợ mất dữ liệu quan trọng', color: '#f97316' });
+              }
+              if (selectedHook.emotion) {
+                suggestions.push({ emoji: '😱', label: `Cảm xúc: ${selectedHook.emotion}`, prompt: `Cảm xúc chủ đạo: ${selectedHook.emotion}`, color: '#eab308' });
+              }
+              if (selectedHook.creative_type) {
+                suggestions.push({ emoji: '🎬', label: selectedHook.creative_type, prompt: `Phong cách: ${selectedHook.creative_type}`, color: '#10b981' });
+              }
+              // Generic smart suggestions
+              suggestions.push(
+                { emoji: '📱', label: 'Phong cách UGC', prompt: 'Phong cách UGC (Người thật quay)', color: '#06b6d4' },
+                { emoji: '🔥', label: 'Hook viral TikTok', prompt: 'Twist hook theo trend viral TikTok hiện tại', color: '#f43f5e' },
+                { emoji: '⚡', label: 'Tăng urgency', prompt: 'Tăng cảm giác cấp bách, FOMO, phải hành động ngay', color: '#f59e0b' },
+                { emoji: '🎯', label: 'A/B Test angle', prompt: 'Tạo biến thể A/B test với góc tiếp cận hoàn toàn khác', color: '#8b5cf6' },
+              );
+
+              return (
+                <div className="mt-3 mb-1">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1.5">
+                    <Sparkles size={10} className="text-amber-500" /> Gợi ý nhanh từ phân tích
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestions.map((s, i) => (
+                      <button key={i}
+                        onClick={() => setModifyPrompt(prev => prev ? `${prev}\n- ${s.prompt}` : `Kết hợp hook "${selectedHook.title}" với:\n- ${s.prompt}`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all hover:scale-105 hover:shadow-sm"
+                        style={{
+                          borderColor: `${s.color}30`,
+                          background: `${s.color}08`,
+                          color: s.color,
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = `${s.color}15`; e.currentTarget.style.borderColor = `${s.color}50`; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = `${s.color}08`; e.currentTarget.style.borderColor = `${s.color}30`; }}
+                      >
+                        <span>{s.emoji}</span> {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <button onClick={handleGenerate} disabled={isLoading || !modifyPrompt}
-              className="w-full mt-4 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-xl hover:shadow-lg font-bold disabled:opacity-50 transition-all text-sm">
+              className="w-full mt-3 flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-xl hover:shadow-lg font-bold disabled:opacity-50 transition-all text-sm">
               {isLoading ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />}
               {isLoading ? 'Đang Sáng Tạo...' : '🚀 Tạo Hook Biến Thể'}
             </button>
