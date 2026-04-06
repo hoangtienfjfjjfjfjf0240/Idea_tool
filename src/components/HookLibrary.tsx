@@ -158,8 +158,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const openEditModal = (hook?: Hook) => {
     setAnalysisSuccess(false);
+    // Reset pending file refs — important to prevent stale refs from previous modal session
+    pendingFileRef.current = null;
+    pendingThumbRef.current = null;
     if (hook) {
-      setEditingHookData({ ...hook });
+      setEditingHookData({ 
+        ...hook, 
+        localVideoUrl: hook.video_url || undefined,
+        localImageUrl: hook.image_url || undefined,
+      });
     } else {
       setEditingHookData({ title: '', subtitle: 'Hook Mới', thumb: '✨', description: '', hook_concept: '', visual_detail: '' });
     }
