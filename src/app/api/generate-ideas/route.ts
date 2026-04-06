@@ -17,14 +17,19 @@ function parseJson(text: string) {
 // Detect language from Core User text
 function detectLang(coreUsers: string[]): string {
   const joined = (coreUsers || []).join(' ').toLowerCase();
-  if (joined.includes('es') || joined.includes('tây ban nha') || joined.includes('spanish')) return 'ES (Tây Ban Nha)';
-  if (joined.includes('pt') || joined.includes('brazil') || joined.includes('portuguese')) return 'PT (Bồ Đào Nha)';
-  if (joined.includes('jp') || joined.includes('japan') || joined.includes('nhật')) return 'JP (Nhật)';
-  if (joined.includes('vn') || joined.includes('việt')) return 'VI (Việt Nam)';
-  if (joined.includes('se') || joined.includes('thụy điển') || joined.includes('swedish')) return 'SE (Thụy Điển)';
-  if (joined.includes('de') || joined.includes('đức') || joined.includes('german')) return 'DE (Đức)';
-  if (joined.includes('fr') || joined.includes('pháp') || joined.includes('french')) return 'FR (Pháp)';
-  if (joined.includes('sea') || joined.includes('thái') || joined.includes('malay') || joined.includes('indo')) return 'SEA (Đa ngôn ngữ ĐNA)';
+  
+  // Use word boundary check to avoid false matches (e.g. "user" matching "se")
+  const hasWord = (word: string) => new RegExp(`\\b${word}\\b`).test(joined);
+  
+  if (hasWord('spanish') || hasWord('tây ban nha') || hasWord('español') || hasWord('latina')) return 'ES (Tây Ban Nha)';
+  if (hasWord('portuguese') || hasWord('brazil') || hasWord('brasil') || hasWord('bồ đào nha')) return 'PT (Bồ Đào Nha)';
+  if (hasWord('japanese') || hasWord('japan') || hasWord('nhật') || hasWord('日本')) return 'JP (Nhật)';
+  if (hasWord('vietnamese') || hasWord('việt') || hasWord('vietnam')) return 'VI (Việt Nam)';
+  if (hasWord('swedish') || hasWord('thụy điển') || hasWord('sweden') || hasWord('svenska')) return 'SE (Thụy Điển)';
+  if (hasWord('german') || hasWord('đức') || hasWord('germany') || hasWord('deutsch')) return 'DE (Đức)';
+  if (hasWord('french') || hasWord('pháp') || hasWord('france') || hasWord('français')) return 'FR (Pháp)';
+  if (hasWord('thai') || hasWord('thái') || hasWord('malay') || hasWord('indonesia') || hasWord('sea')) return 'SEA (Đa ngôn ngữ ĐNA)';
+  if (hasWord('korean') || hasWord('hàn') || hasWord('korea')) return 'KO (Hàn Quốc)';
   return 'EN (Tiếng Anh)';
 }
 
