@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAIWithImage } from '@/lib/aiClient';
 
+export const maxDuration = 120;
 export async function POST(request: NextRequest) {
   try {
     const { imageBase64, fileName } = await request.json();

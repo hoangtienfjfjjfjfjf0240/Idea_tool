@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "api/**/*.ts": {
-      "maxDuration": 120
-    }
-  },
   "crons": [
     {
       "path": "/api/sync-apps",

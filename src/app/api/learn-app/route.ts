@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { askAI } from '@/lib/aiClient';
 
+export const maxDuration = 120;
 export async function POST(request: NextRequest) {
   try {
     const { appId, appName, appCategory, newIdeas, existingKnowledge, hooks } = await request.json();

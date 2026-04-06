@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
 
+export const maxDuration = 120;
+
 function parseJson(text: string) {
   try {
     let clean = text.replace(/```json\s*|```/g, '').trim();
