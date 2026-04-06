@@ -173,9 +173,16 @@ User taps 'REPAIR & CLEAN'. Satisfying cleanup animation runs.
 ---
 
 ═══════════════════════════════════════
-⚠️ VÍ DỤ HOOK THỰC TẾ TỪ PRODUCTION (MỨC ĐỘ CHI TIẾT PHẢI ĐẠT)
+⚠️ VÍ DỤ HOOK THỰC TẾ TỪ PRODUCTION (CHUẨN CHI TIẾT — KHÔNG PHẢI TEMPLATE)
 ═══════════════════════════════════════
-Đây là ví dụ hook thực tế từ team sáng tạo. Output CỦA BẠN phải chi tiết BẰNG hoặc HƠN mức này:
+⚠️ ĐÂY LÀ CHUẨN MỰC VỀ ĐỘ CHI TIẾT, KHÔNG PHẢI TEMPLATE ĐỂ COPY.
+→ KHÔNG copy bối cảnh bệnh viện/sân bay/T-Mobile cho mọi app.
+→ BẠN PHẢI SÁNG TẠO BỐI CẢNH PHÙ HỢP VỚI APP ĐANG LÀM dựa trên:
+  1. Category của app (Interior Decor → showroom, home renovation, open house...)
+  2. Tính năng PSP (nếu app thiết kế nhà → Houzz, Pinterest, contractor meeting)
+  3. Core User thực tế (ai dùng app này? họ ở đâu? gặp painpoint ở situation nào?)
+  4. App Brain Knowledge (nếu có — đọc kỹ và sáng tạo từ insights đã học)
+→ Mức độ chi tiết phải BẰNG hoặc HƠN các ví dụ dưới đây:
 
 🏥 VÍ DỤ 1 — App dọn dẹp điện thoại (Hook bệnh viện):
 ---
@@ -201,13 +208,14 @@ User taps 'REPAIR & CLEAN'. Satisfying cleanup animation runs.
 - Cảm xúc 2 người nói chuyện cho cao trào thể hiện nhiều lên như ý idea CCTV ngày trước ngon tốt"
 ---
 
-📌 RÚT RA TỪ CÁC VÍ DỤ TRÊN — BẮT BUỘC ÁP DỤNG:
-1. BỐI CẢNH CỤ THỂ: Không chỉ "bệnh viện" → phải mô tả máy hô hấp, dây dợ, máy đo nhịp tim tít tít
-2. ĐỊA ĐIỂM TÊN THẬT: Fort Lauderdale (FLL), Orlando (MCO), T-Mobile, Best Buy, Apple Store
-3. NHIỀU OPTIONS: Mỗi hook gợi ý 2-3 biến thể bối cảnh (khác người, khác địa điểm, khác góc quay)
-4. CẢM XÚC CAO TRÀO: Nhân vật phải bực bội, sợ hãi, giận dữ, run rẩy — không nhạt
-5. VOICE CỤ THỂ: Viết đúng câu nói, đúng giọng, đúng cảm xúc (không generic)
-6. GHI CHÚ PRODUCTION: "cho nhạc nền kịch tính", "góc quay CCTV", "drama chứ nhé"
+📌 RÚT RA — NGUYÊN TẮC SÁNG TẠO BỐI CẢNH CHO MỌI APP:
+1. ĐỌC APP BRAIN KNOWLEDGE (nếu có) → khai thác insight để tạo bối cảnh PHÙ HỢP
+2. BỐI CẢNH PHẢI LIÊN QUAN ĐẾN APP: App Interior Decor → contractor, showroom, open house. App tài chính → bank, ATM, tax office. App sức khỏe → gym, doctor's office, pharmacy
+3. ĐỊA ĐIỂM TÊN THẬT US: Home Depot, Lowe's, Trader Joe's, Whole Foods, LA Fitness, Planet Fitness, Walgreens, Chase Bank...
+4. NHIỀU OPTIONS: Mỗi hook gợi ý 2-3 biến thể bối cảnh (khác người, khác địa điểm, khác góc quay)
+5. CẢM XÚC CAO TRÀO: Nhân vật phải bực bội, sợ hãi, giận dữ, run rẩy — không nhạt
+6. VOICE CỤ THỂ: Viết đúng câu nói, đúng giọng, đúng cảm xúc (không generic)
+7. GHI CHÚ PRODUCTION: "cho nhạc nền kịch tính", "góc quay CCTV", "drama"
 
 ❌ TUYỆT ĐỐI KHÔNG VIẾT:
 - "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG, không chi tiết
