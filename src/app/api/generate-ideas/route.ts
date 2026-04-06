@@ -33,9 +33,19 @@ function detectLang(coreUsers: string[]): string {
   return 'EN (Tiếng Anh)';
 }
 
+// Map frontend model names to gateway model identifiers
+function resolveModel(selected?: string): string {
+  const map: Record<string, string> = {
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gpt-4.1': 'openai/gpt-4.1',
+    'o4-mini': 'openai/o4-mini',
+  };
+  return map[selected || ''] || 'gemini/gemini-2.5-pro';
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { appName, appCategory, filters, config, previousIdeas, appKnowledge } = await request.json();
+    const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel } = await request.json();
     const featureContext = filters?.solution?.length ? filters.solution.join(', ') : "General App Features";
     const quantity = config?.quantity || 3;
     const duration = config?.duration || '30s';
@@ -300,9 +310,9 @@ Framework/explanation/phân tích = TIẾNG VIỆT. Script voice/text = ${target
   }
 }]`;
 
-    console.log('[generate-ideas] Prompt length:', prompt.length, 'chars');
+    console.log('[generate-ideas] Prompt length:', prompt.length, 'chars, model:', selectedModel || 'gemini-2.5-pro');
     const text = await askAI(prompt, { 
-      model: 'gemini/gemini-2.5-pro', 
+      model: resolveModel(selectedModel), 
       temperature: 0.8, 
       max_tokens: 16384,
       useCreativePersona: false

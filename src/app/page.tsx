@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { LoginScreen } from '@/components/LoginScreen';
-import { NavBar } from '@/components/NavBar';
+import { NavBar, type AIModel } from '@/components/NavBar';
 import { Dashboard } from '@/components/Dashboard';
 import { AppDetail } from '@/components/AppDetail';
 import { FilterGenerator } from '@/components/FilterGenerator';
@@ -22,6 +22,17 @@ export default function Home() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
   const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
+  const [selectedModel, setSelectedModel] = useState<AIModel>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('ideagen_model') as AIModel) || 'gemini-2.5-pro';
+    }
+    return 'gemini-2.5-pro';
+  });
+
+  const handleModelChange = (model: AIModel) => {
+    setSelectedModel(model);
+    localStorage.setItem('ideagen_model', model);
+  };
 
   // Check existing session on mount
   useEffect(() => {
@@ -116,6 +127,7 @@ export default function Home() {
           app={selectedApp}
           currentScreen={currentScreen}
           setScreen={setCurrentScreen}
+          selectedModel={selectedModel}
         />
       );
     }
@@ -127,6 +139,7 @@ export default function Home() {
           setScreen={setCurrentScreen}
           currentScreen={currentScreen}
           app={selectedApp}
+          selectedModel={selectedModel}
         />
       );
     }
@@ -153,7 +166,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      <NavBar currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} userName={userName} onLogout={handleLogout} />
+      <NavBar currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} userName={userName} onLogout={handleLogout} selectedModel={selectedModel} onModelChange={handleModelChange} />
       <main className="py-4">
         {renderScreen()}
       </main>

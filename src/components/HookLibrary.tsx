@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2 } from 'lucide-react';
 import type { ScreenType, Hook, AppProject } from '@/types/database';
+import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 
 interface HookLibraryProps {
   setScreen: (s: ScreenType) => void;
   currentScreen: ScreenType;
   app?: AppProject | null;
+  selectedModel?: AIModel;
 }
 
 interface HookIdea {
@@ -17,7 +19,7 @@ interface HookIdea {
   hook: { script?: string; textOverlay?: string; visual: string; text: string; voice: string; imageUrl?: string };
 }
 
-export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app }) => {
+export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app, selectedModel }) => {
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [selectedHook, setSelectedHook] = useState<Hook | null>(null);
   const [modifyPrompt, setModifyPrompt] = useState('');
@@ -103,6 +105,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           quantity,
           appName: app?.name || '',
           appCategory: app?.category || '',
+          selectedModel: selectedModel || 'gemini-2.5-pro',
         }),
       });
       const result = await res.json();

@@ -2,12 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
+import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 
 interface FilterGeneratorProps {
   app: AppProject;
   currentScreen: ScreenType;
   setScreen: (s: ScreenType) => void;
+  selectedModel?: AIModel;
 }
 
 const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementType }[] = [
@@ -18,7 +20,7 @@ const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementTyp
   { id: 'visualType', label: 'Dạng Visual', icon: Video },
 ];
 
-export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen }) => {
+export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel }) => {
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [] });
   const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [] });
   const [newItem, setNewItem] = useState<{ cat: keyof FilterState | null; text: string }>({ cat: null, text: '' });
@@ -152,6 +154,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           config: { quantity, duration, ideaDescription, visualType: filters.visualType?.join(', ') || 'UGC (Người thật)' },
           previousIdeas: previousIdeasSummary || null,
           appKnowledge: app.app_knowledge || null,
+          selectedModel: selectedModel || 'gemini-2.5-pro',
         }),
       });
       const result = await res.json();

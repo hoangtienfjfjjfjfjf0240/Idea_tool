@@ -14,9 +14,19 @@ function parseJson(text: string) {
   } catch { return null; }
 }
 
+// Map frontend model names to gateway model identifiers
+function resolveModel(selected?: string): string {
+  const map: Record<string, string> = {
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gpt-4.1': 'openai/gpt-4.1',
+    'o4-mini': 'openai/o4-mini',
+  };
+  return map[selected || ''] || 'gemini/gemini-2.5-pro';
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { hook, instruction, quantity = 3, appName, appCategory } = await request.json();
+    const { hook, instruction, quantity = 3, appName, appCategory, selectedModel } = await request.json();
 
     const prompt = `[ROLE] Senior Creative Strategist chuyên Meta/TikTok Performance Ads.
 Bạn đang MODIFY một Winning Hook — tạo ${quantity} biến thể MỚI.
@@ -175,7 +185,7 @@ OUTPUT: JSON ARRAY, KHÔNG markdown
 }]`;
 
     const text = await askAI(prompt, { 
-      model: 'gemini/gemini-2.5-pro', 
+      model: resolveModel(selectedModel), 
       temperature: 0.8, 
       max_tokens: 16384,
       useCreativePersona: false 
