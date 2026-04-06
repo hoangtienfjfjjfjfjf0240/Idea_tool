@@ -16,15 +16,15 @@ export async function POST(request: NextRequest) {
   try {
     const { hook, instruction, quantity = 3, appName, appCategory } = await request.json();
 
-    const prompt = `[ROLE] Senior Creative Strategist chuyên Meta/TikTok Video Ads.
-Bạn đang MODIFY một Winning Hook có sẵn — tạo ${quantity} biến thể MỚI dựa trên hook gốc.
+    const prompt = `[ROLE] Senior Creative Strategist chuyên Meta/TikTok Performance Ads.
+Bạn đang MODIFY một Winning Hook — tạo ${quantity} biến thể MỚI.
 
 ═══════════════════════════════════════
 HOOK GỐC (WINNING — ĐÃ CHẠY TỐT)
 ═══════════════════════════════════════
 📌 Tên: "${hook.title}"
 📝 Mô tả: ${hook.description || 'N/A'}
-🧠 Concept/Chiến lược: ${hook.hook_concept || 'N/A'}
+🧠 Concept: ${hook.hook_concept || 'N/A'}
 🎬 Creative Type: ${hook.creative_type || hook.subtitle || 'N/A'}
 👁️ Visual gốc: ${hook.visual_detail || 'N/A'}
 👤 Core User: ${hook.core_user || 'N/A'}
@@ -38,27 +38,60 @@ CHỈ THỊ MODIFY TỪ USER
 "${instruction}"
 
 ═══════════════════════════════════════
-NGUYÊN TẮC MODIFY (QUAN TRỌNG)
+NGUYÊN TẮC MODIFY
 ═══════════════════════════════════════
-1. GIỮ NGUYÊN DNA CỦA HOOK GỐC:
-   - Giữ cùng Core User, Painpoint, Emotion
-   - Giữ cùng Creative Type (trừ khi user yêu cầu đổi)
-   - Giữ cùng cấu trúc kể chuyện
+1. GIỮ DNA HOOK GỐC: Core User, Painpoint, Emotion, Creative Type (trừ khi user yêu cầu đổi).
+2. THAY ĐỔI THEO CHỈ THỊ: Đổi bối cảnh, người, góc quay, trang phục, voice script.
+3. Mỗi biến thể PHẢI KHÁC NHAU về bối cảnh/người/câu chuyện.
 
-2. THAY ĐỔI THEO CHỈ THỊ USER:
-   - Đổi bối cảnh, người, góc quay, trang phục
-   - Đổi voice/text theo ngôn ngữ hoặc style mới
-   - Thêm/bớt nhân vật, đổi emotion intensity
+═══════════════════════════════════════
+QUAN TRỌNG: FORMAT "SCRIPT" — KỊCH BẢN KỂ CHUYỆN
+═══════════════════════════════════════
+⚠️ KHÔNG viết tách rời Visual / Text / Voice như trước.
+⚠️ KHÔNG viết 3 options cho text overlay. CHỈ 1 TEXT DUY NHẤT.
 
-3. VISUAL PHẢI CHI TIẾT NHƯ HOOK GỐC:
-   ✅ Ghi rõ: ai (tuổi/giới/trang phục), ở đâu (bối cảnh cụ thể), đang làm gì, biểu cảm, góc quay
-   ✅ Mỗi biến thể PHẢI khác visual (đổi bối cảnh/người/góc quay)
-   ❌ KHÔNG viết chung chung: "Người dùng lo lắng"
+"script" = MỘT KỊCH BẢN LIỀN MẠCH cho 3-5 giây hook đầu tiên.
+Viết như một đạo diễn ghi chú cho quay phim. Trong đó PHẢI GỘP:
+→ Ai đang làm gì, biểu cảm gì (visual)
+→ Ai nói gì, giọng điệu/cảm xúc nào (voice)  
+→ Text overlay hiện lên khi nào (text)
+→ Âm thanh/tiếng động nếu có
 
-4. VOICE & TEXT:
-   - Giữ cùng ngôn ngữ với hook gốc (trừ khi user yêu cầu đổi)
-   - Text = 3 options ngắn, BOLD, giật gân
-   - Voice = đối thoại 2 người hoặc người + AI assistant
+VÍ DỤ SCRIPT CHUẨN (Hãy viết y như này):
+---
+"Góc quay POV từ mắt một người phụ nữ (55-60 tuổi). Bà đang đứng trong phòng khách tối, chỉ có ánh sáng yếu ớt từ TV. Tay bà (hơi run, có đeo nhẫn cưới) đang cầm iPhone. Màn hình điện thoại đang hiển thị app 'Home Security' bị treo cứng.
+
+[SFX] Tiếng cành cây gãy 'RẮC!' từ bên ngoài.
+Bà giật mình, thở gấp.
+
+[VOICE — Người phụ nữ, giọng thì thầm sợ hãi]: 'Oh my god... mở đi... MỞ ĐI!'
+Tay bà liên tục bấm vào màn hình trong vô vọng.
+
+[TEXT OVERLAY] 'It always fails when you need it most.'"
+---
+
+VÍ DỤ 2 (UGC style):
+---
+"Quay kiểu selfie UGC. Một cô con gái (25-30 tuổi) ngồi cạnh bố (55-65 tuổi, đeo kính, ngồi sofa phòng khách). Cô gái tỏ vẻ bất lực. Ông bố khoanh tay, tự ái.
+
+[VOICE — Con gái]: 'Bố, con đang cứu điện thoại bố đấy. Nó đầy rồi!'
+[VOICE — Bố, giọng quả quyết]: 'Đầy gì! Bố xóa ảnh mỗi tuần!'
+[VOICE — Con gái, thở dài]: 'Okay bố, thế 2,849 cái screenshot app thời tiết này là gì?'
+
+Cô giơ điện thoại bố về phía camera.
+[TEXT OVERLAY] 'My dad, the digital hoarder.'"
+---
+
+❌ TUYỆT ĐỐI KHÔNG VIẾT KIỂU NÀY:
+- "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG
+- "Cảnh quay cinematic...", "Một diễn viên trong trang phục..." → TVC
+- "Op1: xxx Op2: xxx Op3: xxx" → KHÔNG, chỉ 1 text overlay
+
+✅ PHẢI ĐẠT ĐƯỢC:
+- Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu
+- Phải biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
+- Painpoint phải ĐÁNH THẲNG vào tâm lý người xem, không trừu tượng
+- Text overlay = 1 câu duy nhất, bold, giật gân
 
 ═══════════════════════════════════════
 OUTPUT: JSON ARRAY, KHÔNG markdown
@@ -68,16 +101,15 @@ OUTPUT: JSON ARRAY, KHÔNG markdown
   "title": "Tên biến thể (tiếng Việt, ghi rõ khác gì so với gốc)",
   "explanation": "Tại sao biến thể này hiệu quả + khác gì hook gốc (tiếng Việt)",
   "hook": {
-    "visual": "Mô tả visual CHI TIẾT: ai, ở đâu, làm gì, biểu cảm, góc quay. TIẾNG VIỆT.",
-    "text": "Op1: [headline]\\nOp2: [headline]\\nOp3: [headline]",
-    "voice": "Đối thoại cụ thể — ghi rõ ai nói gì"
+    "script": "KỊCH BẢN LIỀN MẠCH gộp visual + voice + text. GHI RÕ [VOICE — Ai, giọng gì], [TEXT OVERLAY], [SFX]. CHI TIẾT như ví dụ trên.",
+    "textOverlay": "1 câu text overlay duy nhất hiện trên màn hình (ngôn ngữ target)"
   }
 }]`;
 
     const text = await askAI(prompt, { 
       model: 'gemini/gemini-2.5-pro', 
       temperature: 0.8, 
-      max_tokens: 12288,
+      max_tokens: 16384,
       useCreativePersona: false 
     });
     if (!text) return NextResponse.json({ error: 'No AI response' }, { status: 500 });
@@ -91,7 +123,15 @@ OUTPUT: JSON ARRAY, KHÔNG markdown
       id: `hook-${Date.now()}-${i}`,
       title: item.title || `Biến thể ${i + 1}`,
       explanation: item.explanation || '',
-      hook: item.hook || { visual: '', text: '', voice: '' },
+      hook: {
+        // New merged format
+        script: item.hook?.script || '',
+        textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
+        // Legacy compat — map from new format
+        visual: item.hook?.script || item.hook?.visual || '',
+        text: item.hook?.textOverlay || item.hook?.text_overlay || item.hook?.text || '',
+        voice: '',
+      },
     }));
 
     return NextResponse.json({ success: true, data });

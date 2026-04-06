@@ -14,7 +14,7 @@ interface HookIdea {
   id: string;
   title: string;
   explanation: string;
-  hook: { visual: string; text: string; voice: string; imageUrl?: string };
+  hook: { script?: string; textOverlay?: string; visual: string; text: string; voice: string; imageUrl?: string };
 }
 
 export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app }) => {
@@ -132,7 +132,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   };
 
   const handleCopy = (idea: HookIdea) => {
-    const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\nVISUAL: ${idea.hook.visual}\nTEXT: ${idea.hook.text}\nVOICE: "${idea.hook.voice}"`;
+    const scriptContent = idea.hook.script || `VISUAL: ${idea.hook.visual}\n[VOICE] ${idea.hook.voice}`;
+    const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\n\n${scriptContent}\n\n[TEXT OVERLAY] ${idea.hook.textOverlay || idea.hook.text}`;
     navigator.clipboard.writeText(text);
   };
 
@@ -636,6 +637,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     {n}
                   </button>
                 ))}
+                <input type="number" min={1} max={20} value={quantity}
+                  onChange={e => setQuantity(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                  className="w-16 py-2 rounded-xl text-sm font-bold text-center border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
               </div>
             </div>
             <label className="block font-semibold text-gray-700 mb-2 text-sm">Ý tưởng / Bối cảnh mới</label>
@@ -750,23 +754,19 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><Copy size={14} /></button>
                     </div>
 
-                    <div className="space-y-3">
-                      <div className="bg-red-50 rounded-xl p-3 border border-red-100">
-                        <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2"><Target size={10} /> HOOK</span>
-                        <p className="text-xs text-gray-700 mb-2">{idea.hook.visual}</p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Overlay Text</span>
-                          <p className="text-xs text-gray-700 font-semibold">{idea.hook.text || '—'}</p>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Voice Over</span>
-                          <p className="text-xs text-gray-500 italic">"{idea.hook.voice}"</p>
-                        </div>
-                      </div>
+                    {/* Script Block — unified storyboard */}
+                    <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+                      <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2"><Target size={10} /> 🎬 KỊCH BẢN HOOK</span>
+                      <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.hook.script || idea.hook.visual}</p>
                     </div>
+
+                    {/* Text Overlay — single */}
+                    {(idea.hook.textOverlay || idea.hook.text) && (
+                      <div className="mt-3 bg-amber-50 rounded-lg px-4 py-2.5 border border-amber-200">
+                        <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
+                        <p className="text-sm text-gray-800 font-bold mt-0.5">{idea.hook.textOverlay || idea.hook.text}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

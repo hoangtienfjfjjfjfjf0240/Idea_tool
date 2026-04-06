@@ -159,7 +159,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let ideas: { title: string; duration: string; content: IdeaContent }[];
 
       if (res.ok && result.success && result.data?.length > 0) {
-        // Map API response to our format
+        // Map API response — new script format
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ideas = result.data.map((item: any) => ({
           title: item.title || `Ý tưởng: ${app.name}`,
@@ -167,9 +167,26 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           content: {
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
-            hook: { visual: item.hook?.visual || '', text: item.hook?.text || item.hook?.content || '', voice: item.hook?.voice || '' },
-            body: { visual: item.body?.visual || '', text: item.body?.text || item.body?.content || '', voice: item.body?.voice || '' },
-            cta: { voice: item.cta?.voice || '', text: item.cta?.text || '', endCard: item.cta?.endCard || item.cta?.end_card || '' },
+            hook: {
+              script: item.hook?.script || '',
+              textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
+              visual: item.hook?.script || item.hook?.visual || '',
+              text: item.hook?.textOverlay || item.hook?.text_overlay || item.hook?.text || '',
+              voice: item.hook?.voice || '',
+            },
+            body: {
+              script: item.body?.script || '',
+              textOverlay: item.body?.textOverlay || item.body?.text_overlay || '',
+              visual: item.body?.script || item.body?.visual || '',
+              text: item.body?.textOverlay || item.body?.text_overlay || item.body?.text || '',
+              voice: item.body?.voice || '',
+            },
+            cta: {
+              script: item.cta?.script || '',
+              voice: item.cta?.voice || '',
+              text: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
+              endCard: item.cta?.endCard || item.cta?.end_card || '',
+            },
           },
         }));
       } else {
@@ -221,9 +238,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const handleCopy = (idea: GeneratedIdea) => {
-    const c = idea.content;
+    const c = idea.content as any;
     const fw = c.framework;
-    const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n- Visual: ${c.hook?.visual || ''}\n- Text: ${(c.hook as any)?.text || (c.hook as any)?.content || ''}\n- Voice: "${c.hook?.voice || ''}"\n\n📖 BODY (10-25s)\n- Visual: ${c.body?.visual || ''}\n- Text: ${(c.body as any)?.text || (c.body as any)?.content || ''}\n- Voice: "${c.body?.voice || ''}"\n\n🔥 CTA (3-5s)\n- Voice: "${c.cta?.voice || ''}"\n- Text: ${c.cta?.text || ''}\n- End Card: ${c.cta?.endCard || ''}`;
+    const hookScript = c.hook?.script || c.hook?.visual || '';
+    const bodyScript = c.body?.script || c.body?.visual || '';
+    const ctaScript = c.cta?.script || '';
+    const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n${hookScript}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY (10-25s)\n${bodyScript}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA (3-5s)\n${ctaScript}\n[TEXT OVERLAY] ${c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
     navigator.clipboard.writeText(copyText);
   };
 
@@ -233,9 +253,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer({
       title: idea.title,
       explanation: c.explanation || '',
-      hook: { visual: c.hook?.visual || '', text: c.hook?.text || c.hook?.content || '', voice: c.hook?.voice || '' },
-      body: { visual: c.body?.visual || '', text: c.body?.text || c.body?.content || '', voice: c.body?.voice || '' },
-      cta: { voice: c.cta?.voice || '', text: c.cta?.text || '', endCard: c.cta?.endCard || '' },
+      hook: { script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', visual: c.hook?.visual || '', text: c.hook?.text || '', voice: c.hook?.voice || '' },
+      body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', visual: c.body?.visual || '', text: c.body?.text || '', voice: c.body?.voice || '' },
+      cta: { script: c.cta?.script || '', voice: c.cta?.voice || '', text: c.cta?.text || '', endCard: c.cta?.endCard || '' },
     });
   };
 
@@ -550,33 +570,53 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
                 )}
 
-                {/* Sections: HOOK, BODY, CTA */}
+                {/* Sections: HOOK, BODY, CTA — unified script format */}
                 {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
                   { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
                 ].map(sec => {
                   const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
-                  const fields = sec.key === 'cta' 
-                    ? [{ k: 'voice', l: 'Voice' }, { k: 'text', l: 'Text' }, { k: 'endCard', l: 'End Card' }]
-                    : [{ k: 'visual', l: 'Visual' }, { k: 'text', l: 'Text' }, { k: 'voice', l: 'Voice' }];
+                  const scriptContent = secData?.script || secData?.visual || '';
+                  const textOverlay = secData?.textOverlay || secData?.text || '';
+                  const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
                   return (
                     <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                       <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        {fields.map(f => (
-                          <div key={f.k}>
-                            <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{f.l}</span>
+                      
+                      {/* Script — unified storyboard */}
+                      {isEditing ? (
+                        <textarea value={secData?.script || secData?.visual || ''}
+                          onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], script: e.target.value, visual: e.target.value}})}
+                          className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-32 bg-white mb-2"
+                          placeholder="Kịch bản liền mạch: visual + [VOICE] + [TEXT OVERLAY] + [SFX]" />
+                      ) : (
+                        <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
+                      )}
+
+                      {/* Text Overlay + End Card */}
+                      <div className={`flex gap-3 ${sec.key === 'cta' ? '' : ''}`}>
+                        <div className="flex-1">
+                          <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
+                          {isEditing ? (
+                            <input value={secData?.textOverlay || secData?.text || ''}
+                              onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], textOverlay: e.target.value, text: e.target.value}})}
+                              className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
+                          ) : (
+                            <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
+                          )}
+                        </div>
+                        {sec.key === 'cta' && (
+                          <div className="flex-1">
+                            <span className="text-[10px] font-bold text-emerald-600 uppercase">🏷️ End Card</span>
                             {isEditing ? (
-                              <textarea value={secData?.[f.k] || ''}
-                                onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], [f.k]: e.target.value}})}
-                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white" />
+                              <input value={secData?.endCard || ''}
+                                onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], endCard: e.target.value}})}
+                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
                             ) : (
-                              <p className={f.k === 'voice' ? 'text-gray-500 italic' : 'text-gray-700'}>
-                                {f.k === 'voice' ? `"${secData?.[f.k] || secData?.content || '—'}"` : (secData?.[f.k] || secData?.content || '—')}
-                              </p>
+                              <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
                             )}
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   );

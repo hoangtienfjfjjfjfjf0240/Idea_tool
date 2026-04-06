@@ -67,119 +67,118 @@ RULE #1: HOOK FORMULA (BẮT BUỘC)
 ═══════════════════════════════════════
 Hook = Visual/Text/Voice khiến NGƯỜI XEM (viewer) cảm thấy đúng EMOTION MỤC TIÊU khi nhìn thấy PAINPOINT của CORE USER.
 
-⚠️ PHÂN BIỆT QUAN TRỌNG:
-- EMOTION = cảm xúc hook tạo ra CHO NGƯỜI XEM khi xem video (VD: người xem phải cảm thấy SỢ HÃI, LO LẮNG, TÒ MÒ)
-- EMOTION ≠ cảm xúc của nhân vật trong video (nhân vật có thể bình thường, nhưng TÌNH HUỐNG phải khiến NGƯỜI XEM lo sợ)
-
+⚠️ PHÂN BIỆT:
+- EMOTION = cảm xúc hook tạo ra CHO NGƯỜI XEM (VD: người xem phải SỢ HÃI, LO LẮNG)
+- EMOTION ≠ cảm xúc của nhân vật (nhân vật có thể bình thường, TÌNH HUỐNG phải khiến NGƯỜI XEM lo sợ)
 → Hook KHÔNG giới thiệu app. Hook KỂ CHUYỆN tạo EMOTION cho viewer.
 → App chỉ xuất hiện ở BODY và CTA.
 
 ═══════════════════════════════════════
-RULE #2: VISUAL — Mô tả CHI TIẾT cho Production
+RULE #2: VISUAL TYPE BẮT BUỘC: ${visualType}
 ═══════════════════════════════════════
-⚠️ DẠNG VISUAL BẮT BUỘC: ${visualType}
-→ Mọi visual PHẢI tuân theo dạng "${visualType}" đã chọn:
 • UGC (Người thật): Quay bằng điện thoại, góc selfie/handheld, ánh sáng tự nhiên, setting đời thường
-• Screen Recording: Quay màn hình điện thoại/tablet, finger tap, highlight tính năng app
-• Green Screen: Người thật đứng/ngồi trước nền xanh, background đồ họa/gradient
-• 2D Motion Graphics: Icon animated, infographic, text animation, flat design, không có người
-• 3D Render: Mockup điện thoại 3D xoay, UI float, hiệu ứng nổi, không có người
-• Mixed Media: Kết hợp cảnh quay thật + overlay đồ họa 2D/3D + text animation
-• ASMR: Cận cảnh extreme close-up, âm thanh thỏa mãn (tap, swipe, click), chậm rãi, không voice-over, focus vào hành động tay + màn hình
-• Trend Format: Theo format viral TikTok đang hot (CapCut template, trending sound, meme format, duet style)
-
-Visual PHẢI ghi rõ (đến mức editor đọc xong biết quay gì):
-✅ Ai: bao nhiêu người, giới tính, tuổi, trang phục, ngoại hình cụ thể
-✅ Ở đâu: bối cảnh chi tiết (phòng bếp kiểu US, tiệm nail hiện đại, sân bóng rổ...)
-✅ Làm gì: hành động cụ thể (ngồi ghế bành cầm remote + iPhone, đang nấu ăn vừa hỏi Siri...)
-✅ Biểu cảm: RÕ NÉT (tức giận hét lên, hoảng hốt nhìn màn hình, cười ha ha vỗ đùi...)
-✅ Góc quay: POV / cận mặt / wide shot / từ sau lưng / nghiêng...
-✅ Số option/ver: VD "3 option: 2 nam 1 nữ, đa dạng bối cảnh"
-
-❌ TUYỆT ĐỐI KHÔNG VIẾT: "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG
-❌ TUYỆT ĐỐI KHÔNG VIẾT KIỂU TVC: "Cảnh quay cinematic..." → KHÔNG THỰC TẾ
+• Screen Recording: Quay màn hình điện thoại, finger tap
+• Green Screen: Người thật trước nền xanh
+• Mixed Media: Cảnh quay thật + overlay đồ họa
+• ASMR: Cận cảnh extreme close-up, không voice-over
+• Trend Format: Theo format viral TikTok đang hot
 
 ═══════════════════════════════════════
-RULE #3: VOICE — Đối thoại bằng ${targetLang}
+RULE #3: CREATIVE TYPE (ghi rõ)
 ═══════════════════════════════════════
-- Voice PHẢI viết bằng NGÔN NGỮ MỤC TIÊU (${targetLang})
-- Hook voice = ĐỐI THOẠI giữa 2 người (hoặc người + AI assistant). 1-2 câu. Cảm xúc mạnh.
-- Body voice = DÀI HƠN, 3-5 câu, giải thích app hoạt động + lợi ích. Giọng thuyết phục.
-- CTA voice = RẤT NGẮN, 1 câu. Direct.
+Mỗi idea PHẢI thuộc 1 kiểu: UGC / POV / Split Screen / Interview / Reaction / Hỏi AI / ASMR / Localize / Scale / Breaking News / Social Proof
 
 ═══════════════════════════════════════
-RULE #4: TEXT — Chữ overlay trên video, bằng ${targetLang}
+RULE #4: ANTI-TVC (KHÔNG vi phạm)
 ═══════════════════════════════════════
-- Ngắn gọn, BOLD, giật gân, 1-2 dòng
-- Hook text = 3 options (Op1/Op2/Op3) — production team chọn 1
-- Body text = Kết quả/con số ấn tượng
-- CTA text = 2-5 words kêu gọi hành động
+❌ Không nhạc nền epic/cinematic, không slow-motion, không studio lighting
+❌ Không script dài dòng, sáo rỗng, trừu tượng
+✅ Phải giống video TikTok/UGC: tự nhiên, hơi raw, đời thường
 
 ═══════════════════════════════════════
-RULE #5: CREATIVE TYPE (ghi rõ)
+RULE #5: FORMAT "SCRIPT" — KỊCH BẢN KỂ CHUYỆN
 ═══════════════════════════════════════
-Mỗi idea PHẢI thuộc 1 trong các kiểu sau:
-• UGC (người thật nói/quay)
-• POV (góc nhìn người dùng)
-• Split Screen (chia 2 before/after)
-• Interview (phỏng vấn đường phố/talkshow)
-• Reaction (người xem react lại video/tin tức)
-• Hỏi AI (Alexa/Siri/Google Assistant/ChatGPT)
-• ASMR (thỏa mãn visual/âm thanh)
-• Localize (bản địa hóa creative có sẵn)
-• Scale (thay đổi visual/face/bối cảnh creative win)
-• Breaking News (bản tin thời sự giả)
-• Social Proof (review/testimonial)
+⚠️ KHÔNG viết tách rời Visual / Text / Voice thành 3 field riêng biệt.
+⚠️ KHÔNG viết 3 options cho text (Op1/Op2/Op3). CHỈ 1 TEXT DUY NHẤT.
 
-═══════════════════════════════════════
-RULE #6: ANTI-TVC (KHÔNG vi phạm)
-═══════════════════════════════════════
-❌ Không dùng nhạc nền epic/cinematic
-❌ Không dùng slow-motion
-❌ Không dùng studio lighting chuyên nghiệp
-❌ Không dùng script dài dòng, sáo rỗng
-✅ Phải giống video TikTok/UGC: tự nhiên, hơi raw, đời thường, gần gũi
+Mỗi section (hook, body, cta) dùng field "script" = MỘT KỊCH BẢN LIỀN MẠCH.
+Viết như một đạo diễn ghi chú cho quay phim. Trong đó PHẢI GỘP:
+→ Ai đang làm gì, biểu cảm gì, ở đâu, mặc gì (visual)
+→ Ai nói gì, giọng điệu nào, cảm xúc gì (voice) — dùng tag [VOICE — Ai, giọng gì]
+→ Text overlay hiện gì, hiện lúc nào — dùng tag [TEXT OVERLAY]
+→ Âm thanh/tiếng động — dùng tag [SFX]
+
+VÍ DỤ SCRIPT HOOK CHUẨN (Hãy viết giống y thế này):
+---
+"Góc quay POV từ mắt một người phụ nữ (55-60 tuổi). Bà đang đứng trong phòng khách tối, chỉ có ánh sáng yếu ớt từ TV. Tay bà (hơi run, có đeo nhẫn cưới) đang cầm iPhone. Màn hình điện thoại đang hiển thị app 'Home Security' bị treo cứng.
+
+[SFX] Tiếng cành cây gãy 'RẮC!' từ bên ngoài.
+Bà giật mình, thở gấp.
+
+[VOICE — Người phụ nữ, giọng thì thầm sợ hãi]: 'Oh my god... mở đi... MỞ ĐI!'
+Tay bà liên tục bấm vào màn hình trong vô vọng.
+
+[TEXT OVERLAY] 'It always fails when you need it most.'"
+---
+
+VÍ DỤ SCRIPT BODY CHUẨN:
+---
+"Cắt cảnh sang quay màn hình điện thoại (screen recording). Người dùng mở app Phone Cleaner. App bắt đầu quét. Animation quét dừng lại và highlight mục: 'Data Decay Detected: 7.2 GB'.
+
+[VOICE — Narrator, giọng chuyên gia điềm tĩnh]: 'This app performs an instant emergency cleanup. It clears out corrupted data and makes your phone responsive again in seconds.'
+
+Người dùng nhấn 'REPAIR & CLEAN'. Animation sửa lỗi chạy thỏa mãn.
+[TEXT OVERLAY] '7.2 GB of Corrupted Files REMOVED'"
+---
+
+❌ TUYỆT ĐỐI KHÔNG VIẾT:
+- "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG
+- "Cảnh quay cinematic..." → TVC
+- "Op1: xxx Op2: yyy Op3: zzz" → KHÔNG, chỉ 1 text overlay
+
+✅ PHẢI ĐẠT ĐƯỢC:
+- Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu
+- Biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
+- Painpoint ĐÁNH THẲNG vào tâm lý người xem
+- Text overlay = 1 câu duy nhất
 
 ═══════════════════════════════════════
 CẤU TRÚC VIDEO ${duration}
 ═══════════════════════════════════════
-🎣 HOOK (3-5s): visual + text (3 options) + voice → TẠO ĐÚNG EMOTION MỤC TIÊU CHO NGƯỜI XEM từ PAINPOINT
-📖 BODY (10-25s): visual + text + voice → DEMO PSP giải quyết Painpoint
-🔥 CTA (3-5s): voice + text + end card → KÊU GỌI HÀNH ĐỘNG
+🎣 HOOK (3-5s): script kịch bản → TẠO ĐÚNG EMOTION MỤC TIÊU từ PAINPOINT
+📖 BODY (10-25s): script kịch bản → DEMO PSP giải quyết Painpoint
+🔥 CTA (3-5s): script kịch bản → KÊU GỌI HÀNH ĐỘNG
 
 ═══════════════════════════════════════
-OUTPUT FORMAT — QUAN TRỌNG
+OUTPUT FORMAT
 ═══════════════════════════════════════
 Trả về ĐÚNG ${quantity} objects trong JSON ARRAY.
-KHÔNG markdown. KHÔNG giải thích thêm. KHÔNG wrap trong \`\`\`.
-Visual + Explanation = TIẾNG VIỆT (cho team VN đọc).
-Voice + Text = ${targetLang} (cho production).
+KHÔNG markdown. KHÔNG giải thích thêm.
+Explanation = TIẾNG VIỆT. Script phần voice/text = ${targetLang}.
 
 [{
   "id": 1,
-  "title": "Tên concept ngắn (VD: 'Hook hỏi Alexa - Ông già sợ hack')",
+  "title": "Tên concept ngắn (VD: 'POV - Camera an ninh bị treo')",
   "duration": "${duration}",
-  "creativeType": "UGC / Hỏi AI / Interview / POV / ...",
+  "creativeType": "UGC / POV / Interview / Breaking News / ...",
   "framework": {
     "coreUser": "Chân dung user cụ thể (tiếng Việt)",
-    "painpoint": "Nỗi đau cụ thể (tiếng Việt)",
-    "emotion": "Cảm xúc mà hook TẠO RA CHO NGƯỜI XEM — không phải cảm xúc nhân vật (tiếng Việt)",
+    "painpoint": "Nỗi đau CỤ THỂ, không trừu tượng (tiếng Việt)",
+    "emotion": "Cảm xúc mà hook TẠO RA CHO NGƯỜI XEM (tiếng Việt)",
     "psp": "Tính năng giải quyết (tiếng Việt)"
   },
   "explanation": "Tại sao idea hiệu quả + concept hook lấy cảm hứng từ đâu (tiếng Việt)",
   "hook": {
-    "visual": "Mô tả cảnh quay CHI TIẾT: ai (tuổi/giới/trang phục), ở đâu (bối cảnh cụ thể), đang làm gì, tay cầm gì, biểu cảm gì, góc quay nào. Bằng TIẾNG VIỆT.",
-    "text": "Op1: [headline bằng ${targetLang}]\\nOp2: [headline bằng ${targetLang}]\\nOp3: [headline bằng ${targetLang}]",
-    "voice": "Đối thoại bằng ${targetLang}. Ghi rõ ai nói gì. VD: Người A: '...' → Người B: '...'"
+    "script": "KỊCH BẢN LIỀN MẠCH hook 3-5s. GỘP visual + [VOICE] + [TEXT OVERLAY] + [SFX]. CHI TIẾT như ví dụ trên.",
+    "textOverlay": "1 câu text overlay duy nhất bằng ${targetLang}"
   },
   "body": {
-    "visual": "Mô tả cảnh demo app trên điện thoại (tiếng Việt). Screen recording style.",
-    "text": "Text overlay bằng ${targetLang}",
-    "voice": "Voiceover giải thích app, 3-5 câu, bằng ${targetLang}"
+    "script": "KỊCH BẢN LIỀN MẠCH body 10-25s. Demo app, [VOICE] giải thích, [TEXT OVERLAY] kết quả.",
+    "textOverlay": "Text kết quả/con số bằng ${targetLang}"
   },
   "cta": {
-    "voice": "CTA 1 câu bằng ${targetLang}",
-    "text": "CTA bold 2-5 words bằng ${targetLang}",
+    "script": "KỊCH BẢN CTA 3-5s. [VOICE] kêu gọi, [TEXT OVERLAY] call to action.",
+    "textOverlay": "CTA bold 2-5 words bằng ${targetLang}",
     "endCard": "${appName} + tagline bằng ${targetLang}"
   }
 }]`;
@@ -189,11 +188,11 @@ Voice + Text = ${targetLang} (cho production).
       model: 'gemini/gemini-2.5-pro', 
       temperature: 0.8, 
       max_tokens: 16384,
-      useCreativePersona: false  // Our prompt already has all rules
+      useCreativePersona: false
     });
     if (!text) {
-      console.error('[generate-ideas] AI returned null - likely content filter or timeout');
-      return NextResponse.json({ error: 'AI không phản hồi. Có thể do content filter hoặc timeout. Thử lại.' }, { status: 500 });
+      console.error('[generate-ideas] AI returned null');
+      return NextResponse.json({ error: 'AI không phản hồi. Thử lại.' }, { status: 500 });
     }
     console.log('[generate-ideas] AI response length:', text.length, 'chars');
 
@@ -205,10 +204,10 @@ Voice + Text = ${targetLang} (cho production).
 
     const arr = Array.isArray(parsed) ? parsed : [parsed];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const valid = arr.filter((i: any) => i?.hook && i?.body).slice(0, quantity);
+    const valid = arr.filter((i: any) => i?.hook).slice(0, quantity);
 
     if (valid.length === 0) {
-      console.error('[generate-ideas] No valid ideas with hook+body:', JSON.stringify(arr[0]).substring(0, 200));
+      console.error('[generate-ideas] No valid ideas:', JSON.stringify(arr[0]).substring(0, 200));
       return NextResponse.json({ error: 'AI trả về format sai. Thử lại.' }, { status: 500 });
     }
 
