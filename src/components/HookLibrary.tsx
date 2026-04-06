@@ -760,11 +760,43 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.hook.script || idea.hook.visual}</p>
                     </div>
 
+                    {/* Vietnamese Translation */}
+                    {(idea.hook as any)?.viTranslation && (
+                      <div className="mt-3 bg-white/60 rounded-lg px-4 py-2.5 border border-gray-200">
+                        <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
+                        <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{(idea.hook as any).viTranslation}</p>
+                      </div>
+                    )}
+
                     {/* Text Overlay — single */}
                     {(idea.hook.textOverlay || idea.hook.text) && (
                       <div className="mt-3 bg-amber-50 rounded-lg px-4 py-2.5 border border-amber-200">
                         <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
                         <p className="text-sm text-gray-800 font-bold mt-0.5">{idea.hook.textOverlay || idea.hook.text}</p>
+                      </div>
+                    )}
+
+                    {/* Hook Analysis */}
+                    {((idea.hook as any)?.viewerEmotion || (idea.hook as any)?.painpointImpact) && (
+                      <div className="mt-3 space-y-2">
+                        {(idea.hook as any)?.viewerEmotion && (
+                          <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
+                            <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
+                            <p className="text-xs text-gray-700 mt-0.5">{(idea.hook as any).viewerEmotion}</p>
+                          </div>
+                        )}
+                        {(idea.hook as any)?.painpointImpact && (
+                          <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
+                            <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
+                            <p className="text-xs text-gray-700 mt-0.5">{(idea.hook as any).painpointImpact}</p>
+                          </div>
+                        )}
+                        {(idea.hook as any)?.whyTheyStopScrolling && (
+                          <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
+                            <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
+                            <p className="text-xs text-gray-700 font-semibold mt-0.5">{(idea.hook as any).whyTheyStopScrolling}</p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

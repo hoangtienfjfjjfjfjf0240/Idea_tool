@@ -186,35 +186,59 @@ CẤU TRÚC VIDEO ${duration}
 🔥 CTA (3-5s): script kịch bản → KÊU GỌI HÀNH ĐỘNG
 
 ═══════════════════════════════════════
+⚠️ RULE ĐẶC BIỆT: HOOK PHẢI CÓ PHÂN TÍCH SÂU
+═══════════════════════════════════════
+Hook KHÔNG CHỈ là script mô tả cảnh quay.
+Mỗi hook PHẢI KÈM PHÂN TÍCH chi tiết:
+- "viewerProfile": Ai đang xem? (tuổi, giới, hành vi, bối cảnh sống — CỤ THỂ)
+- "viewerEmotion": NGƯỜI XEM cảm nhận gì khi xem hook? Mô tả CHI TIẾT hành trình cảm xúc, không chỉ ghi "Sợ hãi" mà phải mô tả: "Người xem 50+ tuổi sẽ lập tức liên tưởng đến chính mình — 'Trời ơi, điện thoại mình cũng hay bị treo, nếu xảy ra lúc đó thì sao?'. Cảm giác bất lực và sợ hãi lan tỏa."
+- "painpointImpact": Painpoint ĐÁNH VÀO tâm lý người xem NHƯ THẾ NÀO? Mô tả CỤ THỂ: "Cha mẹ 50+ tuổi sẽ nhận ra mình cũng hay screenshot vô tội vạ nhưng không bao giờ xóa. Con cái chỉ ra điều này khiến họ vừa xấu hổ vừa lo lắng."
+- "whyTheyStopScrolling": Tại sao người xem DỪNG SCROLL ở hook này? 1 câu cụ thể.
+
+═══════════════════════════════════════
+⚠️ RULE NGÔN NGỮ: PHẢI CÓ BẢN DỊCH TIẾNG VIỆT
+═══════════════════════════════════════
+Voice/text overlay viết bằng ${targetLang} (ngôn ngữ target).
+NHƯNG BẮT BUỘC kèm bản dịch tiếng Việt ("viTranslation") cho MỌI script.
+→ Team VN đọc hiểu nhanh, không cần tra từ điển.
+
+═══════════════════════════════════════
 OUTPUT FORMAT
 ═══════════════════════════════════════
 Trả về ĐÚNG ${quantity} objects trong JSON ARRAY.
 KHÔNG markdown. KHÔNG giải thích thêm.
-Explanation = TIẾNG VIỆT. Script phần voice/text = ${targetLang}.
+Framework/explanation/phân tích = TIẾNG VIỆT. Script voice/text = ${targetLang}.
 
 [{
   "id": 1,
-  "title": "Tên concept ngắn (VD: 'POV - Camera an ninh bị treo')",
+  "title": "Tên concept ngắn tiếng Việt (VD: 'POV - Camera an ninh bị treo')",
   "duration": "${duration}",
   "creativeType": "UGC / POV / Interview / Breaking News / ...",
   "framework": {
-    "coreUser": "Chân dung user cụ thể (tiếng Việt)",
-    "painpoint": "Nỗi đau CỤ THỂ, không trừu tượng (tiếng Việt)",
-    "emotion": "Cảm xúc mà hook TẠO RA CHO NGƯỜI XEM (tiếng Việt)",
-    "psp": "Tính năng giải quyết (tiếng Việt)"
+    "coreUser": "Chân dung user CỤ THỂ: tuổi, giới, hành vi, bối cảnh (tiếng Việt, 2-3 câu)",
+    "painpoint": "Nỗi đau CỤ THỂ, mô tả tình huống thực tế, không trừu tượng (tiếng Việt, 2-3 câu)",
+    "emotion": "Cảm xúc hook TẠO RA CHO NGƯỜI XEM (không phải nhân vật) — mô tả CHI TIẾT hành trình cảm xúc (tiếng Việt, 2-3 câu)",
+    "psp": "Tính năng app giải quyết painpoint + cách demo (tiếng Việt)"
   },
-  "explanation": "Tại sao idea hiệu quả + concept hook lấy cảm hứng từ đâu (tiếng Việt)",
+  "explanation": "Tại sao idea này hiệu quả + lấy cảm hứng từ đâu (tiếng Việt, 3-5 câu)",
   "hook": {
-    "script": "KỊCH BẢN LIỀN MẠCH hook 3-5s. GỘP visual + [VOICE] + [TEXT OVERLAY] + [SFX]. CHI TIẾT như ví dụ trên.",
-    "textOverlay": "1 câu text overlay duy nhất bằng ${targetLang}"
+    "script": "KỊCH BẢN LIỀN MẠCH hook 3-5s bằng tiếng Việt (mô tả visual + [VOICE bằng ${targetLang}] + [TEXT OVERLAY bằng ${targetLang}] + [SFX]). CHI TIẾT.",
+    "textOverlay": "1 câu text overlay bằng ${targetLang}",
+    "viTranslation": "Bản dịch TIẾNG VIỆT của toàn bộ voice + text overlay trong hook",
+    "viewerProfile": "Ai đang xem hook này? Mô tả CỤ THỂ chân dung người xem target (tiếng Việt, 2 câu)",
+    "viewerEmotion": "Người xem CẢM NHẬN gì khi xem hook? Mô tả CHI TIẾT hành trình cảm xúc — họ nghĩ gì, liên tưởng gì, lo sợ gì (tiếng Việt, 2-3 câu)",
+    "painpointImpact": "Painpoint ĐÁNH VÀO tâm lý người xem NHƯ THẾ NÀO? Họ tự thấy mình trong tình huống nào? (tiếng Việt, 2-3 câu)",
+    "whyTheyStopScrolling": "Tại sao người xem DỪNG SCROLL? 1 câu cụ thể (tiếng Việt)"
   },
   "body": {
-    "script": "KỊCH BẢN LIỀN MẠCH body 10-25s. Demo app, [VOICE] giải thích, [TEXT OVERLAY] kết quả.",
-    "textOverlay": "Text kết quả/con số bằng ${targetLang}"
+    "script": "KỊCH BẢN LIỀN MẠCH body bằng tiếng Việt + [VOICE bằng ${targetLang}] + [TEXT OVERLAY bằng ${targetLang}].",
+    "textOverlay": "Text kết quả/con số bằng ${targetLang}",
+    "viTranslation": "Bản dịch tiếng Việt voice + text overlay trong body"
   },
   "cta": {
-    "script": "KỊCH BẢN CTA 3-5s. [VOICE] kêu gọi, [TEXT OVERLAY] call to action.",
-    "textOverlay": "CTA bold 2-5 words bằng ${targetLang}",
+    "script": "KỊCH BẢN CTA bằng tiếng Việt + [VOICE bằng ${targetLang}] + [TEXT OVERLAY bằng ${targetLang}].",
+    "textOverlay": "CTA bold bằng ${targetLang}",
+    "viTranslation": "Bản dịch tiếng Việt voice + text overlay trong CTA",
     "endCard": "${appName} + tagline bằng ${targetLang}"
   }
 }]`;

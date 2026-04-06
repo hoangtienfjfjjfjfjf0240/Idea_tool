@@ -136,6 +136,11 @@ She holds up his phone to the camera.
 - Biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
 - Painpoint ĐÁNH THẲNG vào tâm lý — không trừu tượng
 - Text overlay = 1 câu duy nhất, bold, giật gân
+═══════════════════════════════════════
+⚠️ RULE NGÔN NGỮ: PHẢI CÓ BẢN DỊCH TIẾNG VIỆT
+═══════════════════════════════════════
+Voice/text overlay viết bằng TIẾNG ANH chuẩn Mỹ.
+NHƯNG BẮT BUỘC kèm bản dịch tiếng Việt ("viTranslation").
 
 ═══════════════════════════════════════
 OUTPUT: JSON ARRAY, KHÔNG markdown
@@ -143,10 +148,14 @@ OUTPUT: JSON ARRAY, KHÔNG markdown
 [{
   "id": 1,
   "title": "Tên biến thể (tiếng Việt, ghi rõ khác gì gốc)",
-  "explanation": "Tại sao biến thể này hiệu quả + khác gì hook gốc (tiếng Việt)",
+  "explanation": "Tại sao biến thể này hiệu quả + khác gì hook gốc (tiếng Việt, 3-5 câu)",
   "hook": {
-    "script": "KỊCH BẢN LIỀN MẠCH gộp visual + voice + text + SFX. CHI TIẾT như ví dụ trên. Mô tả bằng TIẾNG VIỆT nhưng voice/text overlay phải bằng TIẾNG ANH chuẩn Mỹ.",
-    "textOverlay": "1 câu text overlay duy nhất bằng tiếng Anh"
+    "script": "KỊCH BẢN LIỀN MẠCH bằng tiếng Việt mô tả cảnh + [VOICE bằng English] + [TEXT OVERLAY bằng English] + [SFX]. CHI TIẾT.",
+    "textOverlay": "1 câu text overlay bằng tiếng Anh",
+    "viTranslation": "Bản dịch TIẾNG VIỆT của voice + text overlay",
+    "viewerEmotion": "Người xem CẢM NHẬN gì khi xem hook? Họ nghĩ gì, liên tưởng gì? (tiếng Việt, 2-3 câu)",
+    "painpointImpact": "Painpoint ĐÁNH VÀO tâm lý người xem NHƯ THẾ NÀO? (tiếng Việt, 2-3 câu)",
+    "whyTheyStopScrolling": "Tại sao người xem DỪNG SCROLL? 1 câu (tiếng Việt)"
   }
 }]`;
 
