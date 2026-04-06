@@ -201,10 +201,22 @@ She holds up his phone to the camera.
 - Mỗi hook gợi ý 2-3 biến thể bối cảnh/địa điểm
 - Ghi chú production: nhạc, SFX, góc quay
 ═══════════════════════════════════════
-⚠️ RULE NGÔN NGỮ: PHẢI CÓ BẢN DỊCH TIẾNG VIỆT
+⚠️ RULE NGÔN NGỮ — QUAN TRỌNG
 ═══════════════════════════════════════
-Voice/text overlay viết bằng TIẾNG ANH chuẩn Mỹ.
-NHƯNG BẮT BUỘC kèm bản dịch tiếng Việt ("viTranslation").
+📝 SCRIPT MÔ TẢ CẢNH: Viết bằng TIẾNG VIỆT — đây là brief cho team VN đọc.
+🎤 [VOICE]: Câu nói nhân vật viết bằng TIẾNG ANH (vì target US)
+📺 [TEXT OVERLAY]: Viết bằng TIẾNG ANH
+🔄 viTranslation: Dịch lại voice + text overlay sang tiếng Việt
+
+VÍ DỤ ĐÚNG:
+"Cận cảnh bàn tay run rẩy của bà 60 tuổi, cầm iPhone 14, đang đứng ở quầy self-checkout Walmart. Phía sau là hàng người dài, có tiếng xì xào.
+[SFX] Tiếng máy quét barcode bíp bíp liên tục.
+Bà nhìn màn hình hoảng hốt — Apple Pay đang quay vòng vòng, không load.
+[VOICE — Bà, giọng hoảng sợ, thì thầm]: 'Come on... please... everyone's waiting...'
+[TEXT OVERLAY] 'When your phone fails at the worst moment.'"
+
+❌ TUYỆT ĐỐI KHÔNG viết toàn bộ script bằng tiếng Anh — team VN không đọc hiểu được.
+✅ Mô tả cảnh = tiếng Việt. Chỉ [VOICE] và [TEXT OVERLAY] = tiếng Anh.
 
 ═══════════════════════════════════════
 OUTPUT: JSON ARRAY, KHÔNG markdown — MỖI BIẾN THỂ = 1 VISUAL HOOK MỚI
@@ -214,7 +226,7 @@ OUTPUT: JSON ARRAY, KHÔNG markdown — MỖI BIẾN THỂ = 1 VISUAL HOOK MỚI
   "title": "Tên biến thể (tiếng Việt, ghi rõ VISUAL khác gì gốc: VD 'CCTV ở Walmart' hoặc 'POV sân bay MCO')",
   "explanation": "So sánh visual gốc vs visual mới: khác gì về địa điểm, người, góc quay, mood? Tại sao cách quay mới hiệu quả? (tiếng Việt, 3-5 câu)",
   "hook": {
-    "script": "KỊCH BẢN LIỀN MẠCH hook 3-5s — mô tả CHI TIẾT: Ở ĐÂU (địa điểm cụ thể), AI (nhân vật cụ thể, tuổi, mặc gì), ĐANG LÀM GÌ (hành động), GÓC QUAY (POV/UGC/CCTV...) + [VOICE bằng English] + [TEXT OVERLAY bằng English] + [SFX]. PHẢI KHÁC visual gốc.",
+    "script": "KỊCH BẢN bằng TIẾNG VIỆT mô tả cảnh quay CHI TIẾT: Ở ĐÂU, AI, ĐANG LÀM GÌ, GÓC QUAY + [VOICE bằng English] + [TEXT OVERLAY bằng English] + [SFX]. Phần mô tả cảnh = tiếng Việt, chỉ voice/text = English.",
     "textOverlay": "1 câu text overlay bằng tiếng Anh",
     "viTranslation": "Bản dịch TIẾNG VIỆT của voice + text overlay",
     "visualDiff": "KHÁC GỐC: gốc [mô tả ngắn visual gốc] → biến thể này [mô tả visual mới]. Khác về: [liệt kê: địa điểm/người/góc quay/...]",
