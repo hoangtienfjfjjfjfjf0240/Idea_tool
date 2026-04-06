@@ -50,16 +50,55 @@ CHỈ THỊ MODIFY TỪ USER
 "${instruction}"
 
 ═══════════════════════════════════════
-NGUYÊN TẮC MODIFY
+NGUYÊN TẮC MODIFY — CHỈ ĐỔI VISUAL HOOK, GIỮ DNA GỐC
 ═══════════════════════════════════════
-1. GIỮ DNA HOOK GỐC: Core User, Painpoint, Emotion, Creative Type (trừ khi user yêu cầu đổi).
-2. THAY ĐỔI THEO CHỈ THỊ: Đổi bối cảnh, người, góc quay, trang phục, voice script.
-3. Mỗi biến thể PHẢI KHÁC NHAU về bối cảnh/người/câu chuyện.
+Bạn đang lấy 1 hook gốc đã chạy tốt → tạo ${quantity} CÁCH QUAY VISUAL KHÁC NHAU cho cùng hook concept đó.
+
+⚠️ KHÔNG ĐỔI: Concept hook, painpoint, emotion, core user (trừ khi user yêu cầu).
+⚠️ CHỈ ĐỔI: VISUAL — cách quay, bối cảnh, địa điểm, nhân vật cụ thể, góc camera, trang phục, ánh sáng.
+
+📌 VISUAL GỐC ĐỂ THAM CHIẾU:
+"${hook.visual_detail || hook.description || 'Xem concept hook gốc ở trên'}"
+→ Mỗi biến thể PHẢI KHÁC visual gốc — khác cách quay, khác bối cảnh, khác người — nhưng VẪN kể cùng câu chuyện hook.
+
+═══════════════════════════════════════
+🎬 VISUAL VARIATION MATRIX — MỖI BIẾN THỂ PHẢI KHÁC VISUAL GỐC VỀ:
+═══════════════════════════════════════
+Mỗi biến thể PHẢI khác visual gốc + khác các biến thể khác TỐI THIỂU 3/5 yếu tố:
+① ĐỊA ĐIỂM: Hoàn toàn khác (VD: gốc ở kitchen → biến thể ở Walmart, backyard, doctor's office)
+② NHÂN VẬT: Khác giới/tuổi/vai trò nhưng VẪN trong core user (VD: gốc bà 60 → biến thể ông 65, couple 50s)
+③ GÓC QUAY/STYLE: Khác format (VD: gốc UGC selfie → biến thể POV, CCTV, screen recording, green screen)
+④ TÌNH HUỐNG: Cùng painpoint nhưng KHÁC kịch bản (VD: gốc phone lag lúc gọi → biến thể phone lag lúc thanh toán)
+⑤ GIỌNG/MOOD: Khác cảm giác (VD: gốc drama sợ hãi → biến thể sarcastic, hài hước nhẹ, urgent)
+
+❌ TUYỆT ĐỐI KHÔNG: 
+- Tất cả biến thể cùng địa điểm, cùng người, chỉ đổi vài từ voice
+- Copy y visual gốc rồi thay tên
+- Tất cả biến thể đều UGC selfie (phải đa dạng style quay)
+
+✅ PHẢI LÀ: Mỗi biến thể = 1 CÁCH QUAY HOÀN TOÀN KHÁC — cùng hook concept nhưng team editor có THỂ QUAY NHIỀU VIDEO KHÁC NHAU.
+
+VÍ DỤ — Hook gốc: "Bà 60 tuổi ở bệnh viện, phone lag, bác sĩ không xem được hồ sơ":
+- Biến thể 1: Ông 65 tuổi ở sân bay MCO, boarding pass app crash, nhân viên gate đang đóng cửa → POV shot
+- Biến thể 2: Bà 58 tuổi ở Walmart self-checkout, Apple Pay freeze, hàng dài sau lưng → góc CCTV
+- Biến thể 3: Couple 50s ở nhà, đang FaceTime cháu nội lần đầu, phone đơ giữa chừng → selfie UGC
+→ TẤT CẢ đều cùng painpoint "phone lag lúc quan trọng" nhưng VISUAL HOÀN TOÀN KHÁC.
+
+═══════════════════════════════════════
+🔺 TAM GIÁC BẮT BUỘC: CORE USER × PAINPOINT × EMOTION
+═══════════════════════════════════════
+1. NHÂN VẬT = CORE USER: Nhân vật PHẢI KHỚP với Core User của hook gốc (${hook.core_user || 'theo hook gốc'}).
+2. PAINPOINT: Giữ nguyên painpoint gốc (${hook.painpoint || 'theo hook gốc'}) — chỉ thay đổi TÌNH HUỐNG.
+3. EMOTION: Giữ đúng emotion gốc (${hook.emotion || 'theo hook gốc'}) — visual mới vẫn phải trigger cùng emotion.
+→ Hook KHÔNG giới thiệu app. App chỉ xuất hiện ở Body/CTA.
+
+
 
 ═══════════════════════════════════════
 ⚠️ RULE VĂN HÓA & HÀNH VI (CỰC KỲ QUAN TRỌNG)
 ═══════════════════════════════════════
 Thị trường mục tiêu: US (Mỹ). MỌI chi tiết trong script PHẢI chuẩn xác về:
+
 
 🏠 BỐI CẢNH ĐỜI THƯỜNG MỸ:
 - Nhà: suburban house, apartment, kitchen with granite counter, living room with sectional sofa, backyard/patio/deck
@@ -168,19 +207,20 @@ Voice/text overlay viết bằng TIẾNG ANH chuẩn Mỹ.
 NHƯNG BẮT BUỘC kèm bản dịch tiếng Việt ("viTranslation").
 
 ═══════════════════════════════════════
-OUTPUT: JSON ARRAY, KHÔNG markdown
+OUTPUT: JSON ARRAY, KHÔNG markdown — MỖI BIẾN THỂ = 1 VISUAL HOOK MỚI
 ═══════════════════════════════════════
 [{
   "id": 1,
-  "title": "Tên biến thể (tiếng Việt, ghi rõ khác gì gốc)",
-  "explanation": "Tại sao biến thể này hiệu quả + khác gì hook gốc (tiếng Việt, 3-5 câu)",
+  "title": "Tên biến thể (tiếng Việt, ghi rõ VISUAL khác gì gốc: VD 'CCTV ở Walmart' hoặc 'POV sân bay MCO')",
+  "explanation": "So sánh visual gốc vs visual mới: khác gì về địa điểm, người, góc quay, mood? Tại sao cách quay mới hiệu quả? (tiếng Việt, 3-5 câu)",
   "hook": {
-    "script": "KỊCH BẢN LIỀN MẠCH bằng tiếng Việt mô tả cảnh + [VOICE bằng English] + [TEXT OVERLAY bằng English] + [SFX]. CHI TIẾT.",
+    "script": "KỊCH BẢN LIỀN MẠCH hook 3-5s — mô tả CHI TIẾT: Ở ĐÂU (địa điểm cụ thể), AI (nhân vật cụ thể, tuổi, mặc gì), ĐANG LÀM GÌ (hành động), GÓC QUAY (POV/UGC/CCTV...) + [VOICE bằng English] + [TEXT OVERLAY bằng English] + [SFX]. PHẢI KHÁC visual gốc.",
     "textOverlay": "1 câu text overlay bằng tiếng Anh",
     "viTranslation": "Bản dịch TIẾNG VIỆT của voice + text overlay",
-    "viewerEmotion": "Người xem CẢM NHẬN gì khi xem hook? Họ nghĩ gì, liên tưởng gì? (tiếng Việt, 2-3 câu)",
-    "painpointImpact": "Painpoint ĐÁNH VÀO tâm lý người xem NHƯ THẾ NÀO? (tiếng Việt, 2-3 câu)",
-    "whyTheyStopScrolling": "Tại sao người xem DỪNG SCROLL? 1 câu (tiếng Việt)"
+    "visualDiff": "KHÁC GỐC: gốc [mô tả ngắn visual gốc] → biến thể này [mô tả visual mới]. Khác về: [liệt kê: địa điểm/người/góc quay/...]",
+    "viewerEmotion": "Người xem CẢM NHẬN gì khi xem hook visual mới này? (tiếng Việt, 2-3 câu)",
+    "painpointImpact": "Painpoint thể hiện qua visual mới NHƯ THẾ NÀO? Nhân vật ĐANG làm gì thể hiện painpoint? (tiếng Việt, 2-3 câu)",
+    "whyTheyStopScrolling": "Tại sao người xem DỪNG SCROLL ở visual mới này? 1 câu (tiếng Việt)"
   }
 }]`;
 

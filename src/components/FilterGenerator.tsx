@@ -28,6 +28,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
   const progressRef = useRef<NodeJS.Timeout | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [results, setResults] = useState<GeneratedIdea[]>([]);
   const [duration, setDuration] = useState('30s');
   const [quantity, setQuantity] = useState(3);
@@ -129,8 +130,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1500);
   };
 
+  const handleCancel = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    stopProgress();
+    setIsGenerating(false);
+    setProgress(0);
+    setProgressLabel('Đã hủy');
+    setTimeout(() => setProgressLabel(''), 1500);
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
     startProgress();
     try {
       // Prepare previous ideas summary for AI to learn from (richer data for better learning)
@@ -156,6 +171,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           appKnowledge: app.app_knowledge || null,
           selectedModel: selectedModel || 'gemini-2.5-pro',
         }),
+        signal: controller.signal,
       });
       const result = await res.json();
 
@@ -485,6 +501,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <span>Voice & Text</span>
                 <span>Lưu DB</span>
               </div>
+              <button onClick={handleCancel}
+                className="w-full mt-2 py-2.5 rounded-xl font-semibold text-sm border-2 border-red-200 text-red-500 bg-red-50 hover:bg-red-100 hover:border-red-300 transition-all flex items-center justify-center gap-2">
+                <X size={16} /> Hủy Tạo
+              </button>
             </div>
           )}
 

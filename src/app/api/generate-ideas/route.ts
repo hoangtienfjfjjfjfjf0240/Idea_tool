@@ -80,15 +80,61 @@ ${ideasBlock}
 [SỐ LƯỢNG] ${quantity} ideas
 
 ═══════════════════════════════════════
-RULE #1: HOOK FORMULA (BẮT BUỘC)
+RULE #1: HOOK FORMULA (BẮT BUỘC) — TAM GIÁC: CORE USER × PAINPOINT × EMOTION
 ═══════════════════════════════════════
-Hook = Visual/Text/Voice khiến NGƯỜI XEM (viewer) cảm thấy đúng EMOTION MỤC TIÊU khi nhìn thấy PAINPOINT của CORE USER.
+Hook = NHÂN VẬT (chính là CORE USER) đang TRẢI QUA PAINPOINT → tạo ĐÚNG EMOTION ĐÃ CHỌN cho NGƯỜI XEM.
 
-⚠️ PHÂN BIỆT:
-- EMOTION = cảm xúc hook tạo ra CHO NGƯỜI XEM (VD: người xem phải SỢ HÃI, LO LẮNG)
-- EMOTION ≠ cảm xúc của nhân vật (nhân vật có thể bình thường, TÌNH HUỐNG phải khiến NGƯỜI XEM lo sợ)
-→ Hook KHÔNG giới thiệu app. Hook KỂ CHUYỆN tạo EMOTION cho viewer.
+⚠️⚠️⚠️ EMOTION MỤC TIÊU LÀ: ${filters?.emotion?.join(', ') || 'General'}
+→ Hook PHẢI được thiết kế ĐẶC BIỆT để trigger ĐÚNG emotion này.
+→ KHÔNG ĐƯỢC mặc định ra "sợ hãi/shock" nếu emotion đã chọn là khác.
+
+🔺 TAM GIÁC BẮT BUỘC:
+1. NHÂN VẬT = CORE USER: Nhân vật trong hook PHẢI KHỚP với Core User đã chọn.
+   → Nếu Core User = "Phụ nữ 50+ tuổi, dùng iPhone" → nhân vật PHẢI là phụ nữ 50+ tuổi, cầm iPhone
+   → Nếu Core User = "Nam 35-50, suburban dad" → nhân vật PHẢI là ông bố trung niên ở nhà suburban
+   → KHÔNG được dùng nhân vật random không khớp core user
+
+2. PAINPOINT LÊN NHÂN VẬT: Nhân vật PHẢI ĐANG sống trong painpoint — HIỆN RA qua hành động, biểu cảm, lời nói.
+
+3. EMOTION = CẢM XÚC NGƯỜI XEM — PHẢI ĐÚNG LOẠI ĐÃ CHỌN:
+
+📌 CÁCH TẠO HOOK THEO TỪNG LOẠI EMOTION:
+
+🔍 TÒ MÒ (Curious): Hook phải tạo CÂU HỎI trong đầu người xem, khiến họ PHẢI xem tiếp để biết câu trả lời.
+   → Dùng: bí ẩn, cliffhanger, "wait what?", kết quả bất ngờ, "tôi không tin cho đến khi..."
+   → VD: Nhân vật đang lướt phone, đột nhiên dừng lại, zoom vào màn hình, miệng há ra → "No way..." → CẮT. Người xem: "Cái gì vậy? Phải xem tiếp!"
+   → VD: POV quay lén nhân vật đang đo đạc phòng, rồi giơ phone lên — trên phone hiện MỘT THỨ khiến họ WOW → không cho thấy là gì → người xem TÒ MÒ
+   → TEXT OVERLAY kiểu: "I wasn't expecting this...", "Wait for it...", "What happens next will shock you"
+   → ❌ KHÔNG dùng: sợ hãi, đe dọa, hoảng sợ — đó KHÔNG PHẢI tò mò
+
+😱 SỢ HÃI (Fear): Hook tạo cảm giác nguy hiểm, đe dọa, bất an.
+   → Dùng: tình huống khẩn cấp, mất kiểm soát, hậu quả nghiêm trọng
+   → VD: App treo lúc cần, camera an ninh mất tín hiệu, điện thoại chết lúc emergency
+
+😰 LO LẮNG (Anxiety): Hook tạo cảm giác bất an kéo dài, "chuyện gì sẽ xảy ra?"
+   → Dùng: deadline đang đến, dấu hiệu cảnh báo, tình huống sắp xảy ra
+   → VD: Thông báo "Storage Full" xuất hiện giữa lúc đang làm việc quan trọng
+
+🤩 FOMO: Hook khiến người xem cảm thấy ĐANG BỎ LỠ thứ gì đó tuyệt vời.
+   → Dùng: "mọi người đều biết trừ bạn", social proof, before/after dramatic
+   → VD: "My neighbor just showed me this app and I can't believe I've been doing it wrong for 10 years"
+
+🤯 SHOCK: Hook tạo BẤT NGỜ, "không thể tin được".
+   → Dùng: contrast mạnh, reveal bất ngờ, con số gây sốc
+   → VD: Screen recording cho thấy 47GB rác ẩn trong điện thoại "sạch"
+
+😢 ĐỒNG CẢM (Empathy): Hook khiến người xem THẤY MÌNH trong nhân vật.
+   → Dùng: tình huống quen thuộc, "ai cũng từng trải qua", relatable moments
+   → VD: Bố già loay hoay với phone, con gái thở dài → "Đúng ba mình luôn"
+
+⚠️ EMOTION CHECKPOINT — TỰ KIỂM TRA TRƯỚC KHI OUTPUT:
+→ Người xem target xem hook này sẽ cảm thấy "${filters?.emotion?.join(', ') || 'General'}" CHƯA?
+→ Nếu emotion đã chọn là "Tò mò" mà hook tạo ra "sợ hãi" → SAI → viết lại
+→ Nếu emotion đã chọn là "FOMO" mà hook tạo ra "lo lắng" → SAI → viết lại
+
+→ Hook KHÔNG giới thiệu app. Hook KỂ CHUYỆN — cho nhân vật (core user) SỐNG trong painpoint → tạo ĐÚNG EMOTION đã chọn cho viewer.
 → App chỉ xuất hiện ở BODY và CTA.
+
 
 ═══════════════════════════════════════
 RULE #2: VISUAL TYPE BẮT BUỘC: ${visualType}

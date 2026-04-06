@@ -36,6 +36,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
   const progressRef = useRef<NodeJS.Timeout | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const pendingThumbRef = useRef<string | null>(null);
@@ -91,9 +92,23 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1500);
   };
 
+  const handleCancel = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    stopProgress();
+    setIsLoading(false);
+    setProgress(0);
+    setProgressLabel('Đã hủy');
+    setTimeout(() => setProgressLabel(''), 1500);
+  };
+
   const handleGenerate = async () => {
     if (!selectedHook || !modifyPrompt) return;
     setIsLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
     startProgress();
     try {
       const res = await fetch('/api/generate-hooks', {
@@ -107,6 +122,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           appCategory: app?.category || '',
           selectedModel: selectedModel || 'gemini-2.5-pro',
         }),
+        signal: controller.signal,
       });
       const result = await res.json();
       if (res.ok && result.success && result.data?.length > 0) {
@@ -732,6 +748,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <span>Visual & Voice</span>
                   <span>Hoàn thiện</span>
                 </div>
+                <button onClick={handleCancel}
+                  className="w-full mt-2 py-2.5 rounded-xl font-semibold text-sm border-2 border-red-200 text-red-500 bg-red-50 hover:bg-red-100 hover:border-red-300 transition-all flex items-center justify-center gap-2">
+                  <X size={16} /> Hủy Tạo
+                </button>
               </div>
             )}
           </div>
