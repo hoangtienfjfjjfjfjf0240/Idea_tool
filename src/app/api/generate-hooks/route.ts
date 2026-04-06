@@ -131,13 +131,26 @@ She holds up his phone to the camera.
 - "Cảnh quay cinematic...", "Diễn viên trong trang phục..." → TVC
 - "Op1: xxx Op2: xxx Op3: xxx" → KHÔNG, chỉ 1 text overlay
 - "Home Security app" generic → Phải dùng tên app thật: Ring, SimpliSafe, ADT
+- "Bệnh viện" một mình → phải mô tả MÁY MÓC, TIẾNG, KHÔNG KHÍ cụ thể
+- "Sân bay" một mình → phải ghi rõ TÊN SÂN BAY (FLL, LAX, JFK, MCO...)
+- "Cửa hàng điện thoại" → T-Mobile, Best Buy, Apple Store cụ thể
+
+📌 CHUẨN CHI TIẾT BẮT BUỘC (HỌC TỪ PRODUCTION THẬT):
+1. BỐI CẢNH: Không chỉ "bệnh viện" → mô tả máy hô hấp, dây dợ, máy đo nhịp tim tít tít, ánh đèn neon
+2. ĐỊA ĐIỂM: Fort Lauderdale (FLL), Orlando (MCO), T-Mobile, Best Buy, Walmart, CVS cụ thể
+3. NHIỀU OPTIONS: Gợi ý 2-3 biến thể bối cảnh (khác người, khác địa điểm, khác góc quay)
+4. CẢM XÚC CAO TRÀO: Nhân vật phải bực bội, sợ hãi, giận dữ, run rẩy — không nhạt
+5. VOICE: Viết đúng câu nói cụ thể, đúng giọng, đúng cảm xúc
+6. GHI CHÚ PRODUCTION: "nhạc kịch tính", "góc quay CCTV", "drama"
 
 ✅ PHẢI ĐẠT ĐƯỢC:
-- Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu
-- Chi tiết phải 100% chuẩn US: đồ vật, app, bối cảnh, cách nói
+- Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu — từng chi tiết nhỏ
+- Chi tiết 100% chuẩn US: đồ vật, app, bối cảnh, cách nói, TÊN ĐỊA ĐIỂM THẬT
 - Biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
 - Painpoint ĐÁNH THẲNG vào tâm lý — không trừu tượng
 - Text overlay = 1 câu duy nhất, bold, giật gân
+- Mỗi hook gợi ý 2-3 biến thể bối cảnh/địa điểm
+- Ghi chú production: nhạc, SFX, góc quay
 ═══════════════════════════════════════
 ⚠️ RULE NGÔN NGỮ: PHẢI CÓ BẢN DỊCH TIẾNG VIỆT
 ═══════════════════════════════════════

@@ -172,18 +172,60 @@ User taps 'REPAIR & CLEAN'. Satisfying cleanup animation runs.
 [TEXT OVERLAY] '7.2 GB of Corrupted Files REMOVED'"
 ---
 
+═══════════════════════════════════════
+⚠️ VÍ DỤ HOOK THỰC TẾ TỪ PRODUCTION (MỨC ĐỘ CHI TIẾT PHẢI ĐẠT)
+═══════════════════════════════════════
+Đây là ví dụ hook thực tế từ team sáng tạo. Output CỦA BẠN phải chi tiết BẰNG hoặc HƠN mức này:
+
+🏥 VÍ DỤ 1 — App dọn dẹp điện thoại (Hook bệnh viện):
+---
+"Bối cảnh trong phòng bệnh, bệnh nhân nam nằm trên giường máy hô hấp dây dợ nhằng nhịt kiểu lâm sao để cấm thấy bệnh rất nặng nhé, máy đo nhịp tim kêu tít tít tít rồi như kiểu sắp ngừng tim tôi nói. Bên cạnh là bà sĩ muốn xem hồ sơ bệnh nhưng app không cập nhật nên không xem được và người nhà tuổi 45+ đứng bên cạnh tay cầm điện thoại mặt lo lắng, sợ hãi, run rẩy nói 'Doctor, I'm freaking out! Zero space, My MyChart won't update to show my records!'. Bác sĩ ấn ấn trán nói 'Don't panic. It's just storage junk. Let's clear it in 3 seconds.'
+- 2 option khung cảnh bệnh viện, bác sĩ, người già khác nhau
+- Body điện thoại mới
+- Cho nhạc nền kiểu kịch tính, drama chứ nhé"
+---
+
+✈️ VÍ DỤ 2 — App dọn dẹp điện thoại (Hook sân bay):
+---
+"Bối cảnh ở sân bay góc quay focus vào người già và nhân viên an ninh sân bay. Người già mặc trang phục kiểu thoải mái du lịch, kéo vali, tay cầm iPhone mặt rất lo lắng. Phía sau lưng là hàng người đứng đài ào xôn xao, có tiếng hô vọng từi giục giã 'Hurry up'. Người già mặt rất lo lắng nói 'Please help! My storage is full and the Passport app refuses to update my info!'. Nhân viên an ninh sân bay nói 'Don't panic. It's just hidden trash. Watch me wipe it in 3 seconds.'
+- 3 option đ/cảnh sân bay khác nhau và người già khác nhau
++ FLL (Fort Lauderdale-Hollywood International Airport)
++ MCO (Orlando International Airport)
++ RSW (Southwest Florida International Airport - Fort Myers)"
+---
+
+📱 VÍ DỤ 3 — App dọn dẹp điện thoại (Hook T-Mobile store):
+---
+"Bối cảnh tại store bán điện thoại: 3 option apple, best buy, T-Mobile. 1 người đang giả thể ngân hàng đính thanh toán với nhân viên bán hàng và nói vội giọng phẫn nạn, bực bội: 'This phone is so laggy it's useless. Sell me a new one NOW!'. Người bán hàng đang đính cấm thể ngân hàng thị có người đi tới túc giận đập vai người mua hoặc bàn ghế gì đó cho cảo trao cảm xúc nhé, người nây nói: 'Are you crazy? Stop wasting a grand on a new iPhone! Fixing it is super easy. Look here.'
+- Đa dạng góc quay CCTV/ góc quay khác nhau, người mua và người khuyến có thể là nam/ nữ trung niên, già hàn đa dạng trong các option lên nhé
+- Cảm xúc 2 người nói chuyện cho cao trào thể hiện nhiều lên như ý idea CCTV ngày trước ngon tốt"
+---
+
+📌 RÚT RA TỪ CÁC VÍ DỤ TRÊN — BẮT BUỘC ÁP DỤNG:
+1. BỐI CẢNH CỤ THỂ: Không chỉ "bệnh viện" → phải mô tả máy hô hấp, dây dợ, máy đo nhịp tim tít tít
+2. ĐỊA ĐIỂM TÊN THẬT: Fort Lauderdale (FLL), Orlando (MCO), T-Mobile, Best Buy, Apple Store
+3. NHIỀU OPTIONS: Mỗi hook gợi ý 2-3 biến thể bối cảnh (khác người, khác địa điểm, khác góc quay)
+4. CẢM XÚC CAO TRÀO: Nhân vật phải bực bội, sợ hãi, giận dữ, run rẩy — không nhạt
+5. VOICE CỤ THỂ: Viết đúng câu nói, đúng giọng, đúng cảm xúc (không generic)
+6. GHI CHÚ PRODUCTION: "cho nhạc nền kịch tính", "góc quay CCTV", "drama chứ nhé"
+
 ❌ TUYỆT ĐỐI KHÔNG VIẾT:
 - "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG, không chi tiết
 - "Cảnh quay cinematic..." → TVC
 - "Op1: xxx Op2: yyy Op3: zzz" → KHÔNG, chỉ 1 text overlay
 - "Home Security app" generic → Phải dùng tên app thật (Ring, SimpliSafe...)
+- "Bệnh viện" một mình → phải mô tả MÁY MÓC, TIẾNG, KHÔNG KHÍ
+- "Sân bay" một mình → phải ghi rõ TÊN SÂN BAY (FLL, LAX, JFK, MCO...)
+- "Cửa hàng điện thoại" → phải ghi T-Mobile, Best Buy, Apple Store...
 
 ✅ PHẢI ĐẠT ĐƯỢC:
-- Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu
-- Chi tiết 100% chuẩn US: đồ vật, app, bối cảnh, cách nói
+- Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu — từng chi tiết nhỏ
+- Chi tiết 100% chuẩn US: đồ vật, app, bối cảnh, cách nói, TÊN ĐỊA ĐIỂM THẬT
 - Biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
 - Painpoint ĐÁNH THẲNG vào tâm lý — không trừu tượng
 - Text overlay = 1 câu duy nhất
+- Mỗi hook GỢI Ý 2-3 biến thể bối cảnh/địa điểm (ghi trong script)
+- Ghi chú production: nhạc, SFX, góc quay đặc biệt
 
 ═══════════════════════════════════════
 CẤU TRÚC VIDEO ${duration}
