@@ -96,6 +96,40 @@ RULE #4: ANTI-TVC (KHÔNG vi phạm)
 ✅ Phải giống video TikTok/UGC: tự nhiên, hơi raw, đời thường
 
 ═══════════════════════════════════════
+⚠️ RULE #4.5: VĂN HÓA & HÀNH VI (CỰC KỲ QUAN TRỌNG)
+═══════════════════════════════════════
+Thị trường mục tiêu: US (Mỹ). MỌI chi tiết trong script PHẢI chuẩn xác về văn hóa, thói quen, hành vi của người Mỹ:
+
+🏠 BỐI CẢNH ĐỜI THƯỜNG MỸ:
+- Nhà: suburban house, apartment, kitchen with granite counter, living room with sectional sofa, backyard/patio/deck
+- Xe: minivan, SUV, sedan, park ở garage/driveway/parking lot
+- Nơi công cộng: Walmart, Target, CVS, Starbucks, gas station, doctor's office
+- Sự kiện: Thanksgiving dinner, kids' soccer practice, Sunday brunch, road trip, BBQ
+
+📱 CÔNG NGHỆ & APP PHẢI DÙNG TÊN THẬT:
+- iPhone hoặc Samsung Galaxy (KHÔNG Xiaomi, Oppo, Vivo)
+- Siri, Google Assistant (KHÔNG Zalo, WeChat)
+- Ring doorbell, SimpliSafe, ADT camera (KHÔNG "Home Security" generic)
+- Venmo, Apple Pay, Cash App, banking apps: Chase, Bank of America, Wells Fargo
+- Health insurance: MyChart, Blue Cross, UnitedHealthcare app
+- Parking: ParkMobile, SpotHero, PayByPhone (KHÔNG "ParkingPay" generic)
+- Social: Facebook, Instagram, TikTok, YouTube, Snapchat
+
+👥 HÀNH VI & CÁCH NÓI MỸ:
+- Gọi "Dad/Mom", "honey", "babe" (KHÔNG "bố/mẹ/con")
+- Tiếng lóng: "dude", "literally", "I can't even", "no way", "oh my god"
+- Cha mẹ 50-65t ở Mỹ: dùng iPad/iPhone, hay forward email chain, save memes, screenshot recipes từ Facebook, show ảnh cháu, FaceTime
+- Dùng iMessage / SMS nhiều hơn bất kỳ app chat nào
+- Y tế: copay, deductible, in-network, insurance card trên app
+
+❌ TUYỆT ĐỐI KHÔNG XUẤT HIỆN:
+- Zalo, VTV, xe máy, chợ, quán phở, Grab, MoMo, Shopee
+- "Link ở bio", "Tải ngay" — quá đặc thù VN
+- Bệnh viện công đông đúc kiểu châu Á
+- Xưng hô VN: bố/mẹ/con, anh/chị/em
+- Tiền VNĐ, metric (dùng miles, °F, pounds, inches)
+
+═══════════════════════════════════════
 RULE #5: FORMAT "SCRIPT" — KỊCH BẢN KỂ CHUYỆN
 ═══════════════════════════════════════
 ⚠️ KHÔNG viết tách rời Visual / Text / Voice thành 3 field riêng biệt.
@@ -110,36 +144,38 @@ Viết như một đạo diễn ghi chú cho quay phim. Trong đó PHẢI GỘP:
 
 VÍ DỤ SCRIPT HOOK CHUẨN (Hãy viết giống y thế này):
 ---
-"Góc quay POV từ mắt một người phụ nữ (55-60 tuổi). Bà đang đứng trong phòng khách tối, chỉ có ánh sáng yếu ớt từ TV. Tay bà (hơi run, có đeo nhẫn cưới) đang cầm iPhone. Màn hình điện thoại đang hiển thị app 'Home Security' bị treo cứng.
+"POV shot from a woman's eyes (late 50s). She's standing in a dark living room, only the dim glow of a Roku TV illuminating her face. Her hands (trembling, wedding ring visible) grip an iPhone 14. The screen shows her Ring app frozen solid — spinning wheel, no response.
 
-[SFX] Tiếng cành cây gãy 'RẮC!' từ bên ngoài.
-Bà giật mình, thở gấp.
+[SFX] A loud CRACK of a branch snapping outside, near the back patio door.
+She gasps, breath quickening.
 
-[VOICE — Người phụ nữ, giọng thì thầm sợ hãi]: 'Oh my god... mở đi... MỞ ĐI!'
-Tay bà liên tục bấm vào màn hình trong vô vọng.
+[VOICE — Woman, whispered, terrified]: 'Oh my god... come on... COME ON!'
+She frantically taps the screen. Nothing happens.
 
 [TEXT OVERLAY] 'It always fails when you need it most.'"
 ---
 
 VÍ DỤ SCRIPT BODY CHUẨN:
 ---
-"Cắt cảnh sang quay màn hình điện thoại (screen recording). Người dùng mở app Phone Cleaner. App bắt đầu quét. Animation quét dừng lại và highlight mục: 'Data Decay Detected: 7.2 GB'.
+"Cut to screen recording on iPhone. User opens Phone Cleaner app. Scan animation runs, stops and highlights: 'Data Decay Detected: 7.2 GB of Corrupted Files'.
 
-[VOICE — Narrator, giọng chuyên gia điềm tĩnh]: 'This app performs an instant emergency cleanup. It clears out corrupted data and makes your phone responsive again in seconds.'
+[VOICE — Narrator, calm authority]: 'This app performs an instant emergency cleanup. It clears out corrupted data and makes your phone responsive again in seconds.'
 
-Người dùng nhấn 'REPAIR & CLEAN'. Animation sửa lỗi chạy thỏa mãn.
+User taps 'REPAIR & CLEAN'. Satisfying cleanup animation runs.
 [TEXT OVERLAY] '7.2 GB of Corrupted Files REMOVED'"
 ---
 
 ❌ TUYỆT ĐỐI KHÔNG VIẾT:
-- "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG
+- "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG, không chi tiết
 - "Cảnh quay cinematic..." → TVC
 - "Op1: xxx Op2: yyy Op3: zzz" → KHÔNG, chỉ 1 text overlay
+- "Home Security app" generic → Phải dùng tên app thật (Ring, SimpliSafe...)
 
 ✅ PHẢI ĐẠT ĐƯỢC:
 - Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu
+- Chi tiết 100% chuẩn US: đồ vật, app, bối cảnh, cách nói
 - Biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
-- Painpoint ĐÁNH THẲNG vào tâm lý người xem
+- Painpoint ĐÁNH THẲNG vào tâm lý — không trừu tượng
 - Text overlay = 1 câu duy nhất
 
 ═══════════════════════════════════════

@@ -45,52 +45,96 @@ NGUYÊN TẮC MODIFY
 3. Mỗi biến thể PHẢI KHÁC NHAU về bối cảnh/người/câu chuyện.
 
 ═══════════════════════════════════════
-QUAN TRỌNG: FORMAT "SCRIPT" — KỊCH BẢN KỂ CHUYỆN
+⚠️ RULE VĂN HÓA & HÀNH VI (CỰC KỲ QUAN TRỌNG)
 ═══════════════════════════════════════
-⚠️ KHÔNG viết tách rời Visual / Text / Voice như trước.
+Thị trường mục tiêu: US (Mỹ). MỌI chi tiết trong script PHẢI chuẩn xác về:
+
+🏠 BỐI CẢNH ĐỜI THƯỜNG MỸ:
+- Nhà: suburban house, apartment, kitchen with granite counter, living room with sectional sofa, backyard/patio/deck
+- Xe: minivan, SUV, sedan, xe park ở garage/driveway/parking lot
+- Nơi công cộng: Walmart, Target, CVS, Starbucks, gas station, doctor's office waiting room
+- Sự kiện: Thanksgiving dinner, kids' soccer practice, Sunday brunch, road trip, BBQ
+
+📱 CÔNG NGHỆ & APP CỦA MỸ:
+- iPhone hoặc Samsung Galaxy (KHÔNG Xiaomi, Oppo, Vivo)
+- Siri, Google Assistant (KHÔNG Zalo, WeChat, Bkav)
+- Ring doorbell, SimpliSafe, ADT camera (KHÔNG generic "Home Security")
+- Venmo, Apple Pay, Cash App, banking apps (Chase, BoA, Wells Fargo)
+- Health insurance: MyChart, Blue Cross, UnitedHealthcare app
+- ParkMobile, SpotHero, PayByPhone (KHÔNG "ParkingPay" generic)
+- Facebook, Instagram, TikTok, YouTube, Snapchat
+
+👥 HÀNH VI & QUAN HỆ MỸ:
+- Gọi "Dad/Mom", "honey", "babe" (KHÔNG "bố/mẹ")  
+- Tiếng lóng: "dude", "literally", "I can't even", "no way", "oh my god"
+- Cha mẹ 50-65 tuổi ở Mỹ: thường dùng iPad/iPhone, hay forward email chain, save memes, screenshot recipes từ Facebook
+- Đặc trưng: show ảnh cháu cho bạn, FaceTime với con, dùng text message (iMessage) nhiều hơn bất kỳ app chat nào
+- Parking: meter, parking garage, parallel parking, valet
+- Y tế: copay, deductible, in-network, out-of-pocket, insurance card trên app
+
+🍔 ĐỜI SỐNG THƯỜNG NGÀY:
+- Sáng: coffee from Keurig/Starbucks, drive thru
+- Trưa: lunch break, leftovers, meal prep container
+- Tối: Netflix, Amazon Prime, Hulu, Roku TV
+- Weekend: yard work, Home Depot/Lowe's, kids' activities, church, brunch
+- Tiền: credit score, tax return, Student loans, 401k
+
+❌ KHÔNG BAO GIỜ XUẤT HIỆN:
+- Zalo, VTV, xe máy/Honda Lead, chợ, quán phở, Grab, MoMo, Shopee
+- "Tải ngay", "link ở bio" (nghe quá VN)
+- Bệnh viện công, phòng khám đông đúc kiểu châu Á
+- Xưng hô kiểu VN: bố/mẹ/con, anh/chị/em
+- Tiền VNĐ, đơn vị đo lường metric (dùng miles, Fahrenheit, pounds)
+
+═══════════════════════════════════════
+FORMAT "SCRIPT" — KỊCH BẢN KỂ CHUYỆN
+═══════════════════════════════════════
+⚠️ KHÔNG viết tách rời Visual / Text / Voice.
 ⚠️ KHÔNG viết 3 options cho text overlay. CHỈ 1 TEXT DUY NHẤT.
 
 "script" = MỘT KỊCH BẢN LIỀN MẠCH cho 3-5 giây hook đầu tiên.
-Viết như một đạo diễn ghi chú cho quay phim. Trong đó PHẢI GỘP:
-→ Ai đang làm gì, biểu cảm gì (visual)
-→ Ai nói gì, giọng điệu/cảm xúc nào (voice)  
-→ Text overlay hiện lên khi nào (text)
-→ Âm thanh/tiếng động nếu có
+Viết như đạo diễn ghi chú cho quay phim. PHẢI GỘP:
+→ Ai đang làm gì, biểu cảm gì — CHI TIẾT (visual)
+→ Ai nói gì, giọng điệu/cảm xúc nào (voice) — tag [VOICE — Ai, giọng gì]
+→ Text overlay hiện lên khi nào — tag [TEXT OVERLAY]
+→ Âm thanh/tiếng động — tag [SFX]
 
 VÍ DỤ SCRIPT CHUẨN (Hãy viết y như này):
 ---
-"Góc quay POV từ mắt một người phụ nữ (55-60 tuổi). Bà đang đứng trong phòng khách tối, chỉ có ánh sáng yếu ớt từ TV. Tay bà (hơi run, có đeo nhẫn cưới) đang cầm iPhone. Màn hình điện thoại đang hiển thị app 'Home Security' bị treo cứng.
+"POV shot from a woman's eyes (late 50s). She's standing in a dark living room, only the dim glow of a Roku TV illuminating her face. Her hands (trembling, wedding ring visible) are gripping an iPhone 14. The screen shows the Ring app frozen solid — the spinning wheel won't stop.
 
-[SFX] Tiếng cành cây gãy 'RẮC!' từ bên ngoài.
-Bà giật mình, thở gấp.
+[SFX] A loud CRACK of a branch snapping outside, near the back patio.
+She gasps, her breath quickens.
 
-[VOICE — Người phụ nữ, giọng thì thầm sợ hãi]: 'Oh my god... mở đi... MỞ ĐI!'
-Tay bà liên tục bấm vào màn hình trong vô vọng.
+[VOICE — Woman, whispered, terrified]: 'Oh my god... come on... COME ON!'
+She frantically taps the screen. Nothing responds.
 
 [TEXT OVERLAY] 'It always fails when you need it most.'"
 ---
 
 VÍ DỤ 2 (UGC style):
 ---
-"Quay kiểu selfie UGC. Một cô con gái (25-30 tuổi) ngồi cạnh bố (55-65 tuổi, đeo kính, ngồi sofa phòng khách). Cô gái tỏ vẻ bất lực. Ông bố khoanh tay, tự ái.
+"Selfie-style UGC. A daughter (mid 20s, messy bun, oversized hoodie) sitting next to her dad (early 60s, reading glasses pushed up on forehead, reclined on a worn La-Z-Boy). She looks exasperated. He's got his arms crossed, defensive.
 
-[VOICE — Con gái]: 'Bố, con đang cứu điện thoại bố đấy. Nó đầy rồi!'
-[VOICE — Bố, giọng quả quyết]: 'Đầy gì! Bố xóa ảnh mỗi tuần!'
-[VOICE — Con gái, thở dài]: 'Okay bố, thế 2,849 cái screenshot app thời tiết này là gì?'
+[VOICE — Daughter, deadpan]: 'Dad, I'm literally trying to save your phone. It says storage full.'
+[VOICE — Dad, stubborn]: 'It is NOT full! I delete my pictures every week!'
+[VOICE — Daughter, sighing]: 'Okay then what are these... 2,849 screenshots of the Weather Channel app?'
 
-Cô giơ điện thoại bố về phía camera.
+She holds up his phone to the camera.
 [TEXT OVERLAY] 'My dad, the digital hoarder.'"
 ---
 
 ❌ TUYỆT ĐỐI KHÔNG VIẾT KIỂU NÀY:
-- "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG
-- "Cảnh quay cinematic...", "Một diễn viên trong trang phục..." → TVC
+- "Người dùng lo lắng nhìn điện thoại" → QUÁ CHUNG CHUNG, không chi tiết
+- "Cảnh quay cinematic...", "Diễn viên trong trang phục..." → TVC
 - "Op1: xxx Op2: xxx Op3: xxx" → KHÔNG, chỉ 1 text overlay
+- "Home Security app" generic → Phải dùng tên app thật: Ring, SimpliSafe, ADT
 
 ✅ PHẢI ĐẠT ĐƯỢC:
 - Đọc xong phải THẤY ĐƯỢC cảnh quay trong đầu
-- Phải biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
-- Painpoint phải ĐÁNH THẲNG vào tâm lý người xem, không trừu tượng
+- Chi tiết phải 100% chuẩn US: đồ vật, app, bối cảnh, cách nói
+- Biết AI NÓI GÌ, giọng điệu NÀO, cảm xúc GÌ
+- Painpoint ĐÁNH THẲNG vào tâm lý — không trừu tượng
 - Text overlay = 1 câu duy nhất, bold, giật gân
 
 ═══════════════════════════════════════
@@ -98,11 +142,11 @@ OUTPUT: JSON ARRAY, KHÔNG markdown
 ═══════════════════════════════════════
 [{
   "id": 1,
-  "title": "Tên biến thể (tiếng Việt, ghi rõ khác gì so với gốc)",
+  "title": "Tên biến thể (tiếng Việt, ghi rõ khác gì gốc)",
   "explanation": "Tại sao biến thể này hiệu quả + khác gì hook gốc (tiếng Việt)",
   "hook": {
-    "script": "KỊCH BẢN LIỀN MẠCH gộp visual + voice + text. GHI RÕ [VOICE — Ai, giọng gì], [TEXT OVERLAY], [SFX]. CHI TIẾT như ví dụ trên.",
-    "textOverlay": "1 câu text overlay duy nhất hiện trên màn hình (ngôn ngữ target)"
+    "script": "KỊCH BẢN LIỀN MẠCH gộp visual + voice + text + SFX. CHI TIẾT như ví dụ trên. Mô tả bằng TIẾNG VIỆT nhưng voice/text overlay phải bằng TIẾNG ANH chuẩn Mỹ.",
+    "textOverlay": "1 câu text overlay duy nhất bằng tiếng Anh"
   }
 }]`;
 
