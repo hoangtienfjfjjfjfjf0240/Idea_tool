@@ -114,11 +114,21 @@ export async function updateApp(id: string, updates: Partial<AppProject>): Promi
 }
 
 export async function deleteApp(id: string): Promise<boolean> {
+  // Delete related data first (safety net in case CASCADE isn't applied)
+  await supabase.from('sync_logs').delete().eq('app_id', id);
+  await supabase.from('filter_options').delete().eq('app_id', id);
+  await supabase.from('generated_ideas').delete().eq('app_id', id);
+  await supabase.from('hooks').delete().eq('app_id', id);
+  await supabase.from('features').delete().eq('app_id', id);
+  
   const { error } = await supabase
     .from('apps')
     .delete()
     .eq('id', id);
-  if (error) { console.error('deleteApp error:', error); return false; }
+  if (error) {
+    console.error('deleteApp error:', error);
+    throw new Error(error.message || 'Failed to delete app');
+  }
   return true;
 }
 
