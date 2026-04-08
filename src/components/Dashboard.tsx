@@ -27,6 +27,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showIconInput, setShowIconInput] = useState(false);
 
   useEffect(() => {
@@ -60,7 +61,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (deletingId) return;
-    if (!window.confirm('Bạn có chắc chắn muốn xóa ứng dụng này?')) return;
+    
+    // Two-click delete: first click = confirm, second click = delete
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      // Auto-reset after 3 seconds
+      setTimeout(() => setConfirmDeleteId(prev => prev === id ? null : prev), 3000);
+      return;
+    }
+    
+    setConfirmDeleteId(null);
     setDeletingId(id);
     try {
       await deleteApp(id);
@@ -188,8 +198,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
                     <Pencil size={14} />
                   </button>
                   <button onClick={(e) => handleDelete(e, app.id)} disabled={!!deletingId}
-                    className="p-2 bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 rounded-lg transition-colors disabled:opacity-50" title="Xóa">
-                    {deletingId === app.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    className={`p-2 rounded-lg transition-all disabled:opacity-50 ${
+                      confirmDeleteId === app.id
+                        ? 'bg-red-500 text-white shadow-md scale-110 animate-pulse'
+                        : 'bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600'
+                    }`} title={confirmDeleteId === app.id ? 'Bấm lần nữa để xóa' : 'Xóa'}>
+                    {deletingId === app.id ? <Loader2 size={14} className="animate-spin" /> : 
+                     confirmDeleteId === app.id ? <span className="text-xs font-bold px-1">Xóa?</span> : <Trash2 size={14} />}
                   </button>
                 </div>
 
