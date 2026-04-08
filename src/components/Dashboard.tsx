@@ -108,10 +108,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
         await updateApp(editingAppId, { name: manualName, category: manualCategory, icon_url: manualIcon, store_link: appUrl || null });
       } else {
         const newApp = await addApp({ name: manualName, category: manualCategory, icon_url: manualIcon, store_link: appUrl || undefined });
-        if (newApp && scannedFeaturesBuffer.length > 0) {
-          const featureRows = scannedFeaturesBuffer.map(f => ({ app_id: newApp.id, name: f.name, description: f.desc || f.description || '' }));
-          await addFeaturesBatch(featureRows);
-          await updateApp(newApp.id, { features_count: scannedFeaturesBuffer.length });
+        if (newApp) {
+          if (scannedFeaturesBuffer.length > 0) {
+            const featureRows = scannedFeaturesBuffer.map(f => ({ app_id: newApp.id, name: f.name, description: f.desc || f.description || '' }));
+            await addFeaturesBatch(featureRows);
+            await updateApp(newApp.id, { features_count: scannedFeaturesBuffer.length });
+          }
+          // Auto-generate filter options (coreUser, painPoint, emotion) in background
+          fetch('/api/generate-filters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              appId: newApp.id,
+              appName: manualName,
+              appCategory: manualCategory,
+              features: scannedFeaturesBuffer,
+            }),
+          }).catch(err => console.error('Auto-generate filters failed:', err));
         }
       }
       await loadData();
