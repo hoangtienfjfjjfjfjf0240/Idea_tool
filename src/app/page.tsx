@@ -24,7 +24,13 @@ export default function Home() {
   const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
   const [selectedModel, setSelectedModel] = useState<AIModel>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('ideagen_model') as AIModel) || 'gemini-2.5-pro';
+      const saved = localStorage.getItem('ideagen_model') as string;
+      const validModels: AIModel[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3-pro'];
+      if (saved && validModels.includes(saved as AIModel)) {
+        return saved as AIModel;
+      }
+      // Migrate old model selections (gpt-4.1, o4-mini) to default
+      if (saved) localStorage.setItem('ideagen_model', 'gemini-2.5-pro');
     }
     return 'gemini-2.5-pro';
   });

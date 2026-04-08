@@ -1,16 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
-import { scanAppForSync } from '@/lib/geminiService';
+import { askAI } from '@/lib/aiClient';
+
+// Helper: parse JSON from text
+function parseJsonFromText(text: string): Record<string, unknown> | null {
+  try {
+    let cleanText = text.replace(/```json\s*|```/g, '').trim();
+    const firstCurly = cleanText.indexOf('{');
+    const lastCurly = cleanText.lastIndexOf('}');
+    if (firstCurly !== -1 && lastCurly !== -1) {
+      cleanText = cleanText.substring(firstCurly, lastCurly + 1);
+    }
+    return JSON.parse(cleanText);
+  } catch {
+    return null;
+  }
+}
+
+// Scan app for sync using AI gateway
+async function scanAppForSync(storeLink: string) {
+  const prompt = `I have an App Store / Google Play URL: "${storeLink}"
+
+YOUR TASK:
+1. Based on this URL, identify the app and extract its details.
+2. Extract: App Name, Category, Icon URL, and up to 5 key features.
+3. For icon: Google Play -> "https://play-lh.googleusercontent.com/...", App Store -> "mzstatic.com" URL. If you don't know the exact icon URL, use "📱".
+4. Map category to EXACTLY ONE: ["Sức khỏe & Thể hình", "Tiện ích", "Tổng hợp", "Trò chơi", "Tài chính", "Giáo dục", "Mạng xã hội"]
+5. Features should be in Vietnamese.
+
+OUTPUT JSON ONLY (no markdown, no explanation):
+{"name":"...","category":"...","icon":"📱","features":[{"name":"Feature (Vietnamese)","desc":"Short desc (Vietnamese)"}]}`;
+
+  const models = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.5-pro', 'gemini/gemini-2.0-flash'];
+
+  for (const model of models) {
+    try {
+      const text = await askAI(prompt, {
+        model,
+        temperature: 0.2,
+        useCreativePersona: false,
+      });
+      if (!text) continue;
+      const parsed = parseJsonFromText(text);
+      if (parsed) return parsed;
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`scanAppForSync error with ${model}:`, errMsg);
+      continue;
+    }
+  }
+
+  return null;
+}
 
 // POST /api/sync-apps — Sync all apps or a specific app
 // Also called by Vercel Cron daily
 export async function POST(request: NextRequest) {
   const supabase = createServerClient();
-  const geminiKey = process.env.GEMINI_API_KEY;
-
-  if (!geminiKey) {
-    return NextResponse.json({ success: false, error: 'GEMINI_API_KEY not configured' }, { status: 500 });
-  }
 
   // Optional: sync specific app
   let targetAppId: string | null = null;
@@ -45,12 +91,12 @@ export async function POST(request: NextRequest) {
       .single();
 
     try {
-      // Call Gemini to scan store page
-      const scannedData = await scanAppForSync(geminiKey, app.store_link);
+      // Call AI to scan store page
+      const scannedData = await scanAppForSync(app.store_link);
 
       if (!scannedData) {
         if (logEntry) {
-          await supabase.from('sync_logs').update({ status: 'failed', error_message: 'Gemini returned null' }).eq('id', logEntry.id);
+          await supabase.from('sync_logs').update({ status: 'failed', error_message: 'AI returned null' }).eq('id', logEntry.id);
         }
         results.push({ appId: app.id, name: app.name, updated: false, error: 'Scan returned null' });
         continue;
@@ -61,15 +107,15 @@ export async function POST(request: NextRequest) {
       let hasChanges = false;
 
       if (scannedData.name && scannedData.name !== app.name) {
-        changes.name = { old: app.name, new: scannedData.name };
+        changes.name = { old: app.name, new: scannedData.name as string };
         hasChanges = true;
       }
       if (scannedData.category && scannedData.category !== app.category) {
-        changes.category = { old: app.category, new: scannedData.category };
+        changes.category = { old: app.category, new: scannedData.category as string };
         hasChanges = true;
       }
-      if (scannedData.icon && scannedData.icon.startsWith('http') && scannedData.icon !== app.icon_url) {
-        changes.icon_url = { old: app.icon_url, new: scannedData.icon };
+      if (scannedData.icon && (scannedData.icon as string).startsWith('http') && scannedData.icon !== app.icon_url) {
+        changes.icon_url = { old: app.icon_url, new: scannedData.icon as string };
         hasChanges = true;
       }
 
@@ -92,13 +138,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Sync features
-      if (scannedData.features?.length) {
+      const features = scannedData.features as { name: string; desc?: string }[] | undefined;
+      if (features?.length) {
         const { data: existingFeatures } = await supabase.from('features').select('name').eq('app_id', app.id);
         const existingNames = new Set((existingFeatures || []).map((f: { name: string }) => f.name));
 
-        const newFeatures = scannedData.features
-          .filter((f: { name: string; desc?: string }) => !existingNames.has(f.name))
-          .map((f: { name: string; desc?: string }) => ({
+        const newFeatures = features
+          .filter((f) => !existingNames.has(f.name))
+          .map((f) => ({
             app_id: app.id,
             name: f.name,
             description: f.desc || '',

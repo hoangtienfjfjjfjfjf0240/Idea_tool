@@ -1,26 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-async function callGemini(apiKey: string, model: string, prompt: string): Promise<string | null> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2 }
-    })
-  });
-  
-  if (!res.ok) {
-    const err = await res.text();
-    console.error(`[scan-app] ${model} HTTP ${res.status}: ${err.substring(0, 200)}`);
-    return null;
-  }
-
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
-}
+import { askAI } from '@/lib/aiClient';
 
 // Scrape icon from store page HTML (og:image meta tag)
 async function scrapeStoreIcon(storeUrl: string): Promise<string | null> {
@@ -56,18 +35,13 @@ async function scrapeStoreIcon(storeUrl: string): Promise<string | null> {
 }
 
 export async function POST(request: NextRequest) {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 });
-  }
-
   try {
     const { url } = await request.json();
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Run icon scrape and Gemini call in parallel
+    // Run icon scrape and AI call in parallel
     const iconPromise = scrapeStoreIcon(url);
 
     const prompt = `I have an App Store / Google Play URL: "${url}"
@@ -78,11 +52,16 @@ Identify the app and extract its details. Output JSON ONLY (no markdown, no code
 Map category to ONE of: ["Sức khỏe & Thể hình", "Tiện ích", "Tổng hợp", "Trò chơi", "Tài chính", "Giáo dục", "Mạng xã hội"]
 Extract up to 5 key features. All feature names and descriptions must be in Vietnamese.`;
 
-    const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+    // Use shared AI client (OpenAI-compatible gateway)
+    const models = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.5-pro', 'gemini/gemini-2.0-flash'];
 
     for (const model of models) {
       try {
-        const text = await callGemini(geminiKey, model, prompt);
+        const text = await askAI(prompt, {
+          model,
+          temperature: 0.2,
+          useCreativePersona: false,
+        });
         if (!text) continue;
 
         let cleanText = text.replace(/```json\s*|```/g, '').trim();

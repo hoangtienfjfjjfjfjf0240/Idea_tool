@@ -18,8 +18,8 @@ function parseJson(text: string) {
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
-    'gpt-4.1': 'openai/gpt-4.1',
-    'o4-mini': 'openai/o4-mini',
+    'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
+    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
   };
   return map[selected || ''] || 'gemini/gemini-2.5-pro';
 }
