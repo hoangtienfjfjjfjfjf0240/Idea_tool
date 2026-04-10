@@ -17,19 +17,75 @@ function parseJsonFromText(text: string): Record<string, unknown> | null {
   }
 }
 
+// Fetch reliable icon URL from iTunes Lookup API (App Store) or scrape og:image (Google Play)
+async function fetchReliableIconUrl(storeLink: string): Promise<string | null> {
+  try {
+    // App Store: extract app ID and use iTunes Lookup API
+    const appStoreMatch = storeLink.match(/\/id(\d+)/);
+    if (appStoreMatch) {
+      const appId = appStoreMatch[1];
+      const res = await fetch(`https://itunes.apple.com/lookup?id=${appId}&country=us`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results?.[0]) {
+          // artworkUrl512 or scale up artworkUrl100
+          const artwork = data.results[0].artworkUrl512 
+            || data.results[0].artworkUrl100?.replace('100x100', '512x512');
+          if (artwork) return artwork;
+        }
+      }
+    }
+
+    // Google Play: scrape og:image from store page
+    if (storeLink.includes('play.google.com')) {
+      const res = await fetch(storeLink, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const ogMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+          || html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:image["']/i);
+        if (ogMatch?.[1]) return ogMatch[1];
+        const playMatch = html.match(/(https:\/\/play-lh\.googleusercontent\.com\/[^\s"'<>]+)/);
+        if (playMatch?.[1]) return playMatch[1];
+      }
+    }
+
+    return null;
+  } catch (e) {
+    console.error('[sync-apps] fetchReliableIconUrl error:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+// Validate an icon URL actually returns 200
+async function isIconUrlValid(url: string): Promise<boolean> {
+  if (!url || !url.startsWith('http')) return false;
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Scan app for sync using AI gateway
 async function scanAppForSync(storeLink: string) {
   const prompt = `I have an App Store / Google Play URL: "${storeLink}"
 
 YOUR TASK:
 1. Based on this URL, identify the app and extract its details.
-2. Extract: App Name, Category, Icon URL, and up to 5 key features.
-3. For icon: Google Play -> "https://play-lh.googleusercontent.com/...", App Store -> "mzstatic.com" URL. If you don't know the exact icon URL, use "📱".
+2. Extract: App Name, Category, and up to 5 key features.
+3. Do NOT include icon URL - it will be fetched separately.
 4. Map category to EXACTLY ONE: ["Sức khỏe & Thể hình", "Tiện ích", "Tổng hợp", "Trò chơi", "Tài chính", "Giáo dục", "Mạng xã hội"]
 5. Features should be in Vietnamese.
 
 OUTPUT JSON ONLY (no markdown, no explanation):
-{"name":"...","category":"...","icon":"📱","features":[{"name":"Feature (Vietnamese)","desc":"Short desc (Vietnamese)"}]}`;
+{"name":"...","category":"...","features":[{"name":"Feature (Vietnamese)","desc":"Short desc (Vietnamese)"}]}`;
 
   const models = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.5-pro', 'gemini/gemini-2.0-flash'];
 
@@ -91,10 +147,29 @@ export async function POST(request: NextRequest) {
       .single();
 
     try {
-      // Call AI to scan store page
-      const scannedData = await scanAppForSync(app.store_link);
+      // Fetch reliable icon URL and AI scan in parallel
+      const [scannedData, reliableIconUrl] = await Promise.all([
+        scanAppForSync(app.store_link),
+        fetchReliableIconUrl(app.store_link),
+      ]);
 
       if (!scannedData) {
+        // Even if AI fails, still try to fix broken icons
+        if (reliableIconUrl && reliableIconUrl !== app.icon_url) {
+          const currentIconValid = await isIconUrlValid(app.icon_url);
+          if (!currentIconValid) {
+            await supabase.from('apps').update({
+              icon_url: reliableIconUrl,
+              last_synced_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', app.id);
+            if (logEntry) {
+              await supabase.from('sync_logs').update({ status: 'success', changes: { icon_url: { old: app.icon_url, new: reliableIconUrl } } }).eq('id', logEntry.id);
+            }
+            results.push({ appId: app.id, name: app.name, updated: true, changes: { icon_url: { old: app.icon_url, new: reliableIconUrl } } });
+            continue;
+          }
+        }
         if (logEntry) {
           await supabase.from('sync_logs').update({ status: 'failed', error_message: 'AI returned null' }).eq('id', logEntry.id);
         }
@@ -114,9 +189,18 @@ export async function POST(request: NextRequest) {
         changes.category = { old: app.category, new: scannedData.category as string };
         hasChanges = true;
       }
-      if (scannedData.icon && (scannedData.icon as string).startsWith('http') && scannedData.icon !== app.icon_url) {
-        changes.icon_url = { old: app.icon_url, new: scannedData.icon as string };
-        hasChanges = true;
+
+      // Use reliableIconUrl instead of AI-generated icon
+      // Also check if current icon is broken and needs replacement
+      if (reliableIconUrl) {
+        const currentIconValid = await isIconUrlValid(app.icon_url);
+        if (!currentIconValid || reliableIconUrl !== app.icon_url) {
+          if (!currentIconValid) {
+            // Current icon is broken, always replace
+            changes.icon_url = { old: app.icon_url, new: reliableIconUrl };
+            hasChanges = true;
+          }
+        }
       }
 
       // Update app
