@@ -228,12 +228,36 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         }));
       }
 
-      // Save to Supabase DB with session tracking
-      const sessionId = crypto.randomUUID();
-      const saved = await dbService.saveIdeas(app.id, ideas, sessionId, filters);
-      setResults(prev => [...saved, ...prev]);
-      setSavedHistory(prev => [...saved, ...prev]);
+      // ⚡ HIỂN THỊ KẾT QUẢ NGAY — không đợi DB save
+      // Create temporary IDs for immediate display
+      const tempResults: GeneratedIdea[] = ideas.map((idea, idx) => ({
+        id: `temp-${Date.now()}-${idx}`,
+        app_id: app.id,
+        title: idea.title,
+        duration: idea.duration,
+        content: idea.content,
+        session_id: null,
+        filters_snapshot: filters,
+        result: null,
+        created_at: new Date().toISOString(),
+      }));
+      
+      setResults(prev => [...tempResults, ...prev]);
+      setSavedHistory(prev => [...tempResults, ...prev]);
+      stopProgress();
+      setIsGenerating(false);
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
+
+      // 🔄 LƯU DB TRONG BACKGROUND — replace temp IDs with real IDs khi xong
+      const sessionId = crypto.randomUUID();
+      dbService.saveIdeas(app.id, ideas, sessionId, filters).then(saved => {
+        if (saved.length > 0) {
+          // Replace temp results with real DB records  
+          const tempIds = new Set(tempResults.map(t => t.id));
+          setResults(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
+          setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
+        }
+      }).catch(err => console.warn('Background DB save failed:', err));
 
       // Background: AI learns from new ideas → update app knowledge
       fetch('/api/learn-app', {
@@ -248,13 +272,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         }),
       }).catch(err => console.warn('Background learning failed:', err));
     } catch (err) {
+      if ((err as Error).name === 'AbortError') return; // User cancelled
       console.error('Generate failed:', err);
       alert('Có lỗi khi tạo ý tưởng. Vui lòng thử lại.');
-    } finally {
       stopProgress();
       setIsGenerating(false);
     }
   };
+
 
   const handleCopy = (idea: GeneratedIdea) => {
     const c = idea.content as any;

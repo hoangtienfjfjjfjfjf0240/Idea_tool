@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, X, Smartphone, Globe, Loader2, Pencil, Trash2, ScanLine, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import type { AppProject, SyncLog } from '@/types/database';
 import { getApps, addApp, updateApp, deleteApp, addFeaturesBatch, getSyncLogs } from '@/lib/db';
+import { getProxiedIconUrl } from '@/lib/iconProxy';
 
 
 interface DashboardProps {
@@ -211,7 +212,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
                 <div className="flex flex-col items-center text-center">
                   <div className="mb-4 w-20 h-20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300">
                     {app.icon_url.startsWith('http') ? (
-                      <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover rounded-2xl shadow-sm" />
+                      <img src={getProxiedIconUrl(app.icon_url)} alt={app.name} className="w-full h-full object-cover rounded-2xl shadow-sm" />
                     ) : (
                       <span className="text-5xl">{app.icon_url}</span>
                     )}
@@ -279,7 +280,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
                   <div className="flex flex-col items-center mb-6">
                     <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-lg border border-gray-100 mb-3 bg-white flex items-center justify-center relative group">
                       {manualIcon.startsWith('http') ? (
-                        <img src={manualIcon} alt="Icon" className="w-full h-full object-cover" />
+                        <img src={getProxiedIconUrl(manualIcon)} alt="Icon" className="w-full h-full object-cover" />
                       ) : (<span className="text-5xl">{manualIcon || '📱'}</span>)}
                       <button onClick={() => setShowIconInput(!showIconInput)}
                         className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">

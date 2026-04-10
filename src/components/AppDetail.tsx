@@ -4,6 +4,7 @@ import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckC
 import type { AppProject, Feature, SyncLog, ScreenType } from '@/types/database';
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
 import { StrategyHistory } from '@/components/StrategyHistory';
+import { getProxiedIconUrl } from '@/lib/iconProxy';
 
 type AppTab = 'overview' | 'ideas' | 'hooks' | 'brain' | 'config';
 
@@ -275,7 +276,7 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center bg-gray-50">
             {app.icon_url.startsWith('http') ? (
-              <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover" />
+              <img src={getProxiedIconUrl(app.icon_url)} alt={app.name} className="w-full h-full object-cover" />
             ) : (
               <span className="text-4xl">{app.icon_url}</span>
             )}

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Copy, ChevronDown, ChevronUp, Trophy, XCircle, Eye, ArrowRight } from 'lucide-react';
 import type { AppProject } from '@/types/database';
 import { getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { getProxiedIconUrl } from '@/lib/iconProxy';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
 
@@ -174,7 +175,7 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
           {/* Header */}
           <div className="flex items-center gap-4 mb-6">
             <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center bg-gray-50">
-              {app.icon_url.startsWith('http') ? <img src={app.icon_url} alt={app.name} className="w-full h-full object-cover" /> : <span className="text-3xl">{app.icon_url}</span>}
+              {app.icon_url.startsWith('http') ? <img src={getProxiedIconUrl(app.icon_url)} alt={app.name} className="w-full h-full object-cover" /> : <span className="text-3xl">{app.icon_url}</span>}
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900">📊 Plan Overview</h1>
