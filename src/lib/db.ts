@@ -316,16 +316,16 @@ export async function updateIdeaContent(ideaId: string, title: string, content: 
 // ============================================
 //  FILTER OPTIONS
 // ============================================
-export async function getFilterOptions(app: AppProject): Promise<Record<keyof FilterState, string[]>> {
+export async function getFilterOptions(app: AppProject): Promise<Record<string, string[]>> {
   // Get custom options from DB (app-specific)
   const { data: customRows } = await supabase
     .from('filter_options')
     .select('*')
     .eq('app_id', app.id);
 
-  const customOptions: Partial<Record<keyof FilterState, string[]>> = {};
+  const customOptions: Record<string, string[]> = {};
   (customRows || []).forEach((row: FilterOption) => {
-    const cat = row.category as keyof FilterState;
+    const cat = row.category;
     if (!customOptions[cat]) customOptions[cat] = [];
     customOptions[cat]!.push(row.value);
   });
@@ -337,7 +337,7 @@ export async function getFilterOptions(app: AppProject): Promise<Record<keyof Fi
   // Use app-specific DB filters first, fallback to category seeds only if no custom
   const categorySeeds = CATEGORY_SEEDS[app.category] || CATEGORY_SEEDS['Tổng hợp'];
 
-  return {
+  const result: Record<string, string[]> = {
     coreUser: customOptions.coreUser?.length ? customOptions.coreUser : (categorySeeds.coreUser || []),
     painPoint: customOptions.painPoint?.length ? customOptions.painPoint : (categorySeeds.painPoint || []),
     solution: featureNames.length ? featureNames : (customOptions.solution || []),
@@ -346,9 +346,19 @@ export async function getFilterOptions(app: AppProject): Promise<Record<keyof Fi
     visualType: customOptions.visualType?.length ? customOptions.visualType : GLOBAL_VISUAL_TYPES,
     targetMarket: customOptions.targetMarket?.length ? customOptions.targetMarket : ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'],
   };
+
+  // Include any custom (non-standard) categories from DB
+  const standardKeys = new Set(['coreUser', 'painPoint', 'solution', 'emotion', 'videoStructure', 'visualType', 'targetMarket']);
+  for (const [key, values] of Object.entries(customOptions)) {
+    if (!standardKeys.has(key)) {
+      result[key] = values;
+    }
+  }
+
+  return result;
 }
 
-export async function addFilterOption(appId: string, category: keyof FilterState, value: string): Promise<FilterOption | null> {
+export async function addFilterOption(appId: string, category: string, value: string): Promise<FilterOption | null> {
   const { data, error } = await supabase
     .from('filter_options')
     .insert({ app_id: appId, category, value, is_custom: true })

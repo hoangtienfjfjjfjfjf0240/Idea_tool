@@ -89,6 +89,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [isRefining, setIsRefining] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [confirmDeleteCat, setConfirmDeleteCat] = useState<string | null>(null);
 
   useEffect(() => {
     setCategories(loadCategories(app.id));
@@ -160,6 +161,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     // Delete all DB options for this category
     const items = options[catId] || [];
     items.forEach(item => dbService.deleteFilterOptionByValue(app.id, catId as keyof FilterState, item));
+    setEditModeCat(null);
+    setConfirmDeleteCat(null);
   };
 
   const toggleFilter = (category: string, item: string) => {
@@ -455,18 +458,35 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <Trash2 size={13} />
                     </button>
                   )}
-                  <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); }}
+                  <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); setConfirmDeleteCat(null); }}
                     className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
                     {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
                   </button>
-                  {isEditMode && cat.isCustom && (
-                    <button
-                      onClick={() => { if (confirm(`Xóa bộ lọc "${cat.label}" và tất cả tùy chọn bên trong?`)) handleDeleteCategory(cat.id); }}
-                      className="p-1.5 rounded-lg transition-colors text-red-400 hover:bg-red-50 hover:text-red-600"
-                      title={`Xóa bộ lọc ${cat.label}`}
-                    >
-                      <X size={14} />
-                    </button>
+                  {isEditMode && (
+                    confirmDeleteCat === cat.id ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                        >
+                          Xóa
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteCat(null)}
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteCat(cat.id)}
+                        className="p-1.5 rounded-lg transition-colors text-red-400 hover:bg-red-50 hover:text-red-600"
+                        title={`Xóa bộ lọc ${cat.label}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )
                   )}
                 </div>
               </div>
