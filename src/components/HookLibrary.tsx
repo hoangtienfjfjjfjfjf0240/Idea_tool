@@ -836,7 +836,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       {/* Explanation */}
                       <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{idea.explanation}</p>
 
-                      {/* Sections: HOOK, BODY, CTA — same structure as FilterGenerator */}
+                      {/* Sections: HOOK, BODY, CTA */}
                       {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
                         { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                         { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
@@ -844,52 +844,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                         const secData = idea?.[sec.key] || {};
                         const scriptContent = secData?.script || '';
                         const textOverlay = secData?.textOverlay || '';
-                        const viTranslation = secData?.viTranslation || '';
                         const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
                         return (
                           <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                             <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
-
-                            {/* Script */}
                             <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
-
-                            {/* Vietnamese Translation */}
-                            {viTranslation && (
-                              <div className="mb-3 bg-white/60 rounded-lg px-3 py-2 border border-gray-200">
-                                <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
-                                <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{viTranslation}</p>
-                              </div>
-                            )}
-
-                            {/* Hook Analysis — only for hook section */}
-                            {sec.key === 'hook' && (secData?.viewerProfile || secData?.viewerEmotion || secData?.painpointImpact) && (
-                              <div className="mb-3 space-y-2">
-                                {secData?.viewerProfile && (
-                                  <div className="bg-purple-50 rounded-lg px-3 py-2 border border-purple-200">
-                                    <span className="text-[10px] font-bold text-purple-500 uppercase">👁️ Ai đang xem?</span>
-                                    <p className="text-xs text-gray-700 mt-0.5">{secData.viewerProfile}</p>
-                                  </div>
-                                )}
-                                {secData?.viewerEmotion && (
-                                  <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
-                                    <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
-                                    <p className="text-xs text-gray-700 mt-0.5">{secData.viewerEmotion}</p>
-                                  </div>
-                                )}
-                                {secData?.painpointImpact && (
-                                  <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
-                                    <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
-                                    <p className="text-xs text-gray-700 mt-0.5">{secData.painpointImpact}</p>
-                                  </div>
-                                )}
-                                {secData?.whyTheyStopScrolling && (
-                                  <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
-                                    <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
-                                    <p className="text-xs text-gray-700 font-semibold mt-0.5">{secData.whyTheyStopScrolling}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
 
                             {/* Text Overlay + End Card */}
                             <div className="flex gap-3">
