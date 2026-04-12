@@ -526,7 +526,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     {filterItems.map(item => (
                       <button key={item} onClick={() => toggleFilter(cat.id, item)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium text-left transition-all ${
-                          filters[cat.id].includes(item) ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                          (filters[cat.id] || []).includes(item) ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
                         }`}>
                         {item}
                       </button>
