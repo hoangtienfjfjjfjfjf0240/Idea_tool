@@ -463,8 +463,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, onCreateF
         </div>
       )}
 
-      {/* ===== BIỂU ĐỒ PHỐI HỢP ===== */}
-      {tree.children.length > 0 && <CombinationTable tree={tree} ideaResults={ideaResults} onSetResult={handleSetResult} />}
+
+
     </div>
   );
 };
