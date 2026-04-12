@@ -101,6 +101,7 @@ export interface FilterState {
   emotion: string[];
   videoStructure: string[];
   visualType: string[];
+  targetMarket: string[];
 }
 
 export type ScreenType =
@@ -112,7 +113,8 @@ export type ScreenType =
   | 'f2.2'
   | 'f2.2.1'
   | 'f2.2.2'
-  | 'f2.3';
+  | 'f2.3'
+  | 'f2.4';
 
 // Supabase Database types helper
 export interface Database {

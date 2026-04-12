@@ -4,14 +4,16 @@ import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckC
 import type { AppProject, Feature, SyncLog, ScreenType } from '@/types/database';
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
 import { StrategyHistory } from '@/components/StrategyHistory';
+import { StrategyMap } from '@/components/StrategyMap';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
 
-type AppTab = 'overview' | 'ideas' | 'hooks' | 'brain' | 'config';
+type AppTab = 'overview' | 'ideas' | 'hooks' | 'strategy' | 'brain' | 'config';
 
 const TABS: { id: AppTab; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'ideas', label: 'Tạo Ý Tưởng', icon: Lightbulb },
   { id: 'hooks', label: 'Thư Viện Hook', icon: Film },
+  { id: 'strategy', label: 'Strategy Map', icon: BarChart3 },
   { id: 'brain', label: 'AI Brain', icon: Brain },
   { id: 'config', label: 'Cấu hình', icon: Settings },
 ];
@@ -110,6 +112,10 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
     }
     if (tab === 'hooks') {
       onNavigate('f2.2');
+      return;
+    }
+    if (tab === 'strategy') {
+      onNavigate('f2.4');
       return;
     }
   };

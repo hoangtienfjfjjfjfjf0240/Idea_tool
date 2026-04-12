@@ -1,28 +1,32 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
+import { CATEGORY_SEEDS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
 
 interface FilterGeneratorProps {
   app: AppProject;
   currentScreen: ScreenType;
   setScreen: (s: ScreenType) => void;
   selectedModel?: AIModel;
+  prefillFilters?: { coreUser: string[]; emotion: string[]; painPoint: string[]; solution: string[] } | null;
+  onPrefillConsumed?: () => void;
 }
 
 const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementType }[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
   { id: 'solution', label: 'Tính năng / Giải pháp', icon: Lightbulb },
-  { id: 'emotion', label: 'Cảm xúc', icon: Target },
+  { id: 'emotion', label: 'Cảm xúc (Viewer)', icon: Target },
   { id: 'visualType', label: 'Dạng Visual', icon: Video },
+  { id: 'targetMarket', label: 'Thị trường mục tiêu', icon: Globe },
 ];
 
-export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel }) => {
-  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [] });
-  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [] });
+export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed }) => {
+  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [] });
+  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
   const [newItem, setNewItem] = useState<{ cat: keyof FilterState | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -39,11 +43,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [showHistory, setShowHistory] = useState(false);
   const [editingIdea, setEditingIdea] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState<any>(null);
+  const [refiningIdea, setRefiningIdea] = useState<string | null>(null);
+  const [refineInstruction, setRefineInstruction] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
 
   useEffect(() => {
     loadOptions();
     loadHistory();
   }, [app.id]);
+
+  // Auto-fill from Strategy Map → xuyên suốt
+  useEffect(() => {
+    if (prefillFilters) {
+      setFilters(prev => ({
+        ...prev,
+        coreUser: prefillFilters.coreUser || [],
+        emotion: prefillFilters.emotion || [],
+        painPoint: prefillFilters.painPoint || [],
+        solution: prefillFilters.solution || [],
+      }));
+      onPrefillConsumed?.();
+    }
+  }, [prefillFilters]);
 
   // Auto-load results from DB when entering results screen
   useEffect(() => {
@@ -57,7 +78,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const loadOptions = async () => {
     const fullOptions = await dbService.getFilterOptions(app);
-    setOptions(fullOptions);
+    // Merge market presets with any DB options
+    const marketPresets = ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'];
+    const dbMarket = fullOptions.targetMarket || [];
+    const mergedMarket = [...new Set([...marketPresets, ...dbMarket])];
+    setOptions({ ...fullOptions, targetMarket: mergedMarket });
   };
 
   const loadHistory = async () => {
@@ -343,11 +368,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700">
                   <Icon size={16} className={isEditMode ? 'text-indigo-500' : 'text-gray-400'} /> {cat.label}
                 </h3>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   {!isEditMode && (
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${filters[cat.id].length > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
                       {filters[cat.id].length}
                     </span>
+                  )}
+                  {!isEditMode && filters[cat.id].length > 0 && (
+                    <button onClick={() => setFilters(prev => ({ ...prev, [cat.id]: [] }))}
+                      title="Xóa tất cả đã chọn"
+                      className="p-1.5 rounded-lg transition-colors hover:bg-red-50 text-gray-300 hover:text-red-400">
+                      <Trash2 size={13} />
+                    </button>
                   )}
                   <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); }}
                     className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
@@ -409,6 +441,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     <button onClick={() => handleAddItem(cat.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><Check size={14} /></button>
                     <button onClick={() => setNewItem({ cat: null, text: '' })} className="p-2 bg-gray-50 text-gray-400 rounded-lg hover:bg-gray-100"><X size={14} /></button>
                   </div>
+                ) : isEditMode ? (
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setNewItem({ cat: cat.id, text: '' })} className="flex-1 text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors">
+                      <Plus size={14} /> THÊM
+                    </button>
+                    <button onClick={async () => {
+                      // Reset to category seeds
+                      const seeds = CATEGORY_SEEDS[app.category] || CATEGORY_SEEDS['Tổng hợp'];
+                      const seedValues = cat.id === 'visualType' ? GLOBAL_VISUAL_TYPES : (seeds[cat.id as keyof typeof seeds] || []);
+                      // Delete all custom options for this category
+                      for (const item of filterItems) {
+                        await dbService.deleteFilterOptionByValue(app.id, cat.id, item);
+                      }
+                      setOptions(prev => ({ ...prev, [cat.id]: seedValues as string[] }));
+                      setFilters(prev => ({ ...prev, [cat.id]: [] }));
+                    }} className="flex-1 text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-amber-500 hover:bg-amber-50 transition-colors">
+                      <RotateCcw size={13} /> RESET
+                    </button>
+                  </div>
                 ) : (
                   <button onClick={() => setNewItem({ cat: cat.id, text: '' })} className="w-full text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors">
                     <Plus size={14} /> THÊM TÙY CHỌN
@@ -434,7 +485,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             ))}
             {Object.values(filters).flat().length > 5 && <span className="text-xs text-gray-400 self-center">...</span>}
           </div>
-          <button onClick={() => setScreen('f2.1.1')} className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-full px-6 py-2.5 text-sm font-bold flex items-center gap-2 hover:shadow-lg transition-all">
+          {Object.values(filters).flat().length > 0 && (
+            <button onClick={() => setFilters({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [] })}
+              className="text-xs text-red-400 hover:text-red-500 hover:bg-red-50 px-3 py-2 rounded-full transition-colors font-medium flex items-center gap-1 flex-shrink-0">
+              <Trash2 size={12} /> Xóa hết
+            </button>
+          )}
+          <button onClick={() => setScreen('f2.1.1')} className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-full px-6 py-2.5 text-sm font-bold flex items-center gap-2 hover:shadow-lg transition-all flex-shrink-0">
             Tiếp tục <ArrowRight size={16} />
           </button>
         </div>
@@ -599,7 +656,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startEditIdea(idea)} className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Chỉnh sửa">
+                        <button onClick={() => { setRefiningIdea(refiningIdea === idea.id ? null : idea.id); setRefineInstruction(''); }} className={`p-2 rounded-lg transition-colors ${refiningIdea === idea.id ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-purple-500 hover:bg-purple-50'}`} title="AI Refine">
+                          <Sparkles size={16} />
+                        </button>
+                        <button onClick={() => startEditIdea(idea)} className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Chỉnh sửa thủ công">
                           <Pencil size={16} />
                         </button>
                         <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
@@ -616,6 +676,73 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
                 ) : (
                   <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
+                )}
+
+                {/* AI Refine Panel */}
+                {refiningIdea === idea.id && !isEditing && (
+                  <div className="mb-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-200 animate-in slide-in-from-top duration-200">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Sparkles size={16} className="text-purple-500" />
+                      <span className="text-sm font-bold text-purple-700">AI Refine — Chỉnh sửa bằng AI</span>
+                    </div>
+                    <textarea value={refineInstruction} onChange={e => setRefineInstruction(e.target.value)}
+                      placeholder='VD: "Đổi nhân vật thành cặp vợ chồng 50 tuổi, thêm hài hước", "Đổi emotion sang FOMO", "Rút gọn hook còn 3 giây"...'
+                      className="w-full h-20 resize-none text-sm border border-purple-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white mb-3" />
+                    <div className="flex gap-2">
+                      <button onClick={async () => {
+                        if (!refineInstruction.trim() || isRefining) return;
+                        setIsRefining(true);
+                        try {
+                          const res = await fetch('/api/generate-ideas', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              mode: 'refine',
+                              originalIdea: idea.content,
+                              instruction: refineInstruction,
+                              appName: app.name,
+                              appCategory: app.category,
+                              selectedModel: selectedModel || 'gemini-2.5-pro',
+                            }),
+                          });
+                          const result = await res.json();
+                          if (res.ok && result.success && result.data) {
+                            const refined = result.data;
+                            const newContent = {
+                              ...idea.content,
+                              framework: refined.framework || (idea.content as any).framework,
+                              explanation: refined.explanation || (idea.content as any).explanation,
+                              hook: refined.hook ? { script: refined.hook.script || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.script || '', text: refined.hook.textOverlay || '', voice: '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
+                              body: refined.body ? { script: refined.body.script || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.script || '', text: refined.body.textOverlay || '', voice: '', viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
+                              cta: refined.cta ? { script: refined.cta.script || '', voice: '', text: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
+                            };
+                            const newTitle = refined.title || idea.title;
+                            await dbService.updateIdeaContent(idea.id, newTitle, newContent);
+                            const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: newTitle, content: newContent } : i);
+                            setResults(updater);
+                            setSavedHistory(updater);
+                            setRefiningIdea(null);
+                            setRefineInstruction('');
+                          } else {
+                            alert(result.error || 'AI Refine thất bại. Thử lại.');
+                          }
+                        } catch (err) {
+                          console.error('Refine error:', err);
+                          alert('Có lỗi khi refine. Thử lại.');
+                        } finally {
+                          setIsRefining(false);
+                        }
+                      }} disabled={isRefining || !refineInstruction.trim()}
+                        className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                        {isRefining ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                        {isRefining ? 'Đang refine...' : 'Refine Idea'}
+                      </button>
+                      <button onClick={() => { setRefiningIdea(null); setRefineInstruction(''); }}
+                        className="px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+                        Hủy
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {/* Sections: HOOK, BODY, CTA — unified script format */}

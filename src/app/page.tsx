@@ -7,6 +7,7 @@ import { AppDetail } from '@/components/AppDetail';
 import { FilterGenerator } from '@/components/FilterGenerator';
 import { HookLibrary } from '@/components/HookLibrary';
 import { StrategyHistory } from '@/components/StrategyHistory';
+import { StrategyMap } from '@/components/StrategyMap';
 import { ChatAgent } from '@/components/ChatAgent';
 
 import { supabase } from '@/lib/supabase';
@@ -19,6 +20,7 @@ export default function Home() {
   const [userName, setUserName] = useState('');
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('f1');
   const [selectedApp, setSelectedApp] = useState<AppProject | null>(null);
+  const [prefillFilters, setPrefillFilters] = useState<{ coreUser: string[]; emotion: string[]; painPoint: string[]; solution: string[] } | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
   const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
@@ -128,6 +130,8 @@ export default function Home() {
           currentScreen={currentScreen}
           setScreen={setCurrentScreen}
           selectedModel={selectedModel}
+          prefillFilters={prefillFilters}
+          onPrefillConsumed={() => setPrefillFilters(null)}
         />
       );
     }
@@ -149,6 +153,20 @@ export default function Home() {
         <StrategyHistory
           app={selectedApp}
           onBack={() => setCurrentScreen('f2')}
+        />
+      );
+    }
+
+    // Strategy Map (f2.4)
+    if (currentScreen === 'f2.4' && selectedApp) {
+      return (
+        <StrategyMap
+          app={selectedApp}
+          onBack={() => setCurrentScreen('f2')}
+          onCreateFromBranch={(filters) => {
+            setPrefillFilters(filters);
+            setCurrentScreen('f2.1');
+          }}
         />
       );
     }
