@@ -438,13 +438,23 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, onCreateF
                     {c?.hook?.script && (
                       <div className="bg-rose-50/60 rounded-lg p-3 border border-rose-100 mb-2">
                         <span className="text-[9px] font-bold text-rose-400 uppercase block mb-1">🎣 Hook</span>
-                        <p className="text-[11px] text-gray-700 leading-relaxed">{c.hook.script.substring(0, 250)}{c.hook.script.length > 250 ? '…' : ''}</p>
+                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-line">{c.hook.script}</p>
+                        {c.hook.textOverlay && <p className="text-[10px] font-bold text-gray-800 mt-1.5">📝 {c.hook.textOverlay}</p>}
                       </div>
                     )}
                     {c?.body?.script && (
                       <div className="bg-blue-50/40 rounded-lg p-3 border border-blue-100 mb-2">
                         <span className="text-[9px] font-bold text-blue-400 uppercase block mb-1">📖 Body</span>
-                        <p className="text-[11px] text-gray-700 leading-relaxed">{c.body.script.substring(0, 150)}{c.body.script.length > 150 ? '…' : ''}</p>
+                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-line">{c.body.script}</p>
+                        {c.body.textOverlay && <p className="text-[10px] font-bold text-gray-800 mt-1.5">📝 {c.body.textOverlay}</p>}
+                      </div>
+                    )}
+                    {c?.cta?.script && (
+                      <div className="bg-emerald-50/40 rounded-lg p-3 border border-emerald-100 mb-2">
+                        <span className="text-[9px] font-bold text-emerald-400 uppercase block mb-1">🔥 CTA</span>
+                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-line">{c.cta.script}</p>
+                        {c.cta.textOverlay && <p className="text-[10px] font-bold text-gray-800 mt-1.5">📝 {c.cta.textOverlay}</p>}
+                        {c.cta.endCard && <p className="text-[10px] text-gray-500 mt-0.5">🏷️ {c.cta.endCard}</p>}
                       </div>
                     )}
 
