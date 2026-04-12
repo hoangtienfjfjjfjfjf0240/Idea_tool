@@ -32,6 +32,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [fullIdeasLoading, setFullIdeasLoading] = useState(false);
   const [fullIdeasDuration, setFullIdeasDuration] = useState('30s');
   const [fullIdeasQty, setFullIdeasQty] = useState(3);
+  const [ideaDirection, setIdeaDirection] = useState('');
   const [expandedIdea, setExpandedIdea] = useState<number | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
@@ -647,6 +648,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             hook: selectedHook,
             quantity: fullIdeasQty,
             duration: fullIdeasDuration,
+            ideaDirection: ideaDirection || null,
             appName: app?.name || '',
             appCategory: app?.category || '',
             selectedModel: selectedModel || 'gemini-2.5-pro',
@@ -761,8 +763,19 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                         {n}
                       </button>
                     ))}
+                    <input type="number" min={1} max={10} value={fullIdeasQty}
+                      onChange={e => setFullIdeasQty(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                      className="w-12 py-2 rounded-lg text-xs font-bold text-center border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-200" />
                   </div>
                 </div>
+              </div>
+
+              {/* Direction textarea */}
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><PenTool size={10} /> Mô tả hướng đi (tùy chọn)</label>
+                <textarea value={ideaDirection} onChange={e => setIdeaDirection(e.target.value)}
+                  className="w-full h-24 resize-none px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-200 border-gray-200 text-sm"
+                  placeholder={`VD: Nhắm target phụ nữ 30-40, kết hợp nỗi sợ mất dữ liệu, phong cách UGC reaction...`} />
               </div>
 
               <button onClick={handleGenerateFullIdeas} disabled={fullIdeasLoading}
