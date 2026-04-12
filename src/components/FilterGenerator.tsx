@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Hash, PlusCircle } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -15,7 +15,14 @@ interface FilterGeneratorProps {
   onPrefillConsumed?: () => void;
 }
 
-const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementType }[] = [
+interface CategoryConfig {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  isCustom?: boolean;
+}
+
+const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
   { id: 'solution', label: 'Tính năng / Giải pháp', icon: Lightbulb },
@@ -24,10 +31,44 @@ const CATEGORIES: { id: keyof FilterState; label: string; icon: React.ElementTyp
   { id: 'targetMarket', label: 'Thị trường mục tiêu', icon: Globe },
 ];
 
+const CATEGORIES_STORAGE_KEY = (appId: string) => `idea_tool_categories_${appId}`;
+
+function loadCategories(appId: string): CategoryConfig[] {
+  if (typeof window === 'undefined') return DEFAULT_CATEGORIES;
+  try {
+    const saved = localStorage.getItem(CATEGORIES_STORAGE_KEY(appId));
+    if (!saved) return DEFAULT_CATEGORIES;
+    const parsed = JSON.parse(saved) as { id: string; label: string; isCustom?: boolean }[];
+    // Merge: keep default icons, add custom ones
+    const defaultMap = new Map(DEFAULT_CATEGORIES.map(c => [c.id, c]));
+    const result: CategoryConfig[] = [];
+    for (const item of parsed) {
+      if (defaultMap.has(item.id)) {
+        result.push(defaultMap.get(item.id)!);
+        defaultMap.delete(item.id);
+      } else {
+        result.push({ id: item.id, label: item.label, icon: Hash, isCustom: true });
+      }
+    }
+    // Add any remaining defaults not in saved
+    for (const def of defaultMap.values()) result.push(def);
+    return result;
+  } catch { return DEFAULT_CATEGORIES; }
+}
+
+function saveCategories(appId: string, cats: CategoryConfig[]) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(
+    CATEGORIES_STORAGE_KEY(appId),
+    JSON.stringify(cats.map(c => ({ id: c.id, label: c.label, isCustom: c.isCustom || false })))
+  );
+}
+
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed }) => {
+  const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [] });
-  const [options, setOptions] = useState<Record<keyof FilterState, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
-  const [newItem, setNewItem] = useState<{ cat: keyof FilterState | null; text: string }>({ cat: null, text: '' });
+  const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
+  const [newItem, setNewItem] = useState<{ cat: string | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
@@ -37,7 +78,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [duration, setDuration] = useState('30s');
   const [quantity, setQuantity] = useState(3);
   const [ideaDescription, setIdeaDescription] = useState('');
-  const [editModeCat, setEditModeCat] = useState<keyof FilterState | null>(null);
+  const [editModeCat, setEditModeCat] = useState<string | null>(null);
   const [editingItemText, setEditingItemText] = useState<{ original: string; current: string } | null>(null);
   const [savedHistory, setSavedHistory] = useState<GeneratedIdea[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -46,8 +87,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [refiningIdea, setRefiningIdea] = useState<string | null>(null);
   const [refineInstruction, setRefineInstruction] = useState('');
   const [isRefining, setIsRefining] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   useEffect(() => {
+    setCategories(loadCategories(app.id));
     loadOptions();
     loadHistory();
   }, [app.id]);
@@ -90,37 +134,65 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setSavedHistory(ideas);
   };
 
-  const toggleFilter = (category: keyof FilterState, item: string) => {
+  // === Category Management ===
+  const handleAddCategory = () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    const id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+    if (categories.some(c => c.id === id)) return;
+    const newCat: CategoryConfig = { id, label: name, icon: Hash, isCustom: true };
+    const updated = [...categories, newCat];
+    setCategories(updated);
+    saveCategories(app.id, updated);
+    setOptions(prev => ({ ...prev, [id]: [] }));
+    setFilters(prev => ({ ...prev, [id]: [] }));
+    setNewCategoryName('');
+    setShowAddCategory(false);
+  };
+
+  const handleDeleteCategory = (catId: string) => {
+    const updated = categories.filter(c => c.id !== catId);
+    setCategories(updated);
+    saveCategories(app.id, updated);
+    // Clean up options and filters for this category
+    setOptions(prev => { const next = { ...prev }; delete next[catId]; return next; });
+    setFilters(prev => { const next = { ...prev }; delete next[catId]; return next; });
+    // Delete all DB options for this category
+    const items = options[catId] || [];
+    items.forEach(item => dbService.deleteFilterOptionByValue(app.id, catId as keyof FilterState, item));
+  };
+
+  const toggleFilter = (category: string, item: string) => {
     setFilters(prev => ({
       ...prev,
-      [category]: prev[category].includes(item) ? prev[category].filter(i => i !== item) : [...prev[category], item]
+      [category]: (prev[category] || []).includes(item) ? (prev[category] || []).filter(i => i !== item) : [...(prev[category] || []), item]
     }));
   };
 
-  const handleAddItem = async (category: keyof FilterState) => {
+  const handleAddItem = async (category: string) => {
     if (newItem.text.trim()) {
-      await dbService.addFilterOption(app.id, category, newItem.text.trim());
-      setOptions(prev => ({ ...prev, [category]: [...prev[category], newItem.text.trim()] }));
+      await dbService.addFilterOption(app.id, category as keyof FilterState, newItem.text.trim());
+      setOptions(prev => ({ ...prev, [category]: [...(prev[category] || []), newItem.text.trim()] }));
       setNewItem({ cat: null, text: '' });
     }
   };
 
-  const handleDeleteOption = async (category: keyof FilterState, item: string) => {
+  const handleDeleteOption = async (category: string, item: string) => {
     // Immediately update UI
-    setOptions(prev => ({ ...prev, [category]: prev[category].filter(i => i !== item) }));
-    if (filters[category].includes(item)) {
-      setFilters(prev => ({ ...prev, [category]: prev[category].filter(i => i !== item) }));
+    setOptions(prev => ({ ...prev, [category]: (prev[category] || []).filter(i => i !== item) }));
+    if ((filters[category] || []).includes(item)) {
+      setFilters(prev => ({ ...prev, [category]: (prev[category] || []).filter(i => i !== item) }));
     }
     // Persist deletion to DB
-    const ok = await dbService.deleteFilterOptionByValue(app.id, category, item);
+    const ok = await dbService.deleteFilterOptionByValue(app.id, category as keyof FilterState, item);
     console.log(`Delete filter option [${category}] "${item}":`, ok ? 'success' : 'failed');
   };
 
-  const handleUpdateOption = (category: keyof FilterState, oldItem: string, newItemText: string) => {
+  const handleUpdateOption = (category: string, oldItem: string, newItemText: string) => {
     if (!newItemText.trim() || newItemText === oldItem) { setEditingItemText(null); return; }
-    setOptions(prev => ({ ...prev, [category]: prev[category].map(i => (i === oldItem ? newItemText.trim() : i)) }));
-    if (filters[category].includes(oldItem)) {
-      setFilters(prev => ({ ...prev, [category]: prev[category].map(i => (i === oldItem ? newItemText.trim() : i)) }));
+    setOptions(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === oldItem ? newItemText.trim() : i)) }));
+    if ((filters[category] || []).includes(oldItem)) {
+      setFilters(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === oldItem ? newItemText.trim() : i)) }));
     }
     setEditingItemText(null);
   };
@@ -357,7 +429,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const renderFilterDashboard = () => (
     <div className="relative pb-28">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {CATEGORIES.map(cat => {
+        {categories.map(cat => {
           const Icon = cat.icon;
           const filterItems = (options[cat.id] || []) as string[];
           const isEditMode = editModeCat === cat.id;
@@ -366,15 +438,17 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             <div key={cat.id} className={`bg-white rounded-2xl border overflow-hidden flex flex-col h-[400px] transition-all shadow-sm ${isEditMode ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200'}`}>
               <div className={`px-4 py-3 border-b flex justify-between items-center ${isEditMode ? 'bg-indigo-50 border-indigo-200' : 'border-gray-100'}`}>
                 <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700">
-                  <Icon size={16} className={isEditMode ? 'text-indigo-500' : 'text-gray-400'} /> {cat.label}
+                  <Icon size={16} className={isEditMode ? 'text-indigo-500' : 'text-gray-400'} />
+                  {cat.label}
+                  {cat.isCustom && <span className="text-[9px] text-gray-300 font-normal bg-gray-50 px-1.5 py-0.5 rounded">tùy chọn</span>}
                 </h3>
                 <div className="flex items-center gap-1.5">
                   {!isEditMode && (
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${filters[cat.id].length > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
-                      {filters[cat.id].length}
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(filters[cat.id] || []).length > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
+                      {(filters[cat.id] || []).length}
                     </span>
                   )}
-                  {!isEditMode && filters[cat.id].length > 0 && (
+                  {!isEditMode && (filters[cat.id] || []).length > 0 && (
                     <button onClick={() => setFilters(prev => ({ ...prev, [cat.id]: [] }))}
                       title="Xóa tất cả đã chọn"
                       className="p-1.5 rounded-lg transition-colors hover:bg-red-50 text-gray-300 hover:text-red-400">
@@ -385,6 +459,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
                     {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
                   </button>
+                  {isEditMode && cat.isCustom && (
+                    <button
+                      onClick={() => { if (confirm(`Xóa bộ lọc "${cat.label}" và tất cả tùy chọn bên trong?`)) handleDeleteCategory(cat.id); }}
+                      className="p-1.5 rounded-lg transition-colors text-red-400 hover:bg-red-50 hover:text-red-600"
+                      title={`Xóa bộ lọc ${cat.label}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -469,6 +552,52 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             </div>
           );
         })}
+
+        {/* ADD NEW CATEGORY CARD */}
+        {showAddCategory ? (
+          <div className="bg-white rounded-2xl border-2 border-dashed border-indigo-300 overflow-hidden flex flex-col h-[400px] shadow-sm">
+            <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50">
+              <h3 className="font-bold text-sm flex items-center gap-2 text-indigo-600">
+                <PlusCircle size={16} /> Thêm bộ lọc mới
+              </h3>
+            </div>
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                <Hash size={28} className="text-indigo-400" />
+              </div>
+              <p className="text-sm text-gray-500 text-center">Đặt tên cho bộ lọc mới.<br/> Ví dụ: <span className="font-medium text-gray-700">Hành vi</span>, <span className="font-medium text-gray-700">Đặc điểm</span>, <span className="font-medium text-gray-700">Kênh</span></p>
+              <input
+                autoFocus
+                className="w-full max-w-[280px] text-sm py-2.5 px-4 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 border-gray-200 text-center font-medium"
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+                placeholder="Tên bộ lọc..."
+              />
+              <div className="flex gap-2">
+                <button onClick={handleAddCategory}
+                  disabled={!newCategoryName.trim()}
+                  className="px-5 py-2 bg-indigo-500 text-white rounded-xl text-sm font-bold hover:bg-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+                  <Check size={14} /> Tạo bộ lọc
+                </button>
+                <button onClick={() => { setShowAddCategory(false); setNewCategoryName(''); }}
+                  className="px-4 py-2 bg-gray-100 text-gray-500 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
+                  Hủy
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddCategory(true)}
+            className="bg-white rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden flex flex-col h-[400px] shadow-sm hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group cursor-pointer items-center justify-center gap-3"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+              <PlusCircle size={28} className="text-gray-300 group-hover:text-indigo-400 transition-colors" />
+            </div>
+            <span className="text-sm font-bold text-gray-400 group-hover:text-indigo-500 transition-colors">+ Thêm bộ lọc mới</span>
+          </button>
+        )}
       </div>
 
       {/* Floating Action */}
