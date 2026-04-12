@@ -806,177 +806,107 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           </div>
 
           {/* Right: Full Ideas Results */}
-          <div className="lg:col-span-8 space-y-4">
-            <div className="flex justify-between items-center">
+          <div className="lg:col-span-8">
+            <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-amber-500" size={20} /> Full Ideas ({fullIdeas.length})</h3>
             </div>
 
             {fullIdeas.length > 0 ? (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {fullIdeas.map((idea: any, idx: number) => (
                   <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
-                    <div className="h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
-                    <div className="p-5">
-                      {/* Title + expand */}
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">{idea.creativeType || 'Creative'}</span>
-                            <span className="text-xs text-gray-400">{idea.duration}</span>
+                    <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500 w-full" />
+                    <div className="p-6">
+                      {/* Title + meta */}
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
+                          <div className="flex gap-2 flex-wrap">
+                            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
+                            <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{idea.creativeType || 'Creative'}</span>
                           </div>
-                          <h4 className="font-bold text-gray-800">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
-                          <p className="text-sm text-gray-500 mt-1 italic">{idea.explanation}</p>
                         </div>
-                        <div className="flex gap-1">
-                          <button onClick={() => {
-                            const text = `IDEA: ${idea.title}\n\nFRAMEWORK:\n- Core User: ${idea.framework?.coreUser}\n- Painpoint: ${idea.framework?.painpoint}\n- Emotion: ${idea.framework?.emotion}\n- PSP: ${idea.framework?.psp}\n\nHOOK:\n${idea.hook?.script}\n\nBODY:\n${idea.body?.script}\n\nCTA:\n${idea.cta?.script}`;
-                            navigator.clipboard.writeText(text);
-                          }} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><Copy size={14} /></button>
-                          <button onClick={() => setExpandedIdea(expandedIdea === idx ? null : idx)}
-                            className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors">
-                            {expandedIdea === idx ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </button>
-                        </div>
+                        <button onClick={() => {
+                          const text = `IDEA: ${idea.title}\n\nFRAMEWORK:\n- Core User: ${idea.framework?.coreUser}\n- Painpoint: ${idea.framework?.painpoint}\n- Emotion: ${idea.framework?.emotion}\n- PSP: ${idea.framework?.psp}\n\nHOOK:\n${idea.hook?.script}\n\nBODY:\n${idea.body?.script}\n\nCTA:\n${idea.cta?.script}`;
+                          navigator.clipboard.writeText(text);
+                        }} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy"><Copy size={16} /></button>
                       </div>
 
-                      {/* Framework Analysis (from AI) */}
-                      {idea.frameworkAnalysis && (
-                        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200 mb-3">
-                          <span className="text-[10px] font-bold text-amber-600 uppercase flex items-center gap-1 mb-2"><Target size={10} /> 🔍 Phân tích Framework</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                            {idea.frameworkAnalysis.whyItWorks && (
-                              <div className="sm:col-span-2 bg-white/60 rounded-lg px-3 py-2">
-                                <span className="font-bold text-amber-700">🏆 Tại sao hiệu quả:</span>
-                                <p className="text-gray-700 mt-0.5">{idea.frameworkAnalysis.whyItWorks}</p>
+                      {/* Explanation */}
+                      <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{idea.explanation}</p>
+
+                      {/* Sections: HOOK, BODY, CTA — same structure as FilterGenerator */}
+                      {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
+                        { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
+                        { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
+                      ].map(sec => {
+                        const secData = idea?.[sec.key] || {};
+                        const scriptContent = secData?.script || '';
+                        const textOverlay = secData?.textOverlay || '';
+                        const viTranslation = secData?.viTranslation || '';
+                        const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
+                        return (
+                          <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
+                            <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
+
+                            {/* Script */}
+                            <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
+
+                            {/* Vietnamese Translation */}
+                            {viTranslation && (
+                              <div className="mb-3 bg-white/60 rounded-lg px-3 py-2 border border-gray-200">
+                                <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
+                                <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{viTranslation}</p>
                               </div>
                             )}
-                            {idea.frameworkAnalysis.emotionMechanism && (
-                              <div className="bg-white/60 rounded-lg px-3 py-2">
-                                <span className="font-bold text-orange-600">😱 Emotion Mechanism:</span>
-                                <p className="text-gray-700 mt-0.5">{idea.frameworkAnalysis.emotionMechanism}</p>
+
+                            {/* Hook Analysis — only for hook section */}
+                            {sec.key === 'hook' && (secData?.viewerProfile || secData?.viewerEmotion || secData?.painpointImpact) && (
+                              <div className="mb-3 space-y-2">
+                                {secData?.viewerProfile && (
+                                  <div className="bg-purple-50 rounded-lg px-3 py-2 border border-purple-200">
+                                    <span className="text-[10px] font-bold text-purple-500 uppercase">👁️ Ai đang xem?</span>
+                                    <p className="text-xs text-gray-700 mt-0.5">{secData.viewerProfile}</p>
+                                  </div>
+                                )}
+                                {secData?.viewerEmotion && (
+                                  <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
+                                    <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
+                                    <p className="text-xs text-gray-700 mt-0.5">{secData.viewerEmotion}</p>
+                                  </div>
+                                )}
+                                {secData?.painpointImpact && (
+                                  <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
+                                    <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
+                                    <p className="text-xs text-gray-700 mt-0.5">{secData.painpointImpact}</p>
+                                  </div>
+                                )}
+                                {secData?.whyTheyStopScrolling && (
+                                  <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
+                                    <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
+                                    <p className="text-xs text-gray-700 font-semibold mt-0.5">{secData.whyTheyStopScrolling}</p>
+                                  </div>
+                                )}
                               </div>
                             )}
-                            {idea.frameworkAnalysis.hookPattern && (
-                              <div className="bg-white/60 rounded-lg px-3 py-2">
-                                <span className="font-bold text-purple-600">🎯 Hook Pattern:</span>
-                                <p className="text-gray-700 mt-0.5">{idea.frameworkAnalysis.hookPattern}</p>
+
+                            {/* Text Overlay + End Card */}
+                            <div className="flex gap-3">
+                              <div className="flex-1">
+                                <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
+                                <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
                               </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Framework */}
-                      {idea.framework && (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                          <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-100">
-                            <span className="text-[10px] font-bold text-indigo-500 uppercase">👤 Core User</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.coreUser}</p>
-                          </div>
-                          <div className="bg-red-50 rounded-lg px-3 py-2 border border-red-100">
-                            <span className="text-[10px] font-bold text-red-500 uppercase">💔 Painpoint</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.painpoint}</p>
-                          </div>
-                          <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">
-                            <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Emotion</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.emotion}</p>
-                          </div>
-                          <div className="bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-100">
-                            <span className="text-[10px] font-bold text-emerald-500 uppercase">💡 PSP</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.psp}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Hook Script */}
-                      <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-2">
-                        <span className="text-[10px] font-bold text-red-500 uppercase flex items-center gap-1 mb-2">🎣 HOOK (3-5s)</span>
-                        <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.hook?.script}</p>
-                        {idea.hook?.textOverlay && (
-                          <div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5">
-                            <span className="text-[10px] font-bold text-amber-600">📝 Text:</span> <span className="text-sm font-bold text-gray-800">{idea.hook.textOverlay}</span>
-                          </div>
-                        )}
-                        {idea.hook?.viTranslation && (
-                          <div className="mt-1 bg-white/70 rounded-lg px-3 py-1.5">
-                            <span className="text-[10px] font-bold text-violet-500">🇻🇳</span> <span className="text-xs text-gray-600 italic">{idea.hook.viTranslation}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Expanded: Body + CTA + Analysis */}
-                      {expandedIdea === idx && (
-                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                          {/* Body */}
-                          {idea.body && (
-                            <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-                              <span className="text-[10px] font-bold text-blue-500 uppercase flex items-center gap-1 mb-2">📖 BODY (10-25s)</span>
-                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.body.script}</p>
-                              {idea.body.textOverlay && (
-                                <div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5">
-                                  <span className="text-[10px] font-bold text-amber-600">📝</span> <span className="text-sm font-bold text-gray-800">{idea.body.textOverlay}</span>
-                                </div>
-                              )}
-                              {idea.body.viTranslation && (
-                                <div className="mt-1 bg-white/70 rounded-lg px-3 py-1.5">
-                                  <span className="text-[10px] font-bold text-violet-500">🇻🇳</span> <span className="text-xs text-gray-600 italic">{idea.body.viTranslation}</span>
+                              {sec.key === 'cta' && (
+                                <div className="flex-1">
+                                  <span className="text-[10px] font-bold text-emerald-600 uppercase">🏷️ End Card</span>
+                                  <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
                                 </div>
                               )}
                             </div>
-                          )}
-
-                          {/* CTA */}
-                          {idea.cta && (
-                            <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
-                              <span className="text-[10px] font-bold text-emerald-500 uppercase flex items-center gap-1 mb-2">🔥 CTA (3-5s)</span>
-                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.cta.script}</p>
-                              {idea.cta.textOverlay && (
-                                <div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5">
-                                  <span className="text-[10px] font-bold text-amber-600">📝</span> <span className="text-sm font-bold text-gray-800">{idea.cta.textOverlay}</span>
-                                </div>
-                              )}
-                              {idea.cta.endCard && (
-                                <div className="mt-1 bg-white/70 rounded-lg px-3 py-1.5">
-                                  <span className="text-[10px] font-bold text-emerald-600">🏷️ End Card:</span> <span className="text-sm text-gray-700">{idea.cta.endCard}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Hook Analysis */}
-                          {(idea.hook?.viewerEmotion || idea.hook?.painpointImpact) && (
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-2">
-                              <span className="text-[10px] font-bold text-gray-500 uppercase">📊 Phân tích Viewer</span>
-                              {idea.hook.viewerEmotion && (
-                                <div className="bg-white rounded-lg px-3 py-2">
-                                  <span className="text-[10px] font-bold text-orange-500">😱 Viewer cảm nhận:</span>
-                                  <p className="text-xs text-gray-700 mt-0.5">{idea.hook.viewerEmotion}</p>
-                                </div>
-                              )}
-                              {idea.hook.painpointImpact && (
-                                <div className="bg-white rounded-lg px-3 py-2">
-                                  <span className="text-[10px] font-bold text-rose-500">💔 Painpoint impact:</span>
-                                  <p className="text-xs text-gray-700 mt-0.5">{idea.hook.painpointImpact}</p>
-                                </div>
-                              )}
-                              {idea.hook.whyTheyStopScrolling && (
-                                <div className="bg-white rounded-lg px-3 py-2">
-                                  <span className="text-[10px] font-bold text-indigo-500">🛑 Dừng scroll vì:</span>
-                                  <p className="text-xs text-gray-700 font-semibold mt-0.5">{idea.hook.whyTheyStopScrolling}</p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Expand toggle hint */}
-                      {expandedIdea !== idx && (idea.body || idea.cta) && (
-                        <button onClick={() => setExpandedIdea(idx)}
-                          className="w-full mt-2 py-2 text-xs text-gray-400 hover:text-amber-600 flex items-center justify-center gap-1 transition-colors">
-                          <ChevronDown size={14} /> Xem Body + CTA + Phân tích
-                        </button>
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -986,8 +916,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl flex items-center justify-center">
                   <Brain size={36} className="text-amber-300" />
                 </div>
-                <p className="font-bold text-gray-500 mb-1">Phân tích hook & tạo Full Ideas</p>
-                <p className="text-sm text-gray-400 max-w-md mx-auto">AI sẽ phân tích sâu framework của winning hook rồi tạo ra các full production briefs (Hook + Body + CTA) mới lấy cảm hứng từ hook này.</p>
+                <p className="font-bold text-gray-500 mb-1">Tạo Full Ideas từ Winning Hook</p>
+                <p className="text-sm text-gray-400 max-w-md mx-auto">AI sẽ dùng framework đã phân tích sẵn từ hook để tạo full production briefs (Hook + Body + CTA) mới.</p>
               </div>
             )}
           </div>
