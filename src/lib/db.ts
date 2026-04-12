@@ -344,6 +344,7 @@ export async function getFilterOptions(app: AppProject): Promise<Record<keyof Fi
     emotion: customOptions.emotion?.length ? customOptions.emotion : (categorySeeds.emotion || []),
     videoStructure: GLOBAL_VIDEO_STRUCTURE,
     visualType: customOptions.visualType?.length ? customOptions.visualType : GLOBAL_VISUAL_TYPES,
+    targetMarket: customOptions.targetMarket?.length ? customOptions.targetMarket : ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'],
   };
 }
 
