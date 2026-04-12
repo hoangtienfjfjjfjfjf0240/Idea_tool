@@ -160,7 +160,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setFilters(prev => { const next = { ...prev }; delete next[catId]; return next; });
     // Delete all DB options for this category
     const items = options[catId] || [];
-    items.forEach(item => dbService.deleteFilterOptionByValue(app.id, catId as keyof FilterState, item));
+    items.forEach(item => dbService.deleteFilterOptionByValue(app.id, catId, item));
     setEditModeCat(null);
     setConfirmDeleteCat(null);
   };
@@ -174,7 +174,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const handleAddItem = async (category: string) => {
     if (newItem.text.trim()) {
-      await dbService.addFilterOption(app.id, category as keyof FilterState, newItem.text.trim());
+      await dbService.addFilterOption(app.id, category, newItem.text.trim());
       setOptions(prev => ({ ...prev, [category]: [...(prev[category] || []), newItem.text.trim()] }));
       setNewItem({ cat: null, text: '' });
     }
@@ -187,7 +187,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       setFilters(prev => ({ ...prev, [category]: (prev[category] || []).filter(i => i !== item) }));
     }
     // Persist deletion to DB
-    const ok = await dbService.deleteFilterOptionByValue(app.id, category as keyof FilterState, item);
+    const ok = await dbService.deleteFilterOptionByValue(app.id, category, item);
     console.log(`Delete filter option [${category}] "${item}":`, ok ? 'success' : 'failed');
   };
 
@@ -259,25 +259,44 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
    CTA: "${c?.cta?.voice || ''}"`;
       }).join('\n');
 
-      const res = await fetch('/api/generate-ideas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appName: app.name,
-          appCategory: app.category,
-          filters,
-          config: { quantity, duration, ideaDescription, visualType: filters.visualType?.join(', ') || 'UGC (Người thật)' },
-          previousIdeas: previousIdeasSummary || null,
-          appKnowledge: app.app_knowledge || null,
-          selectedModel: selectedModel || 'gemini-2.5-pro',
-        }),
-        signal: controller.signal,
-      });
-      const result = await res.json();
+      // Split into batches of 5 to avoid gateway timeout
+      const batchSize = 5;
+      const batches = Math.ceil(quantity / batchSize);
+      let allData: any[] = [];
+
+      for (let batch = 0; batch < batches; batch++) {
+        const batchQty = Math.min(batchSize, quantity - batch * batchSize);
+        setProgressLabel(`Đang tạo batch ${batch + 1}/${batches} (${batchQty} ideas)...`);
+
+        const res = await fetch('/api/generate-ideas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appName: app.name,
+            appCategory: app.category,
+            filters,
+            config: { quantity: batchQty, duration, ideaDescription, visualType: filters.visualType?.join(', ') || 'UGC (Người thật)' },
+            previousIdeas: previousIdeasSummary || null,
+            appKnowledge: app.app_knowledge || null,
+            selectedModel: selectedModel || 'gemini-2.5-pro',
+          }),
+          signal: controller.signal,
+        });
+        const result = await res.json();
+
+        if (res.ok && result.success && result.data?.length > 0) {
+          allData = [...allData, ...result.data];
+        } else if (batch === 0) {
+          // First batch failed — show error immediately
+          throw new Error(result.error || 'AI không phản hồi');
+        }
+      }
+
+      const result = { success: allData.length > 0, data: allData, error: allData.length === 0 ? 'Không có kết quả' : null };
 
       let ideas: { title: string; duration: string; content: IdeaContent }[];
 
-      if (res.ok && result.success && result.data?.length > 0) {
+      if (result.success && result.data?.length > 0) {
         // Map API response — new script format
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ideas = result.data.map((item: any) => ({
@@ -656,7 +675,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         <div className="flex flex-wrap gap-2">
           {Object.entries(filters).flatMap(([key, items]) =>
             (items as string[]).map(item => (
-              <button key={`${key}-${item}`} onClick={() => toggleFilter(key as keyof FilterState, item)}
+              <button key={`${key}-${item}`} onClick={() => toggleFilter(key, item)}
                 className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group cursor-pointer">
                 {item} <X size={12} className="opacity-50 group-hover:opacity-100" />
               </button>
@@ -691,8 +710,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
               <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><ListOrdered size={14} /> Số lượng Idea</label>
-              <input type="number" min="1" value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+              <input type="number" min="1" max="10" value={quantity}
+                onChange={(e) => setQuantity(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
                 className="w-full text-center text-xl font-bold py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
             </div>
           </div>

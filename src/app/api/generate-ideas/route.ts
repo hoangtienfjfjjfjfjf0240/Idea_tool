@@ -189,7 +189,7 @@ ${JSON.stringify(originalIdea, null, 2)}
     // === MODE: GENERATE (tạo idea mới) ===
     const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel } = body;
     const featureContext = filters?.solution?.length ? filters.solution.join(', ') : "General App Features";
-    const quantity = config?.quantity || 3;
+    const quantity = Math.min(config?.quantity || 3, 5); // Cap at 5 to avoid gateway timeout
     const duration = config?.duration || '30s';
     const visualType = config?.visualType || 'UGC (Người thật)';
     const targetLang = detectLang(filters?.coreUser);

@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2 } from 'lucide-react';
+import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2, Brain, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import type { ScreenType, Hook, AppProject } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -26,6 +26,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [generatedIdeas, setGeneratedIdeas] = useState<HookIdea[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [quantity, setQuantity] = useState(3);
+  // Hook-to-Ideas state
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [fullIdeas, setFullIdeas] = useState<any[]>([]);
+  const [fullIdeasLoading, setFullIdeasLoading] = useState(false);
+  const [fullIdeasDuration, setFullIdeasDuration] = useState('30s');
+  const [fullIdeasQty, setFullIdeasQty] = useState(3);
+  const [expandedIdea, setExpandedIdea] = useState<number | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -409,10 +416,16 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <p className="text-[11px] text-gray-500 mb-3 line-clamp-2 leading-relaxed">{hook.hook_concept}</p>
                 )}
                 
-                <button onClick={() => { setSelectedHook(hook); setScreen('f2.2.1'); }}
-                  className="w-full text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
-                  <Sparkles size={12} /> AI Modify
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => { setSelectedHook(hook); setScreen('f2.2.1'); }}
+                    className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
+                    <Sparkles size={12} /> Modify
+                  </button>
+                  <button onClick={() => { setSelectedHook(hook); setFullIdeas([]); setScreen('f2.2.2'); }}
+                    className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
+                    <Brain size={12} /> Full Ideas
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -614,6 +627,358 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // === Hook-to-Full-Ideas View (f2.2.2) ===
+  if (currentScreen === 'f2.2.2' && selectedHook) {
+    const handleGenerateFullIdeas = async () => {
+      setFullIdeasLoading(true);
+      setFullIdeas([]);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      startProgress();
+      try {
+        const res = await fetch('/api/generate-ideas-from-hook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hook: selectedHook,
+            quantity: fullIdeasQty,
+            duration: fullIdeasDuration,
+            appName: app?.name || '',
+            appCategory: app?.category || '',
+            selectedModel: selectedModel || 'gemini-2.5-pro',
+          }),
+          signal: controller.signal,
+        });
+        const result = await res.json();
+        if (res.ok && result.success && result.data?.length > 0) {
+          setFullIdeas(result.data);
+        } else {
+          alert(result.error || 'Có lỗi khi tạo ideas.');
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          alert('Có lỗi khi tạo ideas. Vui lòng thử lại.');
+        }
+      } finally {
+        stopProgress();
+        setFullIdeasLoading(false);
+      }
+    };
+
+    return (
+      <div className="p-6 sm:p-8 max-w-[95%] mx-auto">
+        <button onClick={() => setScreen('f2.2')} className="mb-6 flex items-center gap-2 text-sm text-gray-400 hover:text-gray-700 transition-colors"><ArrowLeft size={18} /> Quay lại Thư Viện</button>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left Panel */}
+          <div className="lg:col-span-4 space-y-5">
+            {/* Hook Card */}
+            <div className="bg-white rounded-2xl overflow-hidden border-2 border-amber-200 shadow-sm">
+              {selectedHook.image_url ? (
+                <div className="h-48 bg-gray-100">
+                  <img src={selectedHook.image_url} alt={selectedHook.title} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="h-32 bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
+                  <span className="text-5xl">{selectedHook.thumb || '🎬'}</span>
+                </div>
+              )}
+              <div className="p-5">
+                <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">🏆 Winning Hook — Framework Analysis</span>
+                <h2 className="text-xl font-bold text-gray-800 mt-1">"{selectedHook.title}"</h2>
+                {selectedHook.hook_concept && (
+                  <p className="text-sm text-gray-500 mt-2 italic border-l-2 border-amber-200 pl-3">{selectedHook.hook_concept}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Framework Analysis Display */}
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-5 border border-amber-200 space-y-3">
+              <h3 className="font-bold text-amber-700 flex items-center gap-2 text-sm"><Target size={14} className="text-amber-500" /> Framework Analysis</h3>
+              <div className="space-y-2">
+                {selectedHook.core_user && (
+                  <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
+                    <span className="text-[10px] font-bold text-indigo-500 uppercase">👤 Core User</span>
+                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.core_user}</p>
+                  </div>
+                )}
+                {selectedHook.painpoint && (
+                  <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
+                    <span className="text-[10px] font-bold text-red-500 uppercase">💔 Painpoint</span>
+                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.painpoint}</p>
+                  </div>
+                )}
+                {selectedHook.emotion && (
+                  <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
+                    <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Emotion</span>
+                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.emotion}</p>
+                  </div>
+                )}
+                {selectedHook.creative_type && (
+                  <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
+                    <span className="text-[10px] font-bold text-emerald-500 uppercase">🎬 Creative Type</span>
+                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.creative_type}</p>
+                  </div>
+                )}
+                {selectedHook.visual_detail && (
+                  <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
+                    <span className="text-[10px] font-bold text-purple-500 uppercase">👁️ Visual</span>
+                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.visual_detail}</p>
+                  </div>
+                )}
+                {!selectedHook.core_user && !selectedHook.painpoint && !selectedHook.emotion && (
+                  <p className="text-sm text-amber-600 italic">Chưa có framework data. Chỉnh sửa hook để thêm phân tích.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Generate Controls */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2 text-sm"><Brain size={14} className="text-amber-500" /> Tạo Full Ideas từ Hook này</h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><Clock size={10} /> Duration</label>
+                  <div className="flex gap-1">
+                    {['15s', '30s', '60s'].map(d => (
+                      <button key={d} onClick={() => setFullIdeasDuration(d)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${fullIdeasDuration === d ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100'}`}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><ListOrdered size={10} /> Số lượng</label>
+                  <div className="flex gap-1">
+                    {[1, 3, 5].map(n => (
+                      <button key={n} onClick={() => setFullIdeasQty(n)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${fullIdeasQty === n ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100'}`}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <button onClick={handleGenerateFullIdeas} disabled={fullIdeasLoading}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:shadow-lg font-bold disabled:opacity-50 transition-all text-sm">
+                {fullIdeasLoading ? <RefreshCw className="animate-spin" size={18} /> : <Brain size={18} />}
+                {fullIdeasLoading ? 'Đang tạo Ideas...' : '🚀 Tạo Full Ideas'}
+              </button>
+
+              {fullIdeasLoading && progress > 0 && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-amber-600 font-medium flex items-center gap-2">
+                      <Loader2 className="animate-spin" size={14} /> {progressLabel}
+                    </span>
+                    <span className="font-bold text-amber-700">{progress}%</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-amber-500 via-orange-400 to-red-400 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${progress}%` }} />
+                  </div>
+                  <button onClick={handleCancel}
+                    className="w-full py-2 rounded-xl font-semibold text-sm border-2 border-red-200 text-red-500 bg-red-50 hover:bg-red-100 transition-all flex items-center justify-center gap-2">
+                    <X size={16} /> Hủy
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Full Ideas Results */}
+          <div className="lg:col-span-8 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-amber-500" size={20} /> Full Ideas ({fullIdeas.length})</h3>
+            </div>
+
+            {fullIdeas.length > 0 ? (
+              <div className="space-y-4">
+                {fullIdeas.map((idea: any, idx: number) => (
+                  <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
+                    <div className="h-1.5 bg-gradient-to-r from-amber-500 to-orange-500" />
+                    <div className="p-5">
+                      {/* Title + expand */}
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">{idea.creativeType || 'Creative'}</span>
+                            <span className="text-xs text-gray-400">{idea.duration}</span>
+                          </div>
+                          <h4 className="font-bold text-gray-800">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
+                          <p className="text-sm text-gray-500 mt-1 italic">{idea.explanation}</p>
+                        </div>
+                        <div className="flex gap-1">
+                          <button onClick={() => {
+                            const text = `IDEA: ${idea.title}\n\nFRAMEWORK:\n- Core User: ${idea.framework?.coreUser}\n- Painpoint: ${idea.framework?.painpoint}\n- Emotion: ${idea.framework?.emotion}\n- PSP: ${idea.framework?.psp}\n\nHOOK:\n${idea.hook?.script}\n\nBODY:\n${idea.body?.script}\n\nCTA:\n${idea.cta?.script}`;
+                            navigator.clipboard.writeText(text);
+                          }} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><Copy size={14} /></button>
+                          <button onClick={() => setExpandedIdea(expandedIdea === idx ? null : idx)}
+                            className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors">
+                            {expandedIdea === idx ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Framework Analysis (from AI) */}
+                      {idea.frameworkAnalysis && (
+                        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200 mb-3">
+                          <span className="text-[10px] font-bold text-amber-600 uppercase flex items-center gap-1 mb-2"><Target size={10} /> 🔍 Phân tích Framework</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            {idea.frameworkAnalysis.whyItWorks && (
+                              <div className="sm:col-span-2 bg-white/60 rounded-lg px-3 py-2">
+                                <span className="font-bold text-amber-700">🏆 Tại sao hiệu quả:</span>
+                                <p className="text-gray-700 mt-0.5">{idea.frameworkAnalysis.whyItWorks}</p>
+                              </div>
+                            )}
+                            {idea.frameworkAnalysis.emotionMechanism && (
+                              <div className="bg-white/60 rounded-lg px-3 py-2">
+                                <span className="font-bold text-orange-600">😱 Emotion Mechanism:</span>
+                                <p className="text-gray-700 mt-0.5">{idea.frameworkAnalysis.emotionMechanism}</p>
+                              </div>
+                            )}
+                            {idea.frameworkAnalysis.hookPattern && (
+                              <div className="bg-white/60 rounded-lg px-3 py-2">
+                                <span className="font-bold text-purple-600">🎯 Hook Pattern:</span>
+                                <p className="text-gray-700 mt-0.5">{idea.frameworkAnalysis.hookPattern}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Framework */}
+                      {idea.framework && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                          <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-100">
+                            <span className="text-[10px] font-bold text-indigo-500 uppercase">👤 Core User</span>
+                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.coreUser}</p>
+                          </div>
+                          <div className="bg-red-50 rounded-lg px-3 py-2 border border-red-100">
+                            <span className="text-[10px] font-bold text-red-500 uppercase">💔 Painpoint</span>
+                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.painpoint}</p>
+                          </div>
+                          <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">
+                            <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Emotion</span>
+                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.emotion}</p>
+                          </div>
+                          <div className="bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-100">
+                            <span className="text-[10px] font-bold text-emerald-500 uppercase">💡 PSP</span>
+                            <p className="text-xs text-gray-700 mt-0.5">{idea.framework.psp}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Hook Script */}
+                      <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-2">
+                        <span className="text-[10px] font-bold text-red-500 uppercase flex items-center gap-1 mb-2">🎣 HOOK (3-5s)</span>
+                        <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.hook?.script}</p>
+                        {idea.hook?.textOverlay && (
+                          <div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5">
+                            <span className="text-[10px] font-bold text-amber-600">📝 Text:</span> <span className="text-sm font-bold text-gray-800">{idea.hook.textOverlay}</span>
+                          </div>
+                        )}
+                        {idea.hook?.viTranslation && (
+                          <div className="mt-1 bg-white/70 rounded-lg px-3 py-1.5">
+                            <span className="text-[10px] font-bold text-violet-500">🇻🇳</span> <span className="text-xs text-gray-600 italic">{idea.hook.viTranslation}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Expanded: Body + CTA + Analysis */}
+                      {expandedIdea === idx && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                          {/* Body */}
+                          {idea.body && (
+                            <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                              <span className="text-[10px] font-bold text-blue-500 uppercase flex items-center gap-1 mb-2">📖 BODY (10-25s)</span>
+                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.body.script}</p>
+                              {idea.body.textOverlay && (
+                                <div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5">
+                                  <span className="text-[10px] font-bold text-amber-600">📝</span> <span className="text-sm font-bold text-gray-800">{idea.body.textOverlay}</span>
+                                </div>
+                              )}
+                              {idea.body.viTranslation && (
+                                <div className="mt-1 bg-white/70 rounded-lg px-3 py-1.5">
+                                  <span className="text-[10px] font-bold text-violet-500">🇻🇳</span> <span className="text-xs text-gray-600 italic">{idea.body.viTranslation}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* CTA */}
+                          {idea.cta && (
+                            <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                              <span className="text-[10px] font-bold text-emerald-500 uppercase flex items-center gap-1 mb-2">🔥 CTA (3-5s)</span>
+                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.cta.script}</p>
+                              {idea.cta.textOverlay && (
+                                <div className="mt-2 bg-white/70 rounded-lg px-3 py-1.5">
+                                  <span className="text-[10px] font-bold text-amber-600">📝</span> <span className="text-sm font-bold text-gray-800">{idea.cta.textOverlay}</span>
+                                </div>
+                              )}
+                              {idea.cta.endCard && (
+                                <div className="mt-1 bg-white/70 rounded-lg px-3 py-1.5">
+                                  <span className="text-[10px] font-bold text-emerald-600">🏷️ End Card:</span> <span className="text-sm text-gray-700">{idea.cta.endCard}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Hook Analysis */}
+                          {(idea.hook?.viewerEmotion || idea.hook?.painpointImpact) && (
+                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 space-y-2">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">📊 Phân tích Viewer</span>
+                              {idea.hook.viewerEmotion && (
+                                <div className="bg-white rounded-lg px-3 py-2">
+                                  <span className="text-[10px] font-bold text-orange-500">😱 Viewer cảm nhận:</span>
+                                  <p className="text-xs text-gray-700 mt-0.5">{idea.hook.viewerEmotion}</p>
+                                </div>
+                              )}
+                              {idea.hook.painpointImpact && (
+                                <div className="bg-white rounded-lg px-3 py-2">
+                                  <span className="text-[10px] font-bold text-rose-500">💔 Painpoint impact:</span>
+                                  <p className="text-xs text-gray-700 mt-0.5">{idea.hook.painpointImpact}</p>
+                                </div>
+                              )}
+                              {idea.hook.whyTheyStopScrolling && (
+                                <div className="bg-white rounded-lg px-3 py-2">
+                                  <span className="text-[10px] font-bold text-indigo-500">🛑 Dừng scroll vì:</span>
+                                  <p className="text-xs text-gray-700 font-semibold mt-0.5">{idea.hook.whyTheyStopScrolling}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Expand toggle hint */}
+                      {expandedIdea !== idx && (idea.body || idea.cta) && (
+                        <button onClick={() => setExpandedIdea(idx)}
+                          className="w-full mt-2 py-2 text-xs text-gray-400 hover:text-amber-600 flex items-center justify-center gap-1 transition-colors">
+                          <ChevronDown size={14} /> Xem Body + CTA + Phân tích
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-200 p-20 text-center">
+                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl flex items-center justify-center">
+                  <Brain size={36} className="text-amber-300" />
+                </div>
+                <p className="font-bold text-gray-500 mb-1">Phân tích hook & tạo Full Ideas</p>
+                <p className="text-sm text-gray-400 max-w-md mx-auto">AI sẽ phân tích sâu framework của winning hook rồi tạo ra các full production briefs (Hook + Body + CTA) mới lấy cảm hứng từ hook này.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
