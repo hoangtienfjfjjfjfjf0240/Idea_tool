@@ -20,7 +20,7 @@ function resolveModel(selected?: string): string {
     'gpt-4.1': 'openai/gpt-4.1',
     'o4-mini': 'openai/o4-mini',
   };
-  return map[selected || ''] || 'gemini/gemini-2.5-pro';
+  return map[selected || ''] || 'openai/gpt-4.1';
 }
 
 export async function POST(request: NextRequest) {

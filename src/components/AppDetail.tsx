@@ -1,9 +1,8 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles } from 'lucide-react';
+import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles, PenTool } from 'lucide-react';
 import type { AppProject, Feature, SyncLog, ScreenType } from '@/types/database';
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
-import { StrategyHistory } from '@/components/StrategyHistory';
 import { StrategyMap } from '@/components/StrategyMap';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
 
@@ -11,9 +10,6 @@ type AppTab = 'overview' | 'ideas' | 'hooks' | 'strategy' | 'brain' | 'config';
 
 const TABS: { id: AppTab; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
-  { id: 'ideas', label: 'Tạo Ý Tưởng', icon: Lightbulb },
-  { id: 'hooks', label: 'Thư Viện Hook', icon: Film },
-  { id: 'strategy', label: 'Strategy Map', icon: BarChart3 },
   { id: 'brain', label: 'AI Brain', icon: Brain },
   { id: 'config', label: 'Cấu hình', icon: Settings },
 ];
@@ -105,19 +101,6 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
 
   const handleTabClick = (tab: AppTab) => {
     setActiveTab(tab);
-    // For ideas and hooks, navigate to the existing full-screen components
-    if (tab === 'ideas') {
-      onNavigate('f2.1');
-      return;
-    }
-    if (tab === 'hooks') {
-      onNavigate('f2.2');
-      return;
-    }
-    if (tab === 'strategy') {
-      onNavigate('f2.4');
-      return;
-    }
   };
 
   // =====================
@@ -149,12 +132,14 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
         </button>
         <button onClick={() => onNavigate('f2.2')}
           className="bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500 text-white px-6 py-5 rounded-2xl font-extrabold text-lg hover:shadow-xl hover:shadow-indigo-200 hover:scale-[1.02] transition-all flex items-center justify-center gap-3 group">
-          <Film size={24} className="group-hover:animate-pulse" /> Thư Viện Hook
+          <PenTool size={24} className="group-hover:animate-pulse" /> Modify Creative
         </button>
       </div>
 
-      {/* Strategy History / Plan Overview — inline */}
-      <StrategyHistory app={app} onBack={() => {}} inline />
+      {/* Strategy Map — inline tree diagram */}
+      <StrategyMap app={app} onBack={() => {}} inline onCreateFromBranch={(filters) => {
+        onNavigate('f2.1');
+      }} />
     </div>
   );
 

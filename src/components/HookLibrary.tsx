@@ -128,7 +128,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           quantity,
           appName: app?.name || '',
           appCategory: app?.category || '',
-          selectedModel: selectedModel || 'gemini-2.5-pro',
+          selectedModel: selectedModel || '',
         }),
         signal: controller.signal,
       });
@@ -170,8 +170,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     pendingFileRef.current = null;
     pendingThumbRef.current = null;
     if (hook) {
-      setEditingHookData({ 
-        ...hook, 
+      setEditingHookData({
+        ...hook,
         localVideoUrl: hook.video_url || undefined,
         localImageUrl: hook.image_url || undefined,
       });
@@ -250,7 +250,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       }
       await loadHooks();
       setIsEditModalOpen(false);
-    } catch(e: unknown) {
+    } catch (e: unknown) {
       console.error('Save hook error:', e);
     } finally { setIsSaving(false); }
   };
@@ -327,7 +327,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       const thumb = await extractThumbnail(file);
       pendingThumbRef.current = thumb || null;
       setEditingHookData(prev => ({ ...prev, localVideoUrl: localUrl, localImageUrl: thumb || undefined }));
-      
+
       // Send thumbnail frame to Gemini for analysis
       if (thumb) {
         await analyzeWithGemini(thumb, file.name);
@@ -355,7 +355,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     return (
       <div className="p-6 sm:p-8 max-w-6xl mx-auto relative">
         <button onClick={() => setScreen('f2')} className="mb-4 flex items-center gap-2 text-sm text-gray-400 hover:text-gray-700 transition-colors"><ArrowLeft size={18} /> Quay lại</button>
-        
+
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">🎬 Hook Library</h1>
@@ -412,11 +412,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               <div className="p-3.5">
                 <h4 className="font-bold text-sm text-gray-800 mb-0.5 truncate">{hook.title}</h4>
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mb-3">{hook.subtitle}</p>
-                
+
                 {hook.hook_concept && (
                   <p className="text-[11px] text-gray-500 mb-3 line-clamp-2 leading-relaxed">{hook.hook_concept}</p>
                 )}
-                
+
                 <div className="flex gap-2">
                   <button onClick={() => { setSelectedHook(hook); setScreen('f2.2.1'); }}
                     className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
@@ -554,7 +554,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 {/* Advanced Details */}
                 <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-4">
                   <h4 className="font-bold text-gray-700 flex items-center gap-2"><PenTool size={14} className="text-indigo-500" /> Chi tiết nâng cao</h4>
-                  
+
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1.5">Hook Concept</label>
                     <textarea value={editingHookData.hook_concept || ''} onChange={e => setEditingHookData({ ...editingHookData, hook_concept: e.target.value })}
@@ -573,7 +573,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 {/* Framework Analysis */}
                 <div className="bg-amber-50 rounded-xl p-5 border border-amber-200 space-y-4">
                   <h4 className="font-bold text-amber-700 flex items-center gap-2"><Target size={14} className="text-amber-500" /> Framework Analysis</h4>
-                  
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">👤 Core User</label>
@@ -651,7 +651,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             ideaDirection: ideaDirection || null,
             appName: app?.name || '',
             appCategory: app?.category || '',
-            selectedModel: selectedModel || 'gemini-2.5-pro',
+            selectedModel: selectedModel || '',
           }),
           signal: controller.signal,
         });
@@ -741,7 +741,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             {/* Generate Controls */}
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
               <h3 className="font-bold text-gray-700 flex items-center gap-2 text-sm"><Brain size={14} className="text-amber-500" /> Tạo Full Ideas từ Hook này</h3>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><Clock size={10} /> Duration</label>
@@ -838,8 +838,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
                       {/* Sections: HOOK, BODY, CTA */}
                       {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
-                        { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
-                        { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
+                      { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
+                      { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
                       ].map(sec => {
                         const secData = idea?.[sec.key] || {};
                         const scriptContent = secData?.script || '';

@@ -1,6 +1,6 @@
 'use client';
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Hash, PlusCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2 } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -66,7 +66,7 @@ function saveCategories(appId: string, cats: CategoryConfig[]) {
 
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed }) => {
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
-  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [] });
+  const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
   const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
   const [newItem, setNewItem] = useState<{ cat: string | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -90,6 +90,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [confirmDeleteCat, setConfirmDeleteCat] = useState<string | null>(null);
+  // New feature states
+  const [expandedIdeas, setExpandedIdeas] = useState<Set<string>>(new Set());
+  const [favoriteIdeas, setFavoriteIdeas] = useState<Set<string>>(new Set());
+  const [imagePrompts, setImagePrompts] = useState<Record<string, string>>({});
+  const [generatingThumbnail, setGeneratingThumbnail] = useState<string | null>(null);
+  const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
+  const [trendingInput, setTrendingInput] = useState('');
+  const [selectedSeasonInsights, setSelectedSeasonInsights] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setCategories(loadCategories(app.id));
@@ -278,7 +286,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             config: { quantity: batchQty, duration, ideaDescription, visualType: filters.visualType?.join(', ') || 'UGC (Người thật)' },
             previousIdeas: previousIdeasSummary || null,
             appKnowledge: app.app_knowledge || null,
-            selectedModel: selectedModel || 'gemini-2.5-pro',
+            selectedModel: selectedModel || '',
+            trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
           }),
           signal: controller.signal,
         });
@@ -360,7 +369,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         result: null,
         created_at: new Date().toISOString(),
       }));
-      
+
       setResults(prev => [...tempResults, ...prev]);
       setSavedHistory(prev => [...tempResults, ...prev]);
       stopProgress();
@@ -440,262 +449,423 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer(null);
   };
 
-  const STEPS = [
+  // ===== SEASONAL EVENTS =====
+  const SEASONS: Record<string, { label: string; icon: string; months: string; events: string[]; visualInsights: { costumes: string[]; behaviors: string[]; colors: string[]; props: string[]; moods: string[] } }> = {
+    spring: { label: 'Xuân', icon: '🌸', months: 'Mar – May', events: ['Easter', 'St Patrick', "Mother's Day", 'Earth Day', 'April Fools'], visualInsights: { costumes: ['Pastel outfits', 'Floral patterns', 'Easter bunny ears', 'Light layers', 'Rain jackets'], behaviors: ['Spring cleaning', 'Outdoor picnics', 'Gardening', 'Family gatherings', 'Window shopping'], colors: ['Pastel pink', 'Mint green', 'Lavender', 'Soft yellow', 'Sky blue'], props: ['Flowers', 'Easter eggs', 'Butterflies', 'Garden tools', 'Baskets'], moods: ['Renewal', 'Fresh start', 'Hope', 'Joy', 'Optimism'] } },
+    summer: { label: 'Hè', icon: '☀️', months: 'Jun – Aug', events: ['Summer Sale', 'Independence Day (US)', 'Back to School', "Father's Day"], visualInsights: { costumes: ['Swimwear', 'Sunglasses', 'Tank tops', 'Shorts', 'Hats & caps'], behaviors: ['Beach trips', 'BBQ parties', 'Road trips', 'Late-night hangouts', 'Ice cream runs'], colors: ['Bright orange', 'Ocean blue', 'Coral', 'Lime green', 'Sunset gold'], props: ['Sunscreen', 'Pool floats', 'Surfboards', 'Popsicles', 'Camping gear'], moods: ['Freedom', 'Adventure', 'Relaxation', 'FOMO', 'Carefree'] } },
+    autumn: { label: 'Thu', icon: '🍂', months: 'Sep – Nov', events: ['Halloween', 'Thanksgiving', 'Black Friday', 'Cyber Monday', 'Singles Day 11/11'], visualInsights: { costumes: ['Cozy sweaters', 'Scarves', 'Boots', 'Halloween costumes', 'Leather jackets'], behaviors: ['Pumpkin spice shopping', 'Binge-watching', 'Early holiday prep', 'Cozy nights in', 'Trick-or-treating'], colors: ['Burnt orange', 'Deep red', 'Golden yellow', 'Burgundy', 'Forest green'], props: ['Pumpkins', 'Fall leaves', 'Candles', 'Blankets', 'Mugs'], moods: ['Nostalgia', 'Cozy', 'Urgency (deals)', 'Excitement', 'Gratitude'] } },
+    winter: { label: 'Đông', icon: '❄️', months: 'Dec – Feb', events: ['Christmas', 'New Year', "Valentine's Day", 'Lunar New Year', 'Super Bowl'], visualInsights: { costumes: ['Winter coats', 'Ugly sweaters', 'Beanies', 'Scarves & gloves', 'Formal party wear'], behaviors: ['Gift shopping', 'New Year resolutions', 'Indoor activities', 'Family dinners', 'Hot cocoa nights'], colors: ['Red & green', 'Silver & gold', 'Icy blue', 'White & cream', 'Deep purple'], props: ['Gift boxes', 'Christmas tree', 'Snowflakes', 'Fireworks', 'Heart decorations'], moods: ['Warmth', 'Generosity', 'Romance', 'Reflection', 'Celebration'] } },
+  };
+
+  const [wizardStep, setWizardStep] = useState(0);
+  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [generatingAngles, setGeneratingAngles] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const WIZARD_STEPS = [
+    { label: 'Core User & PSP', icon: Users, categories: ['coreUser', 'solution'], required: ['coreUser', 'solution'] },
+    { label: 'Emotion & Visual', icon: Target, categories: ['emotion', 'visualType'], required: ['emotion'] },
+    { label: 'Painpoint', icon: Zap, categories: ['painPoint'], required: ['painPoint'] },
+    { label: 'Angle', icon: Compass, categories: ['angle', 'targetMarket'], required: ['angle'] },
+    { label: 'Cấu hình & Tạo', icon: Settings2, categories: [], required: [] },
+  ];
+
+  // === Validation: check if current step has required selections ===
+  const isStepValid = (stepIndex: number): boolean => {
+    const step = WIZARD_STEPS[stepIndex];
+    if (!step?.required || step.required.length === 0) return true;
+    return step.required.every(cat => (filters[cat] || []).length > 0);
+  };
+
+  const getStepValidationMessage = (stepIndex: number): string => {
+    const step = WIZARD_STEPS[stepIndex];
+    if (!step?.required) return '';
+    const missing = step.required.filter(cat => (filters[cat] || []).length === 0);
+    if (missing.length === 0) return '';
+    const labelMap: Record<string, string> = {
+      coreUser: 'Đối tượng',
+      solution: 'Tính năng / Giải pháp',
+      emotion: 'Cảm xúc',
+      visualType: 'Dạng Visual',
+      painPoint: 'Nỗi đau',
+      angle: 'Angle',
+      targetMarket: 'Thị trường',
+    };
+    return `Vui lòng chọn: ${missing.map(m => labelMap[m] || m).join(', ')}`;
+  };
+
+  const handleNextStep = () => {
+    if (!isStepValid(wizardStep)) {
+      setValidationError(getStepValidationMessage(wizardStep));
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
+    setValidationError(null);
+    setWizardStep(wizardStep + 1);
+  };
+
+  // === Auto-generate angles from selected painpoints ===
+  const generateAnglesFromPainpoints = async () => {
+    const selectedPainpoints = filters.painPoint || [];
+    if (selectedPainpoints.length === 0) return;
+
+    setGeneratingAngles(true);
+    try {
+      const res = await fetch('/api/generate-ideas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'generate-angles',
+          appName: app.name,
+          appCategory: app.category,
+          painpoints: selectedPainpoints,
+          coreUsers: filters.coreUser || [],
+          emotions: filters.emotion || [],
+          selectedModel: selectedModel || '',
+        }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success && result.angles?.length > 0) {
+        // Add generated angles to options
+        const newAngles = result.angles as string[];
+        setOptions(prev => {
+          const existing = prev.angle || [];
+          const merged = [...new Set([...existing, ...newAngles])];
+          return { ...prev, angle: merged };
+        });
+      } else {
+        // Fallback: generate angles locally from painpoints
+        const fallbackAngles = selectedPainpoints.flatMap(pp => [
+          `Sợ hãi: ${pp}`,
+          `Giải pháp cho: ${pp}`,
+          `So sánh trước/sau: ${pp}`,
+        ]);
+        setOptions(prev => {
+          const existing = prev.angle || [];
+          const merged = [...new Set([...existing, ...fallbackAngles])];
+          return { ...prev, angle: merged };
+        });
+      }
+    } catch {
+      // Fallback on error
+      const fallbackAngles = (filters.painPoint || []).flatMap(pp => [
+        `Sợ hãi: ${pp}`,
+        `Giải pháp cho: ${pp}`,
+        `So sánh trước/sau: ${pp}`,
+      ]);
+      setOptions(prev => {
+        const existing = prev.angle || [];
+        const merged = [...new Set([...existing, ...fallbackAngles])];
+        return { ...prev, angle: merged };
+      });
+    } finally {
+      setGeneratingAngles(false);
+    }
+  };
+
+  const LEGACY_STEPS = [
     { id: 'f2.1' as ScreenType, label: 'Bộ lọc', icon: Filter },
     { id: 'f2.1.1' as ScreenType, label: 'Cấu hình', icon: Settings2 },
     { id: 'f2.1.2' as ScreenType, label: 'Kết quả', icon: Wand2 },
   ];
-  const currentStepIdx = STEPS.findIndex(s => s.id === currentScreen);
+  const currentStepIdx = LEGACY_STEPS.findIndex(s => s.id === currentScreen);
 
-  // === RENDER: Filter Dashboard ===
-  const renderFilterDashboard = () => (
-    <div className="relative pb-28">
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {categories.map(cat => {
-          const Icon = cat.icon;
-          const filterItems = (options[cat.id] || []) as string[];
-          const isEditMode = editModeCat === cat.id;
+  // === RENDER: Filter Card for a category ===
+  const renderFilterCard = (cat: CategoryConfig) => {
+    const Icon = cat.icon;
+    const filterItems = (options[cat.id] || []) as string[];
+    const isEditMode = editModeCat === cat.id;
 
-          return (
-            <div key={cat.id} className={`bg-white rounded-2xl border overflow-hidden flex flex-col h-[400px] transition-all shadow-sm ${isEditMode ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200'}`}>
-              <div className={`px-4 py-3 border-b flex justify-between items-center ${isEditMode ? 'bg-indigo-50 border-indigo-200' : 'border-gray-100'}`}>
-                <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700">
-                  <Icon size={16} className={isEditMode ? 'text-indigo-500' : 'text-gray-400'} />
-                  {cat.label}
-                  {cat.isCustom && <span className="text-[9px] text-gray-300 font-normal bg-gray-50 px-1.5 py-0.5 rounded">tùy chọn</span>}
-                </h3>
-                <div className="flex items-center gap-1.5">
-                  {!isEditMode && (
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(filters[cat.id] || []).length > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
-                      {(filters[cat.id] || []).length}
-                    </span>
-                  )}
-                  {!isEditMode && (filters[cat.id] || []).length > 0 && (
-                    <button onClick={() => setFilters(prev => ({ ...prev, [cat.id]: [] }))}
-                      title="Xóa tất cả đã chọn"
-                      className="p-1.5 rounded-lg transition-colors hover:bg-red-50 text-gray-300 hover:text-red-400">
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                  <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); setConfirmDeleteCat(null); }}
-                    className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
-                    {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
-                  </button>
-                  {isEditMode && (
-                    confirmDeleteCat === cat.id ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleDeleteCategory(cat.id)}
-                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
-                        >
-                          Xóa
-                        </button>
-                        <button
-                          onClick={() => setConfirmDeleteCat(null)}
-                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
-                        >
-                          Hủy
-                        </button>
+    return (
+      <div key={cat.id} className={`bg-white rounded-2xl border overflow-hidden flex flex-col transition-all shadow-sm ${isEditMode ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200'}`}>
+        <div className={`px-4 py-3 border-b flex justify-between items-center ${isEditMode ? 'bg-indigo-50 border-indigo-200' : 'border-gray-100'}`}>
+          <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700">
+            <Icon size={16} className={isEditMode ? 'text-indigo-500' : 'text-gray-400'} />
+            {cat.label}
+            {cat.isCustom && <span className="text-[9px] text-gray-300 font-normal bg-gray-50 px-1.5 py-0.5 rounded">tùy chọn</span>}
+          </h3>
+          <div className="flex items-center gap-1.5">
+            {!isEditMode && (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(filters[cat.id] || []).length > 0 ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'}`}>
+                {(filters[cat.id] || []).length}
+              </span>
+            )}
+            {!isEditMode && (filters[cat.id] || []).length > 0 && (
+              <button onClick={() => setFilters(prev => ({ ...prev, [cat.id]: [] }))}
+                title="Xóa tất cả đã chọn"
+                className="p-1.5 rounded-lg transition-colors hover:bg-red-50 text-gray-300 hover:text-red-400">
+                <Trash2 size={13} />
+              </button>
+            )}
+            <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); setConfirmDeleteCat(null); }}
+              className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
+              {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
+            </button>
+            {isEditMode && (
+              confirmDeleteCat === cat.id ? (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handleDeleteCategory(cat.id)} className="text-[10px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">Xóa</button>
+                  <button onClick={() => setConfirmDeleteCat(null)} className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors">Hủy</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDeleteCat(cat.id)} className="p-1.5 rounded-lg transition-colors text-red-400 hover:bg-red-50 hover:text-red-600" title={`Xóa bộ lọc ${cat.label}`}>
+                  <Trash2 size={13} />
+                </button>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 min-h-[200px] max-h-[350px]">
+          {isEditMode ? (
+            <div className="space-y-1.5">
+              {filterItems.map(item => (
+                <div key={item} className="flex items-center gap-1.5 group">
+                  {editingItemText?.original === item ? (
+                    <div className="flex-1 flex gap-1">
+                      <input autoFocus className="flex-1 text-sm py-1.5 px-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
+                        value={editingItemText.current}
+                        onChange={e => setEditingItemText({ ...editingItemText, current: e.target.value })}
+                        onKeyDown={e => e.key === 'Enter' && handleUpdateOption(cat.id, item, editingItemText.current)}
+                        onBlur={() => handleUpdateOption(cat.id, item, editingItemText.current)} />
+                      <button onClick={() => handleUpdateOption(cat.id, item, editingItemText.current)} className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
+                    </div>
+                  ) : (
+                    <>
+                      <div onClick={() => setEditingItemText({ original: item, current: item })}
+                        className="flex-1 px-3 py-2 rounded-lg text-sm bg-gray-50 border border-transparent hover:border-indigo-200 hover:bg-indigo-50/50 transition-all cursor-text text-gray-700 flex justify-between items-center">
+                        {item}
+                        <Pencil size={11} className="opacity-0 group-hover:opacity-100 text-gray-400" />
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmDeleteCat(cat.id)}
-                        className="p-1.5 rounded-lg transition-colors text-red-400 hover:bg-red-50 hover:text-red-600"
-                        title={`Xóa bộ lọc ${cat.label}`}
-                      >
-                        <Trash2 size={13} />
+                      <button onClick={() => handleDeleteOption(cat.id, item)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 size={14} />
                       </button>
-                    )
+                    </>
                   )}
                 </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-3">
-                {isEditMode ? (
-                  <div className="space-y-1.5">
-                    {filterItems.map(item => (
-                      <div key={item} className="flex items-center gap-1.5 group">
-                        {editingItemText?.original === item ? (
-                          <div className="flex-1 flex gap-1">
-                            <input autoFocus className="flex-1 text-sm py-1.5 px-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
-                              value={editingItemText.current}
-                              onChange={e => setEditingItemText({ ...editingItemText, current: e.target.value })}
-                              onKeyDown={e => e.key === 'Enter' && handleUpdateOption(cat.id, item, editingItemText.current)}
-                              onBlur={() => handleUpdateOption(cat.id, item, editingItemText.current)} />
-                            <button onClick={() => handleUpdateOption(cat.id, item, editingItemText.current)} className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={14} /></button>
-                          </div>
-                        ) : (
-                          <>
-                            <div onClick={() => setEditingItemText({ original: item, current: item })}
-                              className="flex-1 px-3 py-2 rounded-lg text-sm bg-gray-50 border border-transparent hover:border-indigo-200 hover:bg-indigo-50/50 transition-all cursor-text text-gray-700 flex justify-between items-center">
-                              {item}
-                              <Pencil size={11} className="opacity-0 group-hover:opacity-100 text-gray-400" />
-                            </div>
-                            <button onClick={() => handleDeleteOption(cat.id, item)}
-                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {filterItems.map(item => (
-                      <button key={item} onClick={() => toggleFilter(cat.id, item)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium text-left transition-all ${
-                          (filters[cat.id] || []).includes(item) ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
-                        }`}>
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="p-2.5 border-t border-gray-100">
-                {newItem.cat === cat.id ? (
-                  <div className="flex gap-1.5">
-                    <input autoFocus className="flex-1 text-sm py-1.5 px-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
-                      value={newItem.text} onChange={e => setNewItem({ ...newItem, text: e.target.value })}
-                      onKeyDown={e => e.key === 'Enter' && handleAddItem(cat.id)} placeholder="Thêm mới..." />
-                    <button onClick={() => handleAddItem(cat.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><Check size={14} /></button>
-                    <button onClick={() => setNewItem({ cat: null, text: '' })} className="p-2 bg-gray-50 text-gray-400 rounded-lg hover:bg-gray-100"><X size={14} /></button>
-                  </div>
-                ) : isEditMode ? (
-                  <div className="flex gap-1.5">
-                    <button onClick={() => setNewItem({ cat: cat.id, text: '' })} className="flex-1 text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors">
-                      <Plus size={14} /> THÊM
-                    </button>
-                    <button onClick={async () => {
-                      // Reset to category seeds
-                      const seeds = CATEGORY_SEEDS[app.category] || CATEGORY_SEEDS['Tổng hợp'];
-                      const seedValues = cat.id === 'visualType' ? GLOBAL_VISUAL_TYPES : (seeds[cat.id as keyof typeof seeds] || []);
-                      // Delete all custom options for this category
-                      for (const item of filterItems) {
-                        await dbService.deleteFilterOptionByValue(app.id, cat.id, item);
-                      }
-                      setOptions(prev => ({ ...prev, [cat.id]: seedValues as string[] }));
-                      setFilters(prev => ({ ...prev, [cat.id]: [] }));
-                    }} className="flex-1 text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-amber-500 hover:bg-amber-50 transition-colors">
-                      <RotateCcw size={13} /> RESET
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setNewItem({ cat: cat.id, text: '' })} className="w-full text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors">
-                    <Plus size={14} /> THÊM TÙY CHỌN
-                  </button>
-                )}
-              </div>
+              ))}
             </div>
-          );
-        })}
-
-        {/* ADD NEW CATEGORY CARD */}
-        {showAddCategory ? (
-          <div className="bg-white rounded-2xl border-2 border-dashed border-indigo-300 overflow-hidden flex flex-col h-[400px] shadow-sm">
-            <div className="px-4 py-3 border-b border-indigo-100 bg-indigo-50">
-              <h3 className="font-bold text-sm flex items-center gap-2 text-indigo-600">
-                <PlusCircle size={16} /> Thêm bộ lọc mới
-              </h3>
-            </div>
-            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                <Hash size={28} className="text-indigo-400" />
-              </div>
-              <p className="text-sm text-gray-500 text-center">Đặt tên cho bộ lọc mới.<br/> Ví dụ: <span className="font-medium text-gray-700">Hành vi</span>, <span className="font-medium text-gray-700">Đặc điểm</span>, <span className="font-medium text-gray-700">Kênh</span></p>
-              <input
-                autoFocus
-                className="w-full max-w-[280px] text-sm py-2.5 px-4 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 border-gray-200 text-center font-medium"
-                value={newCategoryName}
-                onChange={e => setNewCategoryName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
-                placeholder="Tên bộ lọc..."
-              />
-              <div className="flex gap-2">
-                <button onClick={handleAddCategory}
-                  disabled={!newCategoryName.trim()}
-                  className="px-5 py-2 bg-indigo-500 text-white rounded-xl text-sm font-bold hover:bg-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
-                  <Check size={14} /> Tạo bộ lọc
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {filterItems.map(item => (
+                <button key={item} onClick={() => toggleFilter(cat.id, item)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium text-left transition-all ${(filters[cat.id] || []).includes(item) ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm' : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
+                    }`}>
+                  {item}
                 </button>
-                <button onClick={() => { setShowAddCategory(false); setNewCategoryName(''); }}
-                  className="px-4 py-2 bg-gray-100 text-gray-500 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors">
-                  Hủy
-                </button>
-              </div>
+              ))}
             </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowAddCategory(true)}
-            className="bg-white rounded-2xl border-2 border-dashed border-gray-200 overflow-hidden flex flex-col h-[400px] shadow-sm hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group cursor-pointer items-center justify-center gap-3"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
-              <PlusCircle size={28} className="text-gray-300 group-hover:text-indigo-400 transition-colors" />
-            </div>
-            <span className="text-sm font-bold text-gray-400 group-hover:text-indigo-500 transition-colors">+ Thêm bộ lọc mới</span>
-          </button>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Floating Action */}
-      <div className="fixed bottom-6 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto bg-white/90 backdrop-blur-xl border border-gray-200 rounded-full p-2 pl-6 flex items-center gap-6 max-w-3xl w-full shadow-xl">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Đã chọn</span>
-            <span className="font-bold text-indigo-600">{Object.values(filters).flat().length} <span className="text-xs text-gray-400 font-normal">yếu tố</span></span>
-          </div>
-          <div className="h-6 w-px bg-gray-200" />
-          <div className="flex-1 overflow-x-auto flex gap-1.5" style={{ scrollbarWidth: 'none' }}>
-            {Object.values(filters).flat().slice(0, 5).map((f, i) => (
-              <span key={i} className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded whitespace-nowrap">{f}</span>
-            ))}
-            {Object.values(filters).flat().length > 5 && <span className="text-xs text-gray-400 self-center">...</span>}
-          </div>
-          {Object.values(filters).flat().length > 0 && (
-            <button onClick={() => setFilters({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [] })}
-              className="text-xs text-red-400 hover:text-red-500 hover:bg-red-50 px-3 py-2 rounded-full transition-colors font-medium flex items-center gap-1 flex-shrink-0">
-              <Trash2 size={12} /> Xóa hết
+        <div className="p-2.5 border-t border-gray-100">
+          {newItem.cat === cat.id ? (
+            <div className="flex gap-1.5">
+              <input autoFocus className="flex-1 text-sm py-1.5 px-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
+                value={newItem.text} onChange={e => setNewItem({ ...newItem, text: e.target.value })}
+                onKeyDown={e => e.key === 'Enter' && handleAddItem(cat.id)} placeholder="Thêm mới..." />
+              <button onClick={() => handleAddItem(cat.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><Check size={14} /></button>
+              <button onClick={() => setNewItem({ cat: null, text: '' })} className="p-2 bg-gray-50 text-gray-400 rounded-lg hover:bg-gray-100"><X size={14} /></button>
+            </div>
+          ) : isEditMode ? (
+            <div className="flex gap-1.5">
+              <button onClick={() => setNewItem({ cat: cat.id, text: '' })} className="flex-1 text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors">
+                <Plus size={14} /> THÊM
+              </button>
+              <button onClick={async () => {
+                const seeds = CATEGORY_SEEDS[app.category] || CATEGORY_SEEDS['Tổng hợp'];
+                const seedValues = cat.id === 'visualType' ? GLOBAL_VISUAL_TYPES : (seeds[cat.id as keyof typeof seeds] || []);
+                for (const item of filterItems) { await dbService.deleteFilterOptionByValue(app.id, cat.id, item); }
+                setOptions(prev => ({ ...prev, [cat.id]: seedValues as string[] }));
+                setFilters(prev => ({ ...prev, [cat.id]: [] }));
+              }} className="flex-1 text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-amber-500 hover:bg-amber-50 transition-colors">
+                <RotateCcw size={13} /> RESET
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setNewItem({ cat: cat.id, text: '' })} className="w-full text-xs font-bold flex items-center justify-center gap-1 py-2 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors">
+              <Plus size={14} /> THÊM TÙY CHỌN
             </button>
           )}
-          <button onClick={() => setScreen('f2.1.1')} className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-full px-6 py-2.5 text-sm font-bold flex items-center gap-2 hover:shadow-lg transition-all flex-shrink-0">
-            Tiếp tục <ArrowRight size={16} />
-          </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // === RENDER: Config Screen ===
-  const renderConfigScreen = () => (
-    <div className="max-w-4xl mx-auto pb-10">
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6 shadow-sm">
-        <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Filter size={14} /> Bối cảnh đã chọn</h3>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(filters).flatMap(([key, items]) =>
-            (items as string[]).map(item => (
-              <button key={`${key}-${item}`} onClick={() => toggleFilter(key, item)}
-                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group cursor-pointer">
-                {item} <X size={12} className="opacity-50 group-hover:opacity-100" />
+  // === RENDER: Wizard Step Content ===
+  const renderWizardContent = () => {
+    const step = WIZARD_STEPS[wizardStep];
+    // Angle step uses a special category 'angle' not in default categories list
+    const stepCats = step.categories
+      .map(catId => {
+        const found = categories.find(c => c.id === catId);
+        if (found) return found;
+        // Inject angle category if not in default list
+        if (catId === 'angle') return { id: 'angle', label: 'Angle (Góc tiếp cận)', icon: Compass } as CategoryConfig;
+        return null;
+      })
+      .filter(Boolean) as CategoryConfig[];
+
+    // Step 5 = Config + Generate
+    if (wizardStep === 4) {
+      return (
+        <div className="max-w-3xl mx-auto space-y-6">
+          {/* Selected filters summary */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Filter size={14} /> Bối cảnh đã chọn</h3>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(filters).flatMap(([key, items]) =>
+                (items as string[]).map(item => (
+                  <button key={`${key}-${item}`} onClick={() => toggleFilter(key, item)}
+                    className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group cursor-pointer">
+                    {item} <X size={12} className="opacity-50 group-hover:opacity-100" />
+                  </button>
+                ))
+              )}
+              {Object.values(filters).flat().length === 0 && <span className="text-gray-400 italic text-sm">Chưa chọn bối cảnh nào (AI sẽ tự do sáng tạo)</span>}
+            </div>
+          </div>
+
+          {/* Seasonal Events — Expanded */}
+          <div className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 p-5">
+            <h3 className="text-xs font-bold text-violet-600 uppercase mb-3 flex items-center gap-2">📅 Sự kiện theo mùa</h3>
+            <div className="flex gap-2 mb-3">
+              {Object.entries(SEASONS).map(([key, season]) => (
+                <button key={key} onClick={() => {
+                  if (selectedSeason === key) {
+                    setSelectedSeason(null);
+                    setSelectedSeasonInsights(new Set());
+                    setIdeaDescription(prev => {
+                      // Remove all season-related text
+                      return Object.values(SEASONS).reduce((txt, s) => {
+                        return txt.replace(new RegExp(`\\[${s.icon}[^\\]]*\\][^\\n]*`, 'g'), '').trim();
+                      }, prev);
+                    });
+                  } else {
+                    setSelectedSeason(key);
+                    setSelectedSeasonInsights(new Set());
+                    const events = season.events.join(', ');
+                    setIdeaDescription(prev => {
+                      const cleaned = Object.values(SEASONS).reduce((txt, s) => {
+                        return txt.replace(new RegExp(`\\[${s.icon}[^\\]]*\\][^\\n]*`, 'g'), '').trim();
+                      }, prev);
+                      return cleaned ? `${cleaned}\n[${season.icon} ${season.label}] ${events}` : `[${season.icon} ${season.label}] ${events}`;
+                    });
+                  }
+                }}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all flex flex-col items-center gap-1 ${selectedSeason === key
+                    ? 'bg-white text-violet-700 border-2 border-violet-400 shadow-md'
+                    : 'bg-white/50 text-gray-500 border border-gray-200 hover:bg-white hover:border-violet-300'
+                    }`}>
+                  <span className="text-lg">{season.icon}</span>
+                  <span>{season.label}</span>
+                  <span className="text-[10px] font-normal text-gray-400">{season.months}</span>
+                </button>
+              ))}
+            </div>
+            {selectedSeason && (() => {
+              const season = SEASONS[selectedSeason];
+              const insightGroups = [
+                { key: 'events', label: '🎉 Sự kiện', items: season.events, color: 'violet' },
+                { key: 'costumes', label: '👗 Trang phục', items: season.visualInsights.costumes, color: 'pink' },
+                { key: 'behaviors', label: '🎭 Hành vi', items: season.visualInsights.behaviors, color: 'blue' },
+                { key: 'colors', label: '🎨 Màu sắc', items: season.visualInsights.colors, color: 'amber' },
+                { key: 'props', label: '🎬 Props', items: season.visualInsights.props, color: 'emerald' },
+                { key: 'moods', label: '💫 Mood', items: season.visualInsights.moods, color: 'purple' },
+              ];
+              const toggleInsight = (item: string) => {
+                const next = new Set(selectedSeasonInsights);
+                if (next.has(item)) next.delete(item); else next.add(item);
+                setSelectedSeasonInsights(next);
+                // Update ideaDescription with selected insights
+                const allSelected = Array.from(next);
+                const events = season.events.join(', ');
+                const insightsText = allSelected.length > 0 ? `\n[Visual Insights] ${allSelected.join(', ')}` : '';
+                setIdeaDescription(prev => {
+                  let cleaned = prev.replace(/\[Visual Insights\][^\n]*/g, '').trim();
+                  cleaned = Object.values(SEASONS).reduce((txt, s) => {
+                    return txt.replace(new RegExp(`\\[${s.icon}[^\\]]*\\][^\\n]*`, 'g'), '').trim();
+                  }, cleaned);
+                  return `${cleaned ? cleaned + '\n' : ''}[${season.icon} ${season.label}] ${events}${insightsText}`.trim();
+                });
+              };
+              return (
+                <div className="space-y-3 animate-in fade-in duration-200">
+                  {insightGroups.map(group => (
+                    <div key={group.key}>
+                      <span className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">{group.label}</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {group.items.map(item => {
+                          const isSelected = selectedSeasonInsights.has(item);
+                          return (
+                            <button key={item} onClick={() => group.key !== 'events' ? toggleInsight(item) : undefined}
+                              className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
+                                group.key === 'events'
+                                  ? 'bg-white text-violet-600 border-violet-200 cursor-default'
+                                  : isSelected
+                                    ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                                    : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'
+                              }`}>
+                              {group.key === 'events' ? `🎉 ${item}` : item}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {selectedSeasonInsights.size > 0 && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-200 text-xs text-indigo-600 font-medium">
+                      ✅ Đã chọn {selectedSeasonInsights.size} visual insights — sẽ kết hợp vào prompt AI
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Import Trending */}
+          <div className="bg-gradient-to-br from-rose-50 to-orange-50 rounded-2xl border border-rose-200 p-5">
+            <h3 className="text-xs font-bold text-rose-600 uppercase mb-3 flex items-center gap-2"><TrendingUp size={14} /> Import Trending</h3>
+            <div className="flex gap-2 mb-3">
+              <input value={trendingInput} onChange={e => setTrendingInput(e.target.value)}
+                placeholder="Nhập trend hoặc paste URL TikTok..."
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && trendingInput.trim()) {
+                    setTrendingTopics(prev => [...prev, trendingInput.trim()]);
+                    setTrendingInput('');
+                  }
+                }}
+                className="flex-1 text-sm py-2.5 px-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 bg-white" />
+              <button onClick={() => {
+                if (trendingInput.trim()) {
+                  setTrendingTopics(prev => [...prev, trendingInput.trim()]);
+                  setTrendingInput('');
+                }
+              }}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 text-white font-bold text-sm hover:shadow-lg transition-all flex items-center gap-1">
+                <Plus size={14} /> Thêm
               </button>
-            ))
-          )}
-          {Object.values(filters).flat().length === 0 && <span className="text-gray-400 italic text-sm">Chưa chọn bối cảnh nào (AI sẽ tự do sáng tạo)</span>}
-        </div>
-      </div>
+            </div>
+            {trendingTopics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {trendingTopics.map((topic, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-white text-rose-600 border border-rose-200 font-medium group">
+                    {topic.startsWith('http') ? <Link2 size={10} /> : <TrendingUp size={10} />}
+                    {topic.length > 40 ? topic.substring(0, 40) + '...' : topic}
+                    <button onClick={() => setTrendingTopics(prev => prev.filter((_, j) => j !== i))}
+                      className="text-gray-400 hover:text-red-500 transition-colors"><X size={10} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {trendingTopics.length === 0 && (
+              <p className="text-xs text-gray-400 italic">Thêm trending topics hoặc paste URL TikTok để kết hợp vào idea</p>
+            )}
+          </div>
 
-      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-200 p-8 md:p-10 relative overflow-hidden min-h-[480px]">
-        <button onClick={() => setScreen('f2.1')} className="mb-8 flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
-          <ArrowLeft size={18} /> Quay lại Bộ lọc
-        </button>
-
-        <div className="max-w-2xl mx-auto relative z-10">
-          <h3 className="text-2xl font-bold mb-8 flex items-center justify-center gap-3 text-gray-800">
-            <Target className="text-pink-500" size={28} /> Cấu Hình Tạo Video
-          </h3>
-
-          <div className="grid grid-cols-2 gap-5 mb-6">
+          {/* Duration + Quantity */}
+          <div className="grid grid-cols-2 gap-5">
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
               <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Clock size={14} /> Thời lượng</label>
               <div className="flex gap-2">
@@ -707,7 +877,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 ))}
               </div>
             </div>
-
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
               <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><ListOrdered size={14} /> Số lượng Idea</label>
               <input type="number" min="1" max="10" value={quantity}
@@ -716,25 +885,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             </div>
           </div>
 
-
-          <div className="mb-8">
+          {/* Description */}
+          <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
             <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><FileEdit size={14} /> Mô tả ý tưởng (Tùy chọn)</label>
             <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)}
               placeholder="VD: Video cảm xúc mạnh, tập trung vào cảnh báo nguy hiểm..."
               className="w-full h-28 resize-none py-3 px-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
           </div>
 
+          {/* Generate Button */}
           <button onClick={handleGenerate} disabled={isGenerating}
-            className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl ${
-              isGenerating ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-pink-500 to-orange-500 hover:shadow-orange-200 text-white hover:scale-[1.01]'
-            }`}>
+            className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl ${isGenerating ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-pink-500 to-orange-500 hover:shadow-orange-200 text-white hover:scale-[1.01]'
+              }`}>
             {isGenerating ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
             {isGenerating ? 'Đang Sáng Tạo & Lưu...' : 'BẮT ĐẦU TẠO IDEA'}
           </button>
 
           {/* Progress bar */}
           {isGenerating && progress > 0 && (
-            <div className="mt-4 space-y-2">
+            <div className="space-y-2">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-indigo-600 font-medium flex items-center gap-2">
                   <Loader2 className="animate-spin" size={14} /> {progressLabel}
@@ -745,23 +914,59 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
                   style={{ width: `${progress}%` }} />
               </div>
-              <div className="flex justify-between text-[10px] text-gray-400">
-                <span>Phân tích</span>
-                <span>Hook & Visual</span>
-                <span>Voice & Text</span>
-                <span>Lưu DB</span>
-              </div>
               <button onClick={handleCancel}
                 className="w-full mt-2 py-2.5 rounded-xl font-semibold text-sm border-2 border-red-200 text-red-500 bg-red-50 hover:bg-red-100 hover:border-red-300 transition-all flex items-center justify-center gap-2">
                 <X size={16} /> Hủy Tạo
               </button>
             </div>
           )}
+        </div>
+      );
+    }
 
+    // Steps 1-4: show filter cards for this step
+    // Special: Angle step (step 3) has auto-generate button
+    return (
+      <div className="space-y-5">
+        {wizardStep === 3 && (
+          <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-2xl border border-teal-200 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-bold text-teal-800 flex items-center gap-2">
+                  <Compass size={18} /> Angle — Góc tiếp cận
+                </h3>
+                <p className="text-xs text-teal-600 mt-1">
+                  Chọn angle hoặc bấm "Gen Angle" để AI tự tạo từ painpoint đã chọn
+                </p>
+              </div>
+              <button
+                onClick={generateAnglesFromPainpoints}
+                disabled={generatingAngles || (filters.painPoint || []).length === 0}
+                className={`px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${generatingAngles
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white hover:shadow-lg hover:shadow-teal-200 hover:scale-105'
+                  }`}
+              >
+                {generatingAngles ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {generatingAngles ? 'Đang tạo...' : 'Gen Angle từ Painpoint'}
+              </button>
+            </div>
+            {(filters.painPoint || []).length === 0 && (
+              <div className="flex items-center gap-2 text-amber-600 bg-amber-50 rounded-lg px-3 py-2 text-xs font-medium border border-amber-200">
+                <AlertTriangle size={14} />
+                Quay lại bước 3 để chọn Painpoint trước khi tạo Angle
+              </div>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {stepCats.map(cat => renderFilterCard(cat))}
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // (Config screen merged into wizard step 4 above)
 
   // === RENDER: Results ===
   const renderResult = () => (
@@ -796,215 +1001,215 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const c = idea.content as any;
             const isEditing = editingIdea === idea.id;
             return (
-            <div key={idea.id || idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
-              <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500 w-full" />
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <input value={editBuffer?.title || ''} onChange={e => setEditBuffer({...editBuffer, title: e.target.value})}
-                        className="font-bold text-lg text-gray-800 mb-1 w-full border-b-2 border-indigo-300 focus:outline-none bg-transparent" />
-                    ) : (
-                      <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title}</h4>
-                    )}
-                    <div className="flex gap-2 flex-wrap">
-                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
-                      <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-400 rounded">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
+              <div key={idea.id || idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
+                <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500 w-full" />
+                <div className="p-6">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        <input value={editBuffer?.title || ''} onChange={e => setEditBuffer({ ...editBuffer, title: e.target.value })}
+                          className="font-bold text-lg text-gray-800 mb-1 w-full border-b-2 border-indigo-300 focus:outline-none bg-transparent" />
+                      ) : (
+                        <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title}</h4>
+                      )}
+                      <div className="flex gap-2 flex-wrap">
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
+                        <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-400 rounded">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      {isEditing ? (
+                        <>
+                          <button onClick={() => saveEditIdea(idea)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Lưu">
+                            <Save size={16} />
+                          </button>
+                          <button onClick={() => { setEditingIdea(null); setEditBuffer(null); }} className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg transition-colors" title="Hủy">
+                            <X size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => { setRefiningIdea(refiningIdea === idea.id ? null : idea.id); setRefineInstruction(''); }} className={`p-2 rounded-lg transition-colors ${refiningIdea === idea.id ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-purple-500 hover:bg-purple-50'}`} title="AI Refine">
+                            <Sparkles size={16} />
+                          </button>
+                          <button onClick={() => startEditIdea(idea)} className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Chỉnh sửa thủ công">
+                            <Pencil size={16} />
+                          </button>
+                          <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
+                            <Copy size={16} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex gap-1">
-                    {isEditing ? (
-                      <>
-                        <button onClick={() => saveEditIdea(idea)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors" title="Lưu">
-                          <Save size={16} />
-                        </button>
-                        <button onClick={() => { setEditingIdea(null); setEditBuffer(null); }} className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg transition-colors" title="Hủy">
-                          <X size={16} />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => { setRefiningIdea(refiningIdea === idea.id ? null : idea.id); setRefineInstruction(''); }} className={`p-2 rounded-lg transition-colors ${refiningIdea === idea.id ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-purple-500 hover:bg-purple-50'}`} title="AI Refine">
-                          <Sparkles size={16} />
-                        </button>
-                        <button onClick={() => startEditIdea(idea)} className="p-2 text-gray-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-colors" title="Chỉnh sửa thủ công">
-                          <Pencil size={16} />
-                        </button>
-                        <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
-                          <Copy size={16} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
 
-                {/* Explanation */}
-                {isEditing ? (
-                  <textarea value={editBuffer?.explanation || ''} onChange={e => setEditBuffer({...editBuffer, explanation: e.target.value})}
-                    className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
-                ) : (
-                  <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
-                )}
+                  {/* Explanation */}
+                  {isEditing ? (
+                    <textarea value={editBuffer?.explanation || ''} onChange={e => setEditBuffer({ ...editBuffer, explanation: e.target.value })}
+                      className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
+                  ) : (
+                    <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
+                  )}
 
-                {/* AI Refine Panel */}
-                {refiningIdea === idea.id && !isEditing && (
-                  <div className="mb-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-200 animate-in slide-in-from-top duration-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Sparkles size={16} className="text-purple-500" />
-                      <span className="text-sm font-bold text-purple-700">AI Refine — Chỉnh sửa bằng AI</span>
-                    </div>
-                    <textarea value={refineInstruction} onChange={e => setRefineInstruction(e.target.value)}
-                      placeholder='VD: "Đổi nhân vật thành cặp vợ chồng 50 tuổi, thêm hài hước", "Đổi emotion sang FOMO", "Rút gọn hook còn 3 giây"...'
-                      className="w-full h-20 resize-none text-sm border border-purple-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white mb-3" />
-                    <div className="flex gap-2">
-                      <button onClick={async () => {
-                        if (!refineInstruction.trim() || isRefining) return;
-                        setIsRefining(true);
-                        try {
-                          const res = await fetch('/api/generate-ideas', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              mode: 'refine',
-                              originalIdea: idea.content,
-                              instruction: refineInstruction,
-                              appName: app.name,
-                              appCategory: app.category,
-                              selectedModel: selectedModel || 'gemini-2.5-pro',
-                            }),
-                          });
-                          const result = await res.json();
-                          if (res.ok && result.success && result.data) {
-                            const refined = result.data;
-                            const newContent = {
-                              ...idea.content,
-                              framework: refined.framework || (idea.content as any).framework,
-                              explanation: refined.explanation || (idea.content as any).explanation,
-                              hook: refined.hook ? { script: refined.hook.script || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.script || '', text: refined.hook.textOverlay || '', voice: '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
-                              body: refined.body ? { script: refined.body.script || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.script || '', text: refined.body.textOverlay || '', voice: '', viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
-                              cta: refined.cta ? { script: refined.cta.script || '', voice: '', text: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
-                            };
-                            const newTitle = refined.title || idea.title;
-                            await dbService.updateIdeaContent(idea.id, newTitle, newContent);
-                            const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: newTitle, content: newContent } : i);
-                            setResults(updater);
-                            setSavedHistory(updater);
-                            setRefiningIdea(null);
-                            setRefineInstruction('');
-                          } else {
-                            alert(result.error || 'AI Refine thất bại. Thử lại.');
+                  {/* AI Refine Panel */}
+                  {refiningIdea === idea.id && !isEditing && (
+                    <div className="mb-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-200 animate-in slide-in-from-top duration-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Sparkles size={16} className="text-purple-500" />
+                        <span className="text-sm font-bold text-purple-700">AI Refine — Chỉnh sửa bằng AI</span>
+                      </div>
+                      <textarea value={refineInstruction} onChange={e => setRefineInstruction(e.target.value)}
+                        placeholder='VD: "Đổi nhân vật thành cặp vợ chồng 50 tuổi, thêm hài hước", "Đổi emotion sang FOMO", "Rút gọn hook còn 3 giây"...'
+                        className="w-full h-20 resize-none text-sm border border-purple-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white mb-3" />
+                      <div className="flex gap-2">
+                        <button onClick={async () => {
+                          if (!refineInstruction.trim() || isRefining) return;
+                          setIsRefining(true);
+                          try {
+                            const res = await fetch('/api/generate-ideas', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                mode: 'refine',
+                                originalIdea: idea.content,
+                                instruction: refineInstruction,
+                                appName: app.name,
+                                appCategory: app.category,
+                                selectedModel: selectedModel || '',
+                              }),
+                            });
+                            const result = await res.json();
+                            if (res.ok && result.success && result.data) {
+                              const refined = result.data;
+                              const newContent = {
+                                ...idea.content,
+                                framework: refined.framework || (idea.content as any).framework,
+                                explanation: refined.explanation || (idea.content as any).explanation,
+                                hook: refined.hook ? { script: refined.hook.script || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.script || '', text: refined.hook.textOverlay || '', voice: '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
+                                body: refined.body ? { script: refined.body.script || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.script || '', text: refined.body.textOverlay || '', voice: '', viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
+                                cta: refined.cta ? { script: refined.cta.script || '', voice: '', text: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
+                              };
+                              const newTitle = refined.title || idea.title;
+                              await dbService.updateIdeaContent(idea.id, newTitle, newContent);
+                              const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: newTitle, content: newContent } : i);
+                              setResults(updater);
+                              setSavedHistory(updater);
+                              setRefiningIdea(null);
+                              setRefineInstruction('');
+                            } else {
+                              alert(result.error || 'AI Refine thất bại. Thử lại.');
+                            }
+                          } catch (err) {
+                            console.error('Refine error:', err);
+                            alert('Có lỗi khi refine. Thử lại.');
+                          } finally {
+                            setIsRefining(false);
                           }
-                        } catch (err) {
-                          console.error('Refine error:', err);
-                          alert('Có lỗi khi refine. Thử lại.');
-                        } finally {
-                          setIsRefining(false);
-                        }
-                      }} disabled={isRefining || !refineInstruction.trim()}
-                        className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
-                        {isRefining ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                        {isRefining ? 'Đang refine...' : 'Refine Idea'}
-                      </button>
-                      <button onClick={() => { setRefiningIdea(null); setRefineInstruction(''); }}
-                        className="px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
-                        Hủy
-                      </button>
+                        }} disabled={isRefining || !refineInstruction.trim()}
+                          className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
+                          {isRefining ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                          {isRefining ? 'Đang refine...' : 'Refine Idea'}
+                        </button>
+                        <button onClick={() => { setRefiningIdea(null); setRefineInstruction(''); }}
+                          className="px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+                          Hủy
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Sections: HOOK, BODY, CTA — unified script format */}
-                {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
+                  {/* Sections: HOOK, BODY, CTA — unified script format */}
+                  {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
                   { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
-                ].map(sec => {
-                  const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
-                  const scriptContent = secData?.script || secData?.visual || '';
-                  const textOverlay = secData?.textOverlay || secData?.text || '';
-                  const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
-                  const viTranslation = secData?.viTranslation || '';
-                  return (
-                    <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
-                      <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
-                      
-                      {/* Script — unified storyboard */}
-                      {isEditing ? (
-                        <textarea value={secData?.script || secData?.visual || ''}
-                          onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], script: e.target.value, visual: e.target.value}})}
-                          className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-32 bg-white mb-2"
-                          placeholder="Kịch bản liền mạch: visual + [VOICE] + [TEXT OVERLAY] + [SFX]" />
-                      ) : (
-                        <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
-                      )}
+                  ].map(sec => {
+                    const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
+                    const scriptContent = secData?.script || secData?.visual || '';
+                    const textOverlay = secData?.textOverlay || secData?.text || '';
+                    const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
+                    const viTranslation = secData?.viTranslation || '';
+                    return (
+                      <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
+                        <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
 
-                      {/* Vietnamese Translation */}
-                      {!isEditing && viTranslation && (
-                        <div className="mb-3 bg-white/60 rounded-lg px-3 py-2 border border-gray-200">
-                          <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
-                          <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{viTranslation}</p>
-                        </div>
-                      )}
+                        {/* Script — unified storyboard */}
+                        {isEditing ? (
+                          <textarea value={secData?.script || secData?.visual || ''}
+                            onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], script: e.target.value, visual: e.target.value } })}
+                            className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-32 bg-white mb-2"
+                            placeholder="Kịch bản liền mạch: visual + [VOICE] + [TEXT OVERLAY] + [SFX]" />
+                        ) : (
+                          <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
+                        )}
 
-                      {/* Hook Analysis — only for hook section */}
-                      {sec.key === 'hook' && !isEditing && (secData?.viewerProfile || secData?.viewerEmotion || secData?.painpointImpact) && (
-                        <div className="mb-3 space-y-2">
-                          {secData?.viewerProfile && (
-                            <div className="bg-purple-50 rounded-lg px-3 py-2 border border-purple-200">
-                              <span className="text-[10px] font-bold text-purple-500 uppercase">👁️ Ai đang xem?</span>
-                              <p className="text-xs text-gray-700 mt-0.5">{secData.viewerProfile}</p>
-                            </div>
-                          )}
-                          {secData?.viewerEmotion && (
-                            <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
-                              <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
-                              <p className="text-xs text-gray-700 mt-0.5">{secData.viewerEmotion}</p>
-                            </div>
-                          )}
-                          {secData?.painpointImpact && (
-                            <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
-                              <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
-                              <p className="text-xs text-gray-700 mt-0.5">{secData.painpointImpact}</p>
-                            </div>
-                          )}
-                          {secData?.whyTheyStopScrolling && (
-                            <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
-                              <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
-                              <p className="text-xs text-gray-700 font-semibold mt-0.5">{secData.whyTheyStopScrolling}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                        {/* Vietnamese Translation */}
+                        {!isEditing && viTranslation && (
+                          <div className="mb-3 bg-white/60 rounded-lg px-3 py-2 border border-gray-200">
+                            <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
+                            <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{viTranslation}</p>
+                          </div>
+                        )}
 
-                      {/* Text Overlay + End Card */}
-                      <div className="flex gap-3">
-                        <div className="flex-1">
-                          <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
-                          {isEditing ? (
-                            <input value={secData?.textOverlay || secData?.text || ''}
-                              onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], textOverlay: e.target.value, text: e.target.value}})}
-                              className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
-                          ) : (
-                            <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
-                          )}
-                        </div>
-                        {sec.key === 'cta' && (
-                          <div className="flex-1">
-                            <span className="text-[10px] font-bold text-emerald-600 uppercase">🏷️ End Card</span>
-                            {isEditing ? (
-                              <input value={secData?.endCard || ''}
-                                onChange={e => setEditBuffer({...editBuffer, [sec.key]: {...editBuffer[sec.key], endCard: e.target.value}})}
-                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
-                            ) : (
-                              <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
+                        {/* Hook Analysis — only for hook section */}
+                        {sec.key === 'hook' && !isEditing && (secData?.viewerProfile || secData?.viewerEmotion || secData?.painpointImpact) && (
+                          <div className="mb-3 space-y-2">
+                            {secData?.viewerProfile && (
+                              <div className="bg-purple-50 rounded-lg px-3 py-2 border border-purple-200">
+                                <span className="text-[10px] font-bold text-purple-500 uppercase">👁️ Ai đang xem?</span>
+                                <p className="text-xs text-gray-700 mt-0.5">{secData.viewerProfile}</p>
+                              </div>
+                            )}
+                            {secData?.viewerEmotion && (
+                              <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
+                                <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
+                                <p className="text-xs text-gray-700 mt-0.5">{secData.viewerEmotion}</p>
+                              </div>
+                            )}
+                            {secData?.painpointImpact && (
+                              <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
+                                <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
+                                <p className="text-xs text-gray-700 mt-0.5">{secData.painpointImpact}</p>
+                              </div>
+                            )}
+                            {secData?.whyTheyStopScrolling && (
+                              <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
+                                <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
+                                <p className="text-xs text-gray-700 font-semibold mt-0.5">{secData.whyTheyStopScrolling}</p>
+                              </div>
                             )}
                           </div>
                         )}
+
+                        {/* Text Overlay + End Card */}
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
+                            {isEditing ? (
+                              <input value={secData?.textOverlay || secData?.text || ''}
+                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], textOverlay: e.target.value, text: e.target.value } })}
+                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
+                            ) : (
+                              <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
+                            )}
+                          </div>
+                          {sec.key === 'cta' && (
+                            <div className="flex-1">
+                              <span className="text-[10px] font-bold text-emerald-600 uppercase">🏷️ End Card</span>
+                              {isEditing ? (
+                                <input value={secData?.endCard || ''}
+                                  onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], endCard: e.target.value } })}
+                                  className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
+                              ) : (
+                                <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
             );
           })}
         </div>
@@ -1019,41 +1224,117 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   );
 
 
+  // Results screen uses existing ScreenType routing
+  if (currentScreen === 'f2.1.2') {
+    return (
+      <div className="p-6 sm:p-8 mx-auto transition-all duration-300 w-full max-w-[95%]">
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => setScreen('f2')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400"><ArrowLeft /></button>
+          <div className="flex-1">
+            <h1 className="text-xl font-bold text-gray-800">Tạo Ý Tưởng <span className="text-gray-400 font-normal text-sm">/ {app.name}</span></h1>
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          {renderResult()}
+        </div>
+      </div>
+    );
+  }
+
+  // ===== WIZARD LAYOUT =====
   return (
-    <div className={`p-6 sm:p-8 mx-auto transition-all duration-300 w-full ${currentScreen === 'f2.1.2' ? 'max-w-[95%]' : 'max-w-7xl'}`}>
+    <div className="p-6 sm:p-8 mx-auto transition-all duration-300 w-full max-w-5xl">
+      {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <button onClick={() => setScreen('f2')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400"><ArrowLeft /></button>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-800">Tạo Ý Tưởng <span className="text-gray-400 font-normal text-sm">/ {app.name}</span></h1>
-          {/* Clickable step navigation */}
-          <div className="flex items-center gap-1 mt-2">
-            {STEPS.map((step, i) => {
-              const StepIcon = step.icon;
-              const isCurrent = currentScreen === step.id;
-              const isPast = i < currentStepIdx;
-              return (
-                <React.Fragment key={step.id}>
-                  {i > 0 && <ChevronRight size={14} className="text-gray-300 mx-0.5" />}
-                  <button onClick={() => setScreen(step.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      isCurrent ? 'bg-indigo-100 text-indigo-700 shadow-sm' : isPast ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
-                    }`}>
-                    <StepIcon size={13} /> {step.label}
-                    {isPast && <Check size={12} className="text-emerald-500" />}
-                  </button>
-                </React.Fragment>
-              );
-            })}
-          </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 min-w-0">
-        {currentScreen === 'f2.1' && renderFilterDashboard()}
-        {currentScreen === 'f2.1.1' && renderConfigScreen()}
-        {currentScreen === 'f2.1.2' && renderResult()}
+      {/* ===== PROGRESS BAR ===== */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between max-w-2xl mx-auto">
+          {WIZARD_STEPS.map((step, i) => {
+            const StepIcon = step.icon;
+            const isActive = wizardStep === i;
+            const isDone = wizardStep > i;
+            return (
+              <React.Fragment key={i}>
+                {i > 0 && (
+                  <div className={`flex-1 h-0.5 mx-2 rounded-full transition-all duration-500 ${isDone ? 'bg-indigo-500' : 'bg-gray-200'
+                    }`} />
+                )}
+                <button
+                  onClick={() => setWizardStep(i)}
+                  className="flex flex-col items-center gap-1.5 group"
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${isActive
+                    ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-200 scale-110'
+                    : isDone
+                      ? 'bg-indigo-500 text-white'
+                      : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
+                    }`}>
+                    {isDone ? <Check size={18} /> : <StepIcon size={18} />}
+                  </div>
+                  <span className={`text-[11px] font-semibold transition-colors ${isActive ? 'text-indigo-600' : isDone ? 'text-indigo-500' : 'text-gray-400'
+                    }`}>
+                    {step.label}
+                  </span>
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
+
+      {/* ===== STEP CONTENT ===== */}
+      <div className="min-h-[400px] animate-in fade-in duration-300" key={wizardStep}>
+        {renderWizardContent()}
+      </div>
+
+      {/* ===== BOTTOM NAV ===== */}
+      {wizardStep < 4 && (
+        <div className="fixed bottom-6 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto bg-white/90 backdrop-blur-xl border border-gray-200 rounded-2xl p-3 pl-6 flex flex-col gap-2 max-w-2xl w-full shadow-xl">
+            {/* Validation Error */}
+            {validationError && (
+              <div className="flex items-center gap-2 text-red-600 bg-red-50 rounded-xl px-4 py-2 text-xs font-bold border border-red-200 animate-in shake duration-300">
+                <AlertTriangle size={14} />
+                {validationError}
+              </div>
+            )}
+            <div className="flex items-center gap-4">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Đã chọn</span>
+                <span className="font-bold text-indigo-600">{Object.values(filters).flat().length} <span className="text-xs text-gray-400 font-normal">yếu tố</span></span>
+              </div>
+              <div className="h-6 w-px bg-gray-200" />
+              <div className="flex-1 overflow-x-auto flex gap-1.5" style={{ scrollbarWidth: 'none' }}>
+                {Object.values(filters).flat().slice(0, 4).map((f, i) => (
+                  <span key={i} className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded whitespace-nowrap">{f}</span>
+                ))}
+                {Object.values(filters).flat().length > 4 && <span className="text-xs text-gray-400 self-center">+{Object.values(filters).flat().length - 4}</span>}
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                {wizardStep > 0 && (
+                  <button onClick={() => { setWizardStep(wizardStep - 1); setValidationError(null); }}
+                    className="border border-gray-200 text-gray-500 rounded-full px-5 py-2.5 text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-all">
+                    <ArrowLeft size={16} /> Back
+                  </button>
+                )}
+                <button onClick={handleNextStep}
+                  className={`rounded-full px-6 py-2.5 text-sm font-bold flex items-center gap-2 transition-all ${isStepValid(wizardStep)
+                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:shadow-lg'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}>
+                  Next <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

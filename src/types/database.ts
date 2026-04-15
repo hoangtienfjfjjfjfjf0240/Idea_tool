@@ -102,6 +102,7 @@ export interface FilterState {
   videoStructure: string[];
   visualType: string[];
   targetMarket: string[];
+  angle: string[];
   [key: string]: string[];
 }
 
