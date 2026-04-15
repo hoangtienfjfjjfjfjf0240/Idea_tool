@@ -1,6 +1,6 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ArrowLeft, Loader2, Sparkles, Copy, ChevronLeft, ChevronRight, ChevronDown, Calendar } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar } from 'lucide-react';
 import type { AppProject } from '@/types/database';
 import { getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
 
@@ -154,6 +154,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [ideaResults, setIdeaResults] = useState<Record<string, ResultType>>({});
   const [selectedWeek, setSelectedWeek] = useState<string>('all');
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(900);
   const treeContainerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -178,6 +179,23 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    const node = treeContainerRef.current;
+    if (!node) return;
+
+    const updateWidth = () => setContainerWidth(node.clientWidth || 900);
+    updateWidth();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => updateWidth());
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
   }, []);
 
   // ===== Full weekly timeline: current week → end of 2026 =====
@@ -235,45 +253,40 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     const mkNode = (id: string, label: string, level: TreeNode['level']): TreeNode => ({ id, label, level, children: [], ideas: [], ideaCount: 0, wins: 0, fails: 0, monitoring: 0 });
 
     filteredSessions.forEach(session => {
-      const f = session.filters as any;
-      if (!f) return;
-
-      // Extract filter values (empty array = not selected)
-      const cuVals = (f.coreUser || []) as string[];
-      const pspVals = (f.solution || []) as string[];
-      const emVals = (f.emotion || []) as string[];
-      const visVals = (f.visualType || []) as string[];
-      const ppVals = (f.painPoint || []) as string[];
-      const angleVals = (f.angle || []) as string[];
-
-      // Build chain of levels, skipping empty ones
-      const levels: { label: string; level: TreeNode['level']; key: string }[] = [];
-      if (cuVals.length > 0) levels.push({ label: cuVals.join(', '), level: 'coreUser', key: cuVals.join(',') });
-      if (pspVals.length > 0) levels.push({ label: pspVals.join(', '), level: 'psp', key: pspVals.join(',') });
-      if (emVals.length > 0) levels.push({ label: emVals.join(', '), level: 'emotion', key: emVals.join(',') });
-      if (visVals.length > 0) levels.push({ label: visVals.join(', '), level: 'visual', key: visVals.join(',') });
-      if (ppVals.length > 0) levels.push({ label: ppVals.join(', '), level: 'painPoint', key: ppVals.join(',') });
-      // Angle: each selected angle becomes its own node under painPoint
-      if (angleVals.length > 0) {
-        angleVals.forEach(angle => levels.push({ label: angle, level: 'angle', key: angle }));
-      }
-
-      // Walk down the tree, creating nodes as needed
-      let parent = root;
-      let pathKey = '';
-      for (const lvl of levels) {
-        pathKey += `|${lvl.key}`;
-        const nodeId = `${lvl.level}:${pathKey}`;
-        let node = parent.children.find(c => c.id === nodeId);
-        if (!node) {
-          node = mkNode(nodeId, lvl.label, lvl.level);
-          parent.children.push(node);
-        }
-        parent = node;
-      }
-
-      // Attach ideas to the deepest node (angle or painPoint)
       session.ideas.forEach((idea: any) => {
+        const f = (idea.filters_snapshot || session.filters) as any;
+        if (!f) return;
+
+        const cuVals = (f.coreUser || []) as string[];
+        const pspVals = (f.solution || []) as string[];
+        const emVals = (f.emotion || []) as string[];
+        const visVals = (f.visualType || []) as string[];
+        const ppVals = (f.painPoint || []) as string[];
+        const angleVals = (f.angle || []) as string[];
+
+        const levels: { label: string; level: TreeNode['level']; key: string }[] = [];
+        if (cuVals.length > 0) levels.push({ label: cuVals.join(', '), level: 'coreUser', key: cuVals.join(',') });
+        if (pspVals.length > 0) levels.push({ label: pspVals.join(', '), level: 'psp', key: pspVals.join(',') });
+        if (emVals.length > 0) levels.push({ label: emVals.join(', '), level: 'emotion', key: emVals.join(',') });
+        if (visVals.length > 0) levels.push({ label: visVals.join(', '), level: 'visual', key: visVals.join(',') });
+        if (ppVals.length > 0) levels.push({ label: ppVals.join(', '), level: 'painPoint', key: ppVals.join(',') });
+        if (angleVals.length > 0) {
+          angleVals.forEach(angle => levels.push({ label: angle, level: 'angle', key: angle }));
+        }
+
+        let parent = root;
+        let pathKey = '';
+        for (const lvl of levels) {
+          pathKey += `|${lvl.key}`;
+          const nodeId = `${lvl.level}:${pathKey}`;
+          let node = parent.children.find(c => c.id === nodeId);
+          if (!node) {
+            node = mkNode(nodeId, lvl.label, lvl.level);
+            parent.children.push(node);
+          }
+          parent = node;
+        }
+
         parent.ideas.push(idea);
 
         const result = ideaResults[idea.id] || idea.result;
@@ -354,9 +367,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const isHigh = (nodeId: string) => activePath.length === 0 || activePath.includes(nodeId);
 
   // Auto-scale: compute scale to fit tree into container width
-  const containerWidth = treeContainerRef.current?.clientWidth || 900;
   const autoScale = canvasW > containerWidth ? containerWidth / canvasW : 1;
-  const displayH = canvasH * autoScale + 32;
 
   if (loading) {
     if (inline) return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-indigo-400" /></div>;

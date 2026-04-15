@@ -334,6 +334,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
     const visualType = config?.visualType || 'UGC (Người thật)';
     const targetLang = detectLang(filters?.coreUser);
     const marketContext = buildMarketContext(filters?.targetMarket);
+    const angleContext = filters?.angle?.length ? filters.angle.join(', ') : '';
 
     // Truncate knowledge to avoid prompt overflow
     const rawKnowledge = appKnowledge || '';
@@ -369,6 +370,7 @@ ${variationBlock}
 [PSP] ${featureContext}
 [CORE USER] ${filters?.coreUser?.join(', ') || 'General'}
 [PAINPOINT] ${filters?.painPoint?.join(', ') || 'General'}
+[ANGLE] ${angleContext || 'Creative Freedom'}
 [EMOTION MỤC TIÊU — CẢM XÚC PHẢI TẠO RA CHO NGƯỜI XEM] ${filters?.emotion?.join(', ') || 'General'}
 [DẠNG VISUAL] ${visualType}
 [NGÔN NGỮ MỤC TIÊU] ${targetLang}

@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2, Hash } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2, Hash, Eye } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -40,7 +40,6 @@ type SeasonalVisualInsights = {
   props: string[];
   moods: string[];
 };
-
 type SeasonConfig = {
   label: string;
   icon: string;
@@ -351,7 +350,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // New feature states
   const [expandedIdeas, setExpandedIdeas] = useState<Set<string>>(new Set());
   const [favoriteIdeas, setFavoriteIdeas] = useState<Set<string>>(new Set());
-  const [approvedIdeas, setApprovedIdeas] = useState<Set<string>>(new Set());
   const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
   const [trendingInput, setTrendingInput] = useState('');
   const [selectedSeasonInsights, setSelectedSeasonInsights] = useState<Set<string>>(new Set());
@@ -514,9 +512,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     abortRef.current = controller;
     startProgress();
     try {
-      // Prepare previous ideas summary for AI to learn from (richer data for better learning)
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const c = idea.content as any;
         return `${i + 1}. "${idea.title}" (${idea.duration})
    Framework: CoreUser="${c?.framework?.coreUser || ''}", Painpoint="${c?.framework?.painpoint || ''}", Emotion="${c?.framework?.emotion || ''}", PSP="${c?.framework?.psp || ''}"
@@ -525,25 +521,42 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
    CTA: "${c?.cta?.voice || ''}"`;
       }).join('\n');
 
-      let allData: any[] = [];
+      const selectedAngles = (filters.angle || []).filter(Boolean);
+      const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
+      const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
+        Array.from({ length: quantity }, (_, ideaIndex) => ({
+          selectedAngle: angle,
+          angleIndex,
+          ideaIndex,
+          filtersSnapshot: {
+            ...filters,
+            angle: angle ? [angle] : [],
+          } as FilterState,
+        }))
+      );
+      const totalRequestedIdeas = generationTasks.length;
+      let allData: Array<{ item: any; filtersSnapshot: FilterState }> = [];
       const maxConcurrent = 3;
 
-      const requestOneIdea = async (index: number) => {
+      const requestOneIdea = async (task: { selectedAngle: string | null; angleIndex: number; ideaIndex: number; filtersSnapshot: FilterState }) => {
         const res = await fetch('/api/generate-ideas', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             appName: app.name,
             appCategory: app.category,
-            filters,
+            filters: task.filtersSnapshot,
             config: {
               quantity: 1,
               duration,
               ideaDescription,
-              visualType: filters.visualType?.join(', ') || 'UGC (Người thật)',
+              visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
               seasonalVisualContext,
-              variationIndex: index + 1,
+              variationIndex: task.ideaIndex + 1,
               totalVariations: quantity,
+              angleIndex: task.angleIndex + 1,
+              totalAngles: anglesToGenerate.length,
+              selectedAngle: task.selectedAngle,
             },
             previousIdeas: previousIdeasSummary || null,
             appKnowledge: app.app_knowledge || null,
@@ -552,21 +565,26 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           }),
           signal: controller.signal,
         });
+
         const result = await res.json();
         if (!res.ok || !result.success || !result.data?.length) {
-          throw new Error(result.error || `AI không phản hồi ở idea ${index + 1}`);
+          throw new Error(result.error || `AI không phản hồi ở idea ${task.ideaIndex + 1}`);
         }
-        return result.data as any[];
+
+        return (result.data as any[]).map(item => ({
+          item,
+          filtersSnapshot: task.filtersSnapshot,
+        }));
       };
 
-      for (let start = 0; start < quantity; start += maxConcurrent) {
-        const end = Math.min(start + maxConcurrent, quantity);
-        setProgressLabel(`Đang tạo full brief ${start + 1}-${end}/${quantity}...`);
+      for (let start = 0; start < totalRequestedIdeas; start += maxConcurrent) {
+        const end = Math.min(start + maxConcurrent, totalRequestedIdeas);
+        setProgressLabel(`Đang tạo full brief ${start + 1}-${end}/${totalRequestedIdeas}...`);
         const chunk = await Promise.allSettled(
-          Array.from({ length: end - start }, (_, offset) => requestOneIdea(start + offset))
+          generationTasks.slice(start, end).map(task => requestOneIdea(task))
         );
         const successful = chunk
-          .filter((item): item is PromiseFulfilledResult<any[]> => item.status === 'fulfilled')
+          .filter((item): item is PromiseFulfilledResult<Array<{ item: any; filtersSnapshot: FilterState }>> => item.status === 'fulfilled')
           .flatMap(item => item.value);
         allData = [...allData, ...successful];
 
@@ -574,21 +592,20 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         if (failed.length > 0) {
           console.warn('Some idea requests failed:', failed);
         }
-        if (allData.length === 0 && end >= quantity) {
+        if (allData.length === 0 && end >= totalRequestedIdeas) {
           throw new Error('AI không phản hồi');
         }
       }
 
       const result = { success: allData.length > 0, data: allData, error: allData.length === 0 ? 'Không có kết quả' : null };
 
-      let ideas: { title: string; duration: string; content: IdeaContent }[];
+      let ideas: { title: string; duration: string; content: IdeaContent; filtersSnapshot: FilterState }[];
 
       if (result.success && result.data?.length > 0) {
-        // Map API response — new script format
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ideas = result.data.map((item: any) => ({
+        ideas = result.data.map(({ item, filtersSnapshot }) => ({
           title: item.title || `Ý tưởng: ${app.name}`,
           duration: item.duration || duration,
+          filtersSnapshot,
           content: {
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
@@ -617,30 +634,30 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           },
         }));
       } else {
-        // Fallback mock if API fails
-        ideas = Array.from({ length: quantity }, (_, i) => ({
+        ideas = generationTasks.map((task, i) => ({
           title: `Ý tưởng ${i + 1}: ${app.name}`,
-          duration: duration,
+          duration,
+          filtersSnapshot: task.filtersSnapshot,
           content: {
             framework: {
-              coreUser: filters.coreUser[0] || 'Người dùng phổ thông',
-              painpoint: filters.painPoint[0] || 'Nỗi đau phổ biến',
-              emotion: filters.emotion[0] || 'Tò mò',
-              psp: filters.solution[0] || app.name,
+              coreUser: task.filtersSnapshot.coreUser[0] || 'Người dùng phổ thông',
+              painpoint: task.filtersSnapshot.painPoint[0] || 'Nỗi đau phổ biến',
+              emotion: task.filtersSnapshot.emotion[0] || 'Tò mò',
+              psp: task.filtersSnapshot.solution[0] || app.name,
             },
-            explanation: `Video ${duration} kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
+            explanation: `Video ${duration} kết hợp ${task.filtersSnapshot.painPoint[0] || 'nỗi đau'} với ${task.filtersSnapshot.solution[0] || 'tính năng chính'} của ${app.name}`,
             hook: {
               visual: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
               script: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
-              text: filters.painPoint[0] || 'Bạn có biết?',
-              textOverlay: filters.painPoint[0] || 'Bạn có biết?',
-              voice: `"${filters.painPoint[0] || 'Điều gì đang không ổn ở đây vậy?'}"`,
+              text: task.filtersSnapshot.painPoint[0] || 'Bạn có biết?',
+              textOverlay: task.filtersSnapshot.painPoint[0] || 'Bạn có biết?',
+              voice: `"${task.filtersSnapshot.painPoint[0] || 'Điều gì đang không ổn ở đây vậy?'}"`,
             },
             body: {
               visual: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
               script: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
-              text: `${filters.solution[0] || 'Tính năng chính'}`,
-              textOverlay: `${filters.solution[0] || 'Tính năng chính'}`,
+              text: `${task.filtersSnapshot.solution[0] || 'Tính năng chính'}`,
+              textOverlay: `${task.filtersSnapshot.solution[0] || 'Tính năng chính'}`,
               voice: `"Chỉ cần thử trên ảnh thật là thấy ngay hướng đi."`,
             },
             cta: {
@@ -655,8 +672,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         }));
       }
 
-      // ⚡ HIỂN THỊ KẾT QUẢ NGAY — không đợi DB save
-      // Create temporary IDs for immediate display
       const tempResults: GeneratedIdea[] = ideas.map((idea, idx) => ({
         id: `temp-${Date.now()}-${idx}`,
         app_id: app.id,
@@ -664,29 +679,27 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         duration: idea.duration,
         content: idea.content,
         session_id: null,
-        filters_snapshot: filters,
+        filters_snapshot: idea.filtersSnapshot,
         result: null,
         created_at: new Date().toISOString(),
       }));
 
-      setResults(prev => [...tempResults, ...prev]);
+      setShowHistory(false);
+      setResults(tempResults);
       setSavedHistory(prev => [...tempResults, ...prev]);
       stopProgress();
       setIsGenerating(false);
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
 
-      // 🔄 LƯU DB TRONG BACKGROUND — replace temp IDs with real IDs khi xong
       const sessionId = crypto.randomUUID();
       dbService.saveIdeas(app.id, ideas, sessionId, filters).then(saved => {
         if (saved.length > 0) {
-          // Replace temp results with real DB records  
           const tempIds = new Set(tempResults.map(t => t.id));
           setResults(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
           setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
         }
       }).catch(err => console.warn('Background DB save failed:', err));
 
-      // Background: AI learns from new ideas → update app knowledge
       fetch('/api/learn-app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -699,7 +712,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         }),
       }).catch(err => console.warn('Background learning failed:', err));
     } catch (err) {
-      if ((err as Error).name === 'AbortError') return; // User cancelled
+      if ((err as Error).name === 'AbortError') return;
       console.error('Generate failed:', err);
       alert('Có lỗi khi tạo ý tưởng. Vui lòng thử lại.');
       stopProgress();
@@ -807,6 +820,17 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       emphasis: Array.from(selectedSeasonInsights),
     };
   }, [selectedSeason, selectedSeasonMonth, selectedSeasonInsights, selectedSeasonEvents]);
+
+  const selectedAngleCount = Math.max(1, (filters.angle || []).filter(Boolean).length);
+  const totalIdeasToGenerate = selectedAngleCount * quantity;
+
+  const handleOpenResults = () => {
+    if (results.length === 0 && savedHistory.length > 0) {
+      setResults(savedHistory);
+      setShowHistory(true);
+    }
+    setScreen('f2.1.2');
+  };
 
   const WIZARD_STEPS = [
     { label: 'Core User & PSP', icon: Users, categories: ['coreUser', 'solution'], required: ['coreUser', 'solution'] },
@@ -1222,6 +1246,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               <input type="number" min="1" max="10" value={quantity}
                 onChange={(e) => setQuantity(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
                 className="w-full text-center text-xl font-bold py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
+              <p className="mt-2 text-xs text-gray-400 text-center">
+                {selectedAngleCount > 1
+                  ? `${selectedAngleCount} angle × ${quantity} idea = ${totalIdeasToGenerate} idea`
+                  : `${quantity} idea sẽ được tạo`}
+              </p>
             </div>
           </div>
 
@@ -1276,7 +1305,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   <Compass size={18} /> Angle — Góc tiếp cận
                 </h3>
                 <p className="text-xs text-teal-600 mt-1">
-                  Chọn angle hoặc bấm "Gen Angle" để AI tự tạo từ painpoint đã chọn
+                  Chọn angle hoặc bấm &quot;Gen Angle&quot; để AI tự tạo từ painpoint đã chọn
                 </p>
               </div>
               <button
@@ -1343,8 +1372,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const ideaKey = idea.id || `idea-${idx}`;
             const isExpanded = expandedIdeas.has(ideaKey);
             const isFavorite = favoriteIdeas.has(ideaKey);
-            const isApproved = approvedIdeas.has(ideaKey);
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
+            const angleTag = Array.isArray(idea.filters_snapshot?.angle) ? idea.filters_snapshot?.angle?.[0] : '';
             const hookVisual = hookData?.visual || hookData?.script || '';
             const hookVoice = hookData?.voice || '';
             const hookText = hookData?.textOverlay || hookData?.text || '';
@@ -1365,6 +1394,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{idea.duration || '30s'}</span>
                         {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
+                        {angleTag && <span className="text-[11px] px-2 py-0.5 bg-teal-50 text-teal-600 rounded-md">{truncatePreviewText(angleTag, 32)}</span>}
                       </div>
                     </div>
                     <div className="flex gap-1">
@@ -1445,14 +1475,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </button>
 
-                  <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => toggleIdeaSet(setApprovedIdeas, ideaKey)}
-                      className={`flex-1 h-8 rounded-md border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${isApproved ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    >
-                      <Video size={13} /> {isApproved ? 'Approved' : 'Approve for Video'}
-                    </button>
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
                     <button
                       type="button"
                       onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
@@ -1639,7 +1662,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         <div className="text-center py-20 text-gray-400">
           <Wand2 size={48} className="mx-auto mb-4 text-gray-300" />
           <p className="font-bold text-gray-500">Chưa có ý tưởng nào</p>
-          <p className="text-sm">Bấm "Tạo thêm" để bắt đầu.</p>
+          <p className="text-sm">Bấm &quot;Tạo thêm&quot; để bắt đầu.</p>
         </div>
       )}
     </div>
@@ -1672,6 +1695,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-800">Tạo Ý Tưởng <span className="text-gray-400 font-normal text-sm">/ {app.name}</span></h1>
         </div>
+        {(results.length > 0 || savedHistory.length > 0) && (
+          <button
+            onClick={handleOpenResults}
+            className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+          >
+            <Eye size={14} />
+            Xem kết quả ({results.length > 0 ? results.length : savedHistory.length})
+          </button>
+        )}
       </div>
 
       {/* ===== PROGRESS BAR ===== */}

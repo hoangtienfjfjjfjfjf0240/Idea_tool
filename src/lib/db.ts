@@ -234,7 +234,7 @@ export async function getIdeas(appId: string): Promise<GeneratedIdea[]> {
 
 export async function saveIdeas(
   appId: string, 
-  ideas: { title: string; duration: string; content: object }[],
+  ideas: { title: string; duration: string; content: object; filtersSnapshot?: object }[],
   sessionId?: string,
   filtersSnapshot?: object
 ): Promise<GeneratedIdea[]> {
@@ -245,7 +245,7 @@ export async function saveIdeas(
     duration: idea.duration, 
     content: idea.content,
     session_id: sid,
-    filters_snapshot: filtersSnapshot || {},
+    filters_snapshot: idea.filtersSnapshot || filtersSnapshot || {},
   }));
   const { data, error } = await supabase
     .from('generated_ideas')
