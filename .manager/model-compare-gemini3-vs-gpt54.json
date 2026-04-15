@@ -1,0 +1,218 @@
+{
+  "Gemini 3 Pro": {
+    "status": 200,
+    "ms": 60748,
+    "data": {
+      "success": true,
+      "data": [
+        {
+          "id": 1,
+          "title": "UGC - New Year Bathroom Resolution",
+          "duration": "30s",
+          "creativeType": "UGC / POV",
+          "framework": {
+            "coreUser": "Phụ nữ 35-45 tuổi tại Mỹ, có nhà riêng (suburban home), đang có ý định tân trang nhà cửa dịp đầu năm nhưng thiếu kỹ năng và ngân sách thuê thiết kế.",
+            "painpoint": "Hoàn toàn mù tịt về thiết kế (zero design skills). Muốn cải tạo phòng tắm nhưng nhìn hàng ngàn mẫu trên mạng không biết phối màu, chọn vật liệu sao cho hợp với không gian thực tế của mình.",
+            "emotion": "Curious (Tò mò) - Viewer thấy tình huống bế tắc rất giống mình, sau đó bị bất ngờ bởi biểu cảm sốc của nhân vật khi app đưa ra kết quả, nhưng video lại cắt ngang khiến họ phải xem tiếp để biết app đó làm được gì.",
+            "psp": "Tính năng Restyle/Redecor bằng AI: Chỉ cần chụp ảnh phòng tắm hiện tại, app tự động thiết kế lại thành nhiều phong cách hoàn chỉnh."
+          },
+          "explanation": "Idea đánh mạnh vào tâm lý 'New Year Resolution' muốn dọn dẹp, làm mới không gian. Curiosity gap được tạo ra bằng cách cho viewer thấy vấn đề nan giải (không biết thiết kế), app bắt đầu xử lý, và nhân vật có reaction cực sốc nhưng kết quả lại bị giấu đi trong vài giây đầu.",
+          "hook": {
+            "script": "Mở cảnh một người phụ nữ 38 tuổi mặc clean activewear màu xám, đang đứng trong phòng tắm cũ kỹ, ánh sáng trắng (white and cream). Cô ấy cầm một cuốn planner năm mới, gạch bỏ dòng 'Bathroom Makeover' rồi thở dài bế tắc. Cô giơ điện thoại lên quay không gian chật hẹp, gạch ốp lỗi thời. [VOICE] 'It is January, I want a new bathroom, but I literally have zero design skills. Pinterest is just confusing.' [TEXT OVERLAY] 'When you want a new bathroom but have 0 design skills 😭'. Cô mở app Home Design chụp một bức ảnh. Màn hình điện thoại vừa loé sáng hiệu ứng AI quét qua không gian, cô trợn tròn mắt ngạc nhiên. [VOICE] 'Wait, no way...' Màn hình lập tức cắt sang cảnh body, không cho thấy ngay kết quả.",
+            "textOverlay": "When you want a new bathroom but have 0 design skills 😭",
+            "viTranslation": "[VOICE] 'Đang là tháng Một, tôi muốn một phòng tắm mới, nhưng tôi thực sự không có chút kỹ năng thiết kế nào. Pinterest chỉ làm tôi thêm rối.' [TEXT OVERLAY] 'Khi bạn muốn phòng tắm mới nhưng có 0 kỹ năng thiết kế 😭' [VOICE] 'Khoan đã, không thể nào...'",
+            "viewerProfile": "Phụ nữ 35+ tại Mỹ, đang cầm điện thoại lướt feed Facebook/Instagram vào buổi sáng hoặc tối, có thể đang ở trong chính ngôi nhà cũ cần cải tạo của họ.",
+            "viewerEmotion": "Viewer cảm thấy tò mò tột độ. Họ tự hỏi: 'Cô ấy vừa thấy cái gì mà sốc vậy? App đó có thể tự thiết kế được sao? Mình muốn xem phòng tắm xấu xí kia biến thành gì.'",
+            "painpointImpact": "Viewer thấy ngay bóng dáng mình trong đó: cũng muốn sửa nhà năm mới, cũng từng lướt Pinterest hàng giờ nhưng vẫn mù tịt không biết bắt đầu từ đâu.",
+            "whyTheyStopScrolling": "Họ dừng lại vì sự đồng cảm với sự bế tắc trong thiết kế, và bị níu chân bởi 'Curiosity Gap' khi nhân vật thốt lên 'Wait, no way...'."
+          },
+          "body": {
+            "script": "Chuyển sang màn hình quay màn hình (screen recording) kết hợp POV. Khung hình hiện rõ phòng tắm cũ. [VOICE] 'I just uploaded a photo of my ugly bathroom to this Home Design app.' Người dùng chạm vào các style khác nhau (Modern, Farmhouse, Spa). [VOICE] 'I just tap a style, and it literally designs the whole room for me. Look at this!' Màn hình lướt qua một thanh trượt (slider) Before/After thần thánh, biến phòng tắm cũ thành một spa thu nhỏ với bồn tắm hiện đại và gạch ốp sang trọng. [TEXT OVERLAY] 'Instant bathroom makeover 🤯'. [VOICE] 'It matches the colors, the tiles... I didn't have to hire anyone!'",
+            "textOverlay": "Instant bathroom makeover 🤯",
+            "viTranslation": "[VOICE] 'Tôi vừa tải ảnh phòng tắm xấu xí của mình lên app Home Design này.' [VOICE] 'Tôi chỉ cần chọn một phong cách, và nó thiết kế lại toàn bộ căn phòng cho tôi. Nhìn này!' [TEXT OVERLAY] 'Cải tạo phòng tắm trong tích tắc 🤯' [VOICE] 'Nó phối màu, phối gạch... Tôi không cần phải thuê bất kỳ ai cả!'"
+          },
+          "cta": {
+            "script": "Người phụ nữ mỉm cười tự tin nhìn vào gương trong phòng tắm. [VOICE] 'If you suck at decorating like me, you need this.' Màn hình tối lại, hiện icon app và nút tải xuống. [TEXT OVERLAY] 'Try it for free today!'",
+            "textOverlay": "Try it for free today!",
+            "viTranslation": "[VOICE] 'Nếu bạn dở tệ trong việc trang trí giống tôi, bạn cần cái này.' [TEXT OVERLAY] 'Thử miễn phí ngay hôm nay!'",
+            "endCard": "Home Design: Interior Decor - Be your own designer"
+          }
+        },
+        {
+          "id": 2,
+          "title": "UGC - Home Depot Fail",
+          "duration": "30s",
+          "creativeType": "UGC / Interaction",
+          "framework": {
+            "coreUser": "Các cặp vợ chồng 35+ tại Mỹ (suburban lifestyle), thường tự đi mua sắm vật liệu tại Home Depot/Lowe's nhưng hay tranh cãi vì không ai có gu thẩm mỹ.",
+            "painpoint": "Mua vật liệu linh tinh, không biết cách phối hợp (match) các chi tiết với nhau. Sợ mua về ốp lên tường sẽ thảm họa vì không có mắt thẩm mỹ.",
+            "emotion": "Curious & Relatable - Viewer bật cười vì thấy tình huống vợ chồng cãi nhau quá quen thuộc, sau đó tò mò muốn biết người vợ dùng 'vũ khí bí mật' gì trên điện thoại để giải quyết vấn đề.",
+            "psp": "Tính năng Restyle: Visualize trực quan các loại vật liệu, gạch ốp, màu sắc ngay trên không gian thật để xem chúng có hợp nhau không trước khi làm thật."
+          },
+          "explanation": "Sử dụng yếu tố hài hước và mâu thuẫn đời thường (chồng chọn đồ xấu) để trigger sự đồng cảm. Viewer bị thu hút ngay lập tức, tò mò xem app có thể 'cứu' gu thẩm mỹ tồi tệ của người chồng như thế nào.",
+          "hook": {
+            "script": "Mở cảnh người chồng (40 tuổi) mặc áo khoác mùa đông (winter coat) và đội mũ beanie, vừa đi từ ngoài trời lạnh vào thẳng phòng tắm. Trên tay anh cầm 3 miếng gạch men màu sắc chói lọi, hoàn toàn không ăn nhập với nhau. Người vợ cầm camera quay lại cảnh đó trong ánh sáng hắt bóng gắt. [VOICE] 'Honey, look! I got these samples from Home Depot.' Người vợ thở dài bất lực. [VOICE] 'Babe, we have zero design skills. Those look terrible together.' [TEXT OVERLAY] 'When neither of us knows how to design 🚩'. Người vợ đẩy tay chồng ra, giơ điện thoại lên quét phòng tắm bằng app. Một thanh tiến trình 'Generating AI Design...' hiện lên che nửa màn hình. [VOICE] 'Just let my phone do it... Oh my god.' Video cắt ngay trước khi kết quả hiện ra.",
+            "textOverlay": "When neither of us knows how to design 🚩",
+            "viTranslation": "[VOICE] 'Anh yêu nhìn này! Anh lấy mấy mẫu này từ Home Depot đấy.' [VOICE] 'Anh à, chúng ta không có chút kỹ năng thiết kế nào đâu. Mấy cái đó nhìn đi với nhau thảm họa lắm.' [TEXT OVERLAY] 'Khi cả hai vợ chồng đều không biết thiết kế 🚩' [VOICE] 'Để điện thoại của em làm cho... Ôi chúa ơi.'",
+            "viewerProfile": "Những người đã có gia đình, độ tuổi 35+, đang lướt TikTok/Reels giải trí, từng trải qua cảnh đau đầu chọn gạch, chọn sơn nhà.",
+            "viewerEmotion": "Viewer thấy buồn cười và đồng cảm (relatable), sau đó chuyển sang tò mò (curious): 'Điện thoại làm kiểu gì? Căn phòng sẽ trông ra sao để không bị thảm họa như mấy miếng gạch kia?'",
+            "painpointImpact": "Viewer nhớ lại những lần đứng giữa Home Depot hàng giờ đồng hồ mà không biết chọn mẫu nào, sợ chọn sai sẽ tốn đống tiền sửa lại.",
+            "whyTheyStopScrolling": "Họ dừng lại vì tình huống cãi nhau vặt rất thật của vợ chồng Mỹ, và bị hook bởi chi tiết 'let my phone do it' đầy bí ẩn."
+          },
+          "body": {
+            "script": "Màn hình chuyển sang giao diện app. Người vợ đang chọn các preset màu sắc nhã nhặn (Neutral, Modern Minimalist). [VOICE] 'This app is literally a lifesaver for people with no taste.' Cảnh split-screen xuất hiện: một bên là phòng tắm cũ với người chồng đang cầm miếng gạch xấu xí, một bên là bản render 3D tuyệt đẹp với gạch trắng tinh tế và bồn rửa mặt vân gỗ. [TEXT OVERLAY] 'From disaster to dream bathroom ✨'. [VOICE] 'It showed us exactly what materials match. My husband was speechless.'",
+            "textOverlay": "From disaster to dream bathroom ✨",
+            "viTranslation": "[VOICE] 'Cái app này đúng là cứu tinh cho những người không có gu thẩm mỹ.' [TEXT OVERLAY] 'Từ thảm họa thành phòng tắm trong mơ ✨' [VOICE] 'Nó cho chúng tôi thấy chính xác vật liệu nào hợp với nhau. Chồng tôi cạn lời luôn.'"
+          },
+          "cta": {
+            "script": "Quay lại cảnh hai vợ chồng đang mỉm cười nhìn vào điện thoại. [VOICE] 'Stop arguing over tiles. Try this app first.' Ngón tay người vợ chỉ xuống dưới màn hình. [TEXT OVERLAY] 'Design your home the easy way!'",
+            "textOverlay": "Design your home the easy way!",
+            "viTranslation": "[VOICE] 'Đừng cãi nhau về chuyện chọn gạch nữa. Thử app này trước đi.' [TEXT OVERLAY] 'Thiết kế nhà theo cách dễ dàng!'",
+            "endCard": "Home Design: Interior Decor - Download Now"
+          }
+        },
+        {
+          "id": 3,
+          "title": "UGC - Budget Planning Shock",
+          "duration": "30s",
+          "creativeType": "UGC / Split Screen",
+          "framework": {
+            "coreUser": "Phụ nữ Mỹ 35+, là người quản lý chi tiêu trong gia đình, muốn nhà đẹp nhưng bị sốc bởi chi phí thuê interior designer quá đắt đỏ.",
+            "painpoint": "Hoàn toàn không biết tự thiết kế, nhưng lại không có tiền thuê chuyên gia. Bị kẹt ở giữa: tự làm thì sợ xấu, thuê người thì tốn tiền.",
+            "emotion": "Curious & Shock - Viewer bị thu hút bởi con số tiền lớn ($2500) bị từ chối, sau đó tò mò tột độ khi thấy một app miễn phí bắt đầu thực hiện công việc của một chuyên gia thiết kế nhưng kết quả lại bị che lại.",
+            "psp": "Tính năng Redecor AI: Đóng vai trò như một virtual interior designer, cung cấp các bản thiết kế chất lượng cao miễn phí chỉ từ một bức ảnh."
+          },
+          "explanation": "Đánh vào 'Painpoint tài chính' kết hợp 'Painpoint kỹ năng'. Đầu năm mọi người thường lên ngân sách (budget planning). Sự tò mò được đẩy lên cao trào bằng hành động lấy tay che camera ngay khoảnh khắc app biến đổi căn phòng, ép viewer phải chờ xem tiếp.",
+          "hook": {
+            "script": "Mở cảnh buổi sáng mùa đông, ánh sáng xanh lạnh (icy blue) hắt qua cửa sổ. Một người phụ nữ 35 tuổi đang ngồi ở bàn bếp, tay cầm bút bạc (silver pen) gõ gõ lên sổ budget planning, trước mặt là laptop hiện báo giá 'Designer Fee: $2,500'. Cô bực dọc gập laptop, cầm điện thoại đi thẳng vào phòng tắm chật chội, xỉn màu của mình. [VOICE] 'I have no idea how to design a room, but I am NOT paying $2500 for a designer.' [TEXT OVERLAY] 'Me vs. a $2500 design quote 🙅♀️'. Cô giơ điện thoại lên, nhấn nút 'Redecor' trên app Home Design. Không gian thực tế trên màn hình bắt đầu có dải sáng lướt qua để chuyển đổi sang phòng tắm sang trọng. Ngay lúc bồn tắm mới vừa lộ diện một nửa, cô lấy tay che camera lại. [VOICE] 'You will not believe what this free app just did.'",
+            "textOverlay": "Me vs. a $2500 design quote 🙅♀️",
+            "viTranslation": "[VOICE] 'Tôi chả biết tí gì về thiết kế phòng ốc cả, nhưng tôi SẼ KHÔNG trả 2500 đô cho một nhà thiết kế đâu.' [TEXT OVERLAY] 'Tôi vs. báo giá thiết kế 2500 đô 🙅♀️' [VOICE] 'Bạn sẽ không tin được cái app miễn phí này vừa làm gì đâu.'",
+            "viewerProfile": "Phụ nữ trung niên lướt feed trong thời gian rảnh rỗi, có thói quen tính toán chi tiêu kỹ lưỡng, thích những mẹo/tools giúp tiết kiệm tiền mà vẫn hiệu quả.",
+            "viewerEmotion": "Sốc vì con số 2500 đô, đồng tình với nhân vật (không trả tiền đâu), và lập tức chuyển sang tò mò: 'App miễn phí nào mà thay thế được designer 2500 đô? Cho tôi xem kết quả đi!'",
+            "painpointImpact": "Viewer thấy ngay nỗi đau của mình: rất muốn có nhà đẹp như tạp chí nhưng tự nhận thức được bản thân không có gu thẩm mỹ, và cực kỳ xót tiền nếu phải thuê người ngoài.",
+            "whyTheyStopScrolling": "Sự kết hợp giữa yếu tố tiền bạc ($2500 quote) và hành động che camera đột ngột tạo ra curiosity gap cực mạnh."
+          },
+          "body": {
+            "script": "Bỏ tay che camera ra, màn hình điện thoại hiện trọn vẹn bản thiết kế phòng tắm lộng lẫy với tone màu Silver & Gold sang trọng. [VOICE] 'Look at this! It literally designed my bathroom in seconds.' Người dùng upload thêm một góc khác của phòng tắm, app tiếp tục nhả ra 3 options thiết kế khác nhau. [TEXT OVERLAY] 'Like having a personal designer 24/7'. [VOICE] 'I didn't have to guess what matches. It gave me the layout, the colors, everything. For zero dollars.'",
+            "textOverlay": "Like having a personal designer 24/7",
+            "viTranslation": "[VOICE] 'Nhìn này! Nó thực sự thiết kế xong phòng tắm của tôi trong vài giây.' [TEXT OVERLAY] 'Như có một nhà thiết kế cá nhân 24/7' [VOICE] 'Tôi không cần phải đoán xem cái gì hợp với cái gì. Nó cho tôi bố cục, màu sắc, mọi thứ. Với giá 0 đồng.'"
+          },
+          "cta": {
+            "script": "Người phụ nữ quay mặt lại camera, giơ ngón tay cái (thumbs up) đầy đắc ý. [VOICE] 'Don't hire a designer until you try this app.' Màn hình hiển thị UI app với nút 'Redecor Now' nhấp nháy. [TEXT OVERLAY] 'Download for free!'",
+            "textOverlay": "Download for free!",
+            "viTranslation": "[VOICE] 'Đừng thuê thiết kế cho đến khi bạn thử app này.' [TEXT OVERLAY] 'Tải miễn phí!'",
+            "endCard": "Home Design: Interior Decor - Redecor your home"
+          }
+        }
+      ]
+    }
+  },
+  "GPT-5.4": {
+    "status": 200,
+    "ms": 98598,
+    "data": {
+      "success": true,
+      "data": [
+        {
+          "id": 1,
+          "title": "UGC - New Year bathroom tease",
+          "duration": "30s",
+          "creativeType": "UGC",
+          "framework": {
+            "coreUser": "Viewer mục tiêu là người Mỹ 35+ đang sống trong nhà suburban hoặc apartment, thường tự lo chuyện nhà cửa và hay lướt Meta để tìm cảm hứng decor. Họ có thói quen save ảnh Pinterest, xem bathroom makeover nhưng vẫn không biết bắt đầu từ đâu với chính nhà mình.",
+            "painpoint": "Nỗi đau chính là không biết thiết kế nhà thế nào, cụ thể là đứng trong bathroom cũ rồi bị kẹt giữa quá nhiều lựa chọn: tile nào, màu gì, style gì. Họ không thiếu ý tưởng trên mạng, nhưng lại không biết cái nào hợp với không gian thật của mình.",
+            "emotion": "Viewer sẽ thấy tò mò vì hook mở ra một khoảnh khắc rất quen thuộc rồi bất ngờ xuất hiện một kết quả makeover bị cắt ngang. Họ sẽ tự hỏi 'Wait, bathroom đó biến thành gì vậy?' và muốn xem tiếp để biết app đã gợi ra thiết kế như thế nào.",
+            "psp": "App giải quyết bằng cách cho người dùng chụp bathroom thật rồi restyle/redécor ngay trên màn hình với nhiều phong cách khác nhau. Demo đi theo flow rất rõ: chụp phòng tắm cũ, app render vài hướng thiết kế, người dùng phản ứng vì cuối cùng nhìn được lựa chọn cụ thể."
+          },
+          "explanation": "Idea này hiệu quả vì đánh đúng khoảnh khắc đời thật của user 35+: đầu năm muốn làm mới nhà nhưng vẫn mù mờ về gu thẩm mỹ của chính mình. Curiosity được tạo bằng before/after tease có chủ đích, chỉ cho viewer thấy một phần màn hình render rồi cắt. UGC tone khiến video giống chia sẻ thật hơn là quảng cáo. Seasonal cue đầu năm xuất hiện tự nhiên qua planner, ánh sáng lạnh và hành vi dọn dẹp, giúp hook đúng thời điểm mà không lấn painpoint.",
+          "hook": {
+            "script": "A woman in her late 30s in a cream sweater and beanie stands in a small outdated bathroom, one hand holding a 2025 planner and the other moving a half-empty fitness bottle off the sink; cool winter morning light hits the white tile. She flips the camera to the room and goes, [VOICE] \"Okay... it's January and I said I'd finally redo this bathroom, but I literally have no idea what style this is supposed to be.\" She points at the mirror, shower curtain, and floor one by one. [VOICE] \"Like... modern? cozy? spa? Why does everything look wrong together?\" She raises her phone, snaps the bathroom, and the screen starts generating a redesign. She gasps and tilts the phone away before fully showing it. [VOICE] \"Wait— why does that actually look... hold on.\" [TEXT OVERLAY] \"I only took 1 photo...\"",
+            "textOverlay": "I only took 1 photo...",
+            "viTranslation": "Một phụ nữ cuối tuổi 30 mặc áo len màu kem và đội beanie đứng trong phòng tắm cũ, một tay cầm planner 2025, tay kia dời chai nước tập gym khỏi bồn rửa; ánh sáng mùa đông xanh lạnh chiếu lên gạch trắng. Cô lật camera quay căn phòng và nói: \"Okay... tháng 1 rồi và tôi đã tự hứa sẽ sửa lại cái bathroom này, nhưng thật sự tôi không biết nó nên theo style gì.\" Cô chỉ lần lượt vào gương, rèm tắm và sàn nhà. \"Kiểu... hiện đại? ấm cúng? spa? Sao mọi thứ nhìn cứ sai sai khi để chung vậy?\" Cô giơ điện thoại lên, chụp phòng tắm, màn hình bắt đầu tạo bản redesign. Cô thốt lên rồi nghiêng điện thoại đi trước khi cho thấy trọn vẹn. \"Khoan— sao cái này nhìn lại ổn thế... chờ đã.\" Text overlay: \"Tôi chỉ chụp có 1 tấm ảnh...\"",
+            "viewerProfile": "Người dừng lại nhiều nhất là phụ nữ 35-50 ở Mỹ, đang lên kế hoạch làm mới nhà đầu năm nhưng bị quá tải vì quá nhiều ảnh decor trên feed. Họ có thể đang ngồi trên sofa buổi tối, vừa xem Reels vừa nghĩ tới bathroom hoặc guest bath nhà mình.",
+            "viewerEmotion": "Viewer thấy một tình huống rất quen: muốn sửa nhà nhưng không biết gu nào hợp. Khi nhân vật nói đúng điều họ vẫn tự lẩm bẩm và rồi màn hình app gần như lộ kết quả nhưng bị cắt ngang, họ sẽ tự hỏi 'Nó render ra kiểu gì mà cô ấy phản ứng vậy?' và muốn xem tiếp ngay.",
+            "painpointImpact": "Viewer liên tưởng tới chính bathroom, kitchen hoặc bedroom của mình: đã lưu hàng chục ảnh nhưng khi nhìn lại căn phòng thật thì không biết bắt đầu từ đâu. Họ thấy mình trong câu 'modern hay cozy hay spa?' vì đó đúng là kiểu bối rối thường gặp khi không biết thiết kế nhà.",
+            "whyTheyStopScrolling": "Họ dừng scroll vì hook vừa relatable vừa tạo curiosity gap mạnh bằng màn before/after bị giấu đúng lúc."
+          },
+          "body": {
+            "script": "Cô ngồi xuống nắp toilet, mở điện thoại quay cận màn hình app. [VOICE] \"So I used Home Design: Interior Decor and just uploaded my actual bathroom.\" Màn hình hiện lần lượt các bản restyle khác nhau trên cùng một ảnh. [VOICE] \"This one gave me a clean spa look... this one made it warmer... and this one? I would've never picked it, but it weirdly works.\" Cô vừa swipe vừa chỉ vào từng chi tiết mới như vanity, wall color, lighting. [TEXT OVERLAY] \"See your bathroom in different styles\" Cô quay lại bathroom thật rồi quay lại màn hình để đối chiếu before/after. [VOICE] \"This is the first time I could actually see what fits my space instead of guessing from Pinterest for three hours.\"",
+            "textOverlay": "See your bathroom in different styles",
+            "viTranslation": "Cô ngồi xuống nắp bồn cầu và quay cận màn hình điện thoại. \"Vậy là tôi dùng Home Design: Interior Decor và chỉ upload đúng ảnh bathroom thật của mình.\" Màn hình lần lượt hiện các bản restyle khác nhau trên cùng một bức ảnh. \"Bản này cho kiểu spa sạch sẽ... bản này làm ấm hơn... còn bản này á? Bình thường tôi sẽ không bao giờ chọn, nhưng nhìn lại hợp một cách kỳ lạ.\" Cô vừa vuốt vừa chỉ vào từng chi tiết mới như tủ lavabo, màu tường, ánh sáng. Text overlay: \"Xem bathroom của bạn trong nhiều phong cách khác nhau\". Cô quay lại bathroom thật rồi quay lại màn hình để đối chiếu trước/sau. \"Đây là lần đầu tiên tôi thực sự nhìn ra cái gì hợp với không gian nhà mình thay vì đoán mò trên Pinterest suốt ba tiếng.\""
+          },
+          "cta": {
+            "script": "Cô đứng dậy trước gương bathroom, giữ điện thoại cạnh mặt để lộ lại một phần thiết kế đã chọn. [VOICE] \"If you know you want to update your home but you can't picture it? Try this on your own room first.\" [TEXT OVERLAY] \"Try your room before you buy anything\" Cô chạm vào màn hình như chuẩn bị lưu thiết kế. [VOICE] \"I would've saved so much second-guessing with this.\"",
+            "textOverlay": "Try your room before you buy anything",
+            "viTranslation": "Cô đứng dậy trước gương phòng tắm, giữ điện thoại cạnh mặt để lộ một phần thiết kế đã chọn. \"Nếu bạn biết là mình muốn làm mới nhà nhưng không hình dung nổi nó sẽ trông ra sao, hãy thử cái này với chính căn phòng của bạn trước.\" Text overlay: \"Thử căn phòng của bạn trước khi mua bất cứ thứ gì\". Cô chạm vào màn hình như chuẩn bị lưu thiết kế. \"Giá mà tôi biết cái này sớm hơn thì đã đỡ phải phân vân rất nhiều.\"",
+            "endCard": "Home Design: Interior Decor — See it before you redo it"
+          }
+        },
+        {
+          "id": 2,
+          "title": "Reaction - Pinterest overload bathroom",
+          "duration": "30s",
+          "creativeType": "Reaction",
+          "framework": {
+            "coreUser": "Viewer là phụ nữ 35+ ở Mỹ, thường là homeowner hoặc người đang tự quản lý việc sửa sang nhà. Họ hay lưu ảnh từ Pinterest, Instagram, Target decor inspo nhưng càng xem càng rối vì không biết style nào phù hợp với nhà mình.",
+            "painpoint": "Painpoint không phải thiếu tiền hay thiếu đồ, mà là không biết thiết kế như thế nào cho đúng. Tình huống thực tế là mở điện thoại ra có cả đống ảnh tham khảo nhưng bước vào bathroom thật lại không thể ra quyết định về màu, vật liệu, hay tổng thể.",
+            "emotion": "Viewer sẽ thấy tò mò vì mở đầu là một cảnh rất relatable: quá nhiều ảnh save nhưng vẫn bế tắc, sau đó nhân vật phản ứng với một render bất ngờ. Họ sẽ muốn biết app đã làm gì khác với việc lướt cảm hứng thông thường.",
+            "psp": "App cho phép biến ảnh bathroom thật thành nhiều phương án redesign ngay trên không gian thực tế của người dùng. Demo tập trung vào điểm khác biệt: từ cảm hứng rời rạc sang hình ảnh cụ thể áp lên chính căn phòng."
+          },
+          "explanation": "Concept này mạnh vì tận dụng một hành vi rất phổ biến ở nhóm 35+: save ảnh decor liên tục nhưng không hành động được. Hook tạo tò mò bằng contrast giữa camera roll đầy ý tưởng và bathroom thật vẫn vô định, sau đó chèn reaction 'No, because why does this fit so well?' để viewer muốn xem kết quả. Format reaction tự nhiên, dễ quay bằng phone. Nó giữ đúng painpoint 'không biết thiết kế nhà' thay vì trượt sang vấn đề chi phí hay thi công.",
+          "hook": {
+            "script": "A 40-something woman in a black winter cardigan sits on her bed with white-and-gold New Year decor blurred in the background, scrolling her phone next to a stack of home planners. She screen-records a Pinterest board packed with saved bathroom photos, then flips the camera toward her actual plain bathroom. [VOICE] \"I have... no joke... 147 saved bathroom ideas and somehow my bathroom still looks like this.\" She walks into the bathroom and pans slowly across the mismatched fixtures. [VOICE] \"Like I can tell what I like online, but in my own house? I cannot put it together.\" She taps one photo of her real bathroom into an app, the redesign loads, and she covers half the screen with her hand. [VOICE] \"No, because why does this fit so well—\" [TEXT OVERLAY] \"Saved 147 ideas. Still couldn't decide.\"",
+            "textOverlay": "Saved 147 ideas. Still couldn't decide.",
+            "viTranslation": "Một phụ nữ khoảng ngoài 40 mặc cardigan mùa đông màu đen ngồi trên giường, phía sau là đồ trang trí năm mới trắng-vàng hơi mờ và một chồng planner nhà cửa. Cô quay màn hình bảng Pinterest đầy ảnh bathroom đã lưu, rồi lật camera sang phòng tắm thật khá đơn điệu của mình. \"Tôi có... không đùa đâu... 147 ý tưởng bathroom đã lưu mà bathroom nhà tôi vẫn trông như thế này.\" Cô bước vào bathroom và lia máy chậm qua các chi tiết lệch tông. \"Kiểu như tôi biết mình thích gì trên mạng, nhưng với chính nhà mình á? Tôi không thể ghép nó lại được.\" Cô đưa một ảnh bathroom thật của mình vào app, bản redesign hiện ra, và cô lấy tay che đi một nửa màn hình. \"Không chứ, sao cái này lại hợp đến vậy—\" Text overlay: \"Đã lưu 147 ý tưởng. Vẫn không quyết được.\"",
+            "viewerProfile": "Viewer phù hợp nhất là phụ nữ 35-55 đã từng lưu rất nhiều ảnh decor nhưng chưa biến được thành quyết định thực tế trong nhà mình. Họ có thể đang ngồi cuối ngày trong phòng ngủ, vừa nghỉ ngơi vừa lướt feed tìm cảm hứng sửa nhà sau kỳ nghỉ.",
+            "viewerEmotion": "Viewer sẽ bật ngay cảm giác 'trời, đúng mình' ở đoạn 147 ảnh save. Sau đó khi nhân vật nói app cho ra thứ gì đó 'fit so well' nhưng chưa reveal hết, họ tò mò muốn biết vì sao lần này lại khác với việc xem Pinterest thông thường.",
+            "painpointImpact": "Viewer nhớ tới camera roll hoặc board Pinterest của chính mình, đầy ảnh tile, vanity, sơn tường nhưng vẫn không ghép nổi cho bathroom thật. Họ nhận ra vấn đề của mình không phải thiếu cảm hứng mà là không biết thiết kế sao cho hợp không gian thực.",
+            "whyTheyStopScrolling": "Họ dừng lại vì sự relatable cực mạnh cộng với cú tease kết quả bất ngờ bị che nửa màn hình."
+          },
+          "body": {
+            "script": "Cô đặt điện thoại cạnh gương bathroom để quay song song mặt mình và màn hình. [VOICE] \"This is what I needed, honestly— not more inspo, just seeing my actual room in different looks.\" Màn hình app hiện 3 phương án khác nhau cho cùng bathroom. Cô chạm qua từng style và phản ứng thật. [VOICE] \"Okay this one feels too cold... this one is nice... wait, this warm modern one? That's the one.\" Cô zoom vào vanity, wall color, mirror shape mà app thay đổi. [TEXT OVERLAY] \"From random inspo to your real space\" [VOICE] \"It made choosing way easier because I wasn't trying to imagine it in my head anymore.\"",
+            "textOverlay": "From random inspo to your real space",
+            "viTranslation": "Cô đặt điện thoại cạnh gương bathroom để quay song song gương mặt và màn hình. \"Thật lòng mà nói, đây mới là thứ tôi cần — không phải thêm ảnh cảm hứng nữa, mà là nhìn thấy chính căn phòng của mình trong nhiều kiểu khác nhau.\" Màn hình app hiện 3 phương án khác nhau cho cùng một bathroom. Cô chạm qua từng style và phản ứng tự nhiên. \"Okay kiểu này hơi lạnh... kiểu này ổn... khoan, kiểu modern ấm này á? Chính là nó.\" Cô zoom vào lavabo, màu tường, dáng gương mà app đã thay đổi. Text overlay: \"Từ cảm hứng rời rạc sang chính không gian thật của bạn\". \"Nó làm việc chọn lựa dễ hơn hẳn vì tôi không còn phải tưởng tượng trong đầu nữa.\""
+          },
+          "cta": {
+            "script": "Cô quay lại bảng Pinterest rồi vuốt sang màn hình thiết kế đã chọn trong app. [VOICE] \"If you're stuck saving ideas and still can't design your space, use your own photo and start there.\" [TEXT OVERLAY] \"Stop guessing your style\" Cô gật đầu, chỉ vào bathroom phía sau. [VOICE] \"This finally gave me a direction.\"",
+            "textOverlay": "Stop guessing your style",
+            "viTranslation": "Cô quay lại bảng Pinterest rồi vuốt sang màn hình thiết kế đã chọn trong app. \"Nếu bạn đang mắc kẹt ở bước lưu ý tưởng mãi mà vẫn không thiết kế nổi không gian của mình, hãy dùng ảnh thật của chính bạn và bắt đầu từ đó.\" Text overlay: \"Đừng đoán mò style của bạn nữa\". Cô gật đầu và chỉ vào bathroom phía sau. \"Cuối cùng thì cái này cũng cho tôi một hướng đi rõ ràng.\"",
+            "endCard": "Home Design: Interior Decor — Design your space with confidence"
+          }
+        },
+        {
+          "id": 3,
+          "title": "POV - Husband asks which style",
+          "duration": "30s",
+          "creativeType": "POV",
+          "framework": {
+            "coreUser": "Viewer là người Mỹ 35+ đã có gia đình hoặc sống cùng bạn đời, thường là người phải đưa ra quyết định thẩm mỹ cho nhà. Họ không phải designer, nhưng lại thường bị hỏi những câu như 'Em thích kiểu nào?' trong khi bản thân cũng không biết trả lời.",
+            "painpoint": "Nỗi đau nằm ở việc không biết thiết kế nhà, cụ thể là không thể hình dung bathroom nên đi theo style nào khi phải ra quyết định thực tế. Tình huống thường gặp là bạn đời hỏi chọn cái gì, còn họ đứng giữa hàng loạt lựa chọn mà không biết cái nào hợp tổng thể.",
+            "emotion": "Viewer sẽ tò mò vì hook bắt đầu bằng một câu hỏi rất đời thường nhưng sau đó dẫn tới một phản ứng bất ngờ khi app đưa ra phương án rõ ràng. Họ sẽ muốn xem thứ gì đã giúp nhân vật từ 'I don't know' chuyển sang 'oh, that's it'.",
+            "psp": "App restyle/redecor bathroom bằng cách nhận ảnh thật rồi tạo ra các phương án thiết kế trực quan. Demo tập trung vào việc giúp người dùng trả lời câu hỏi 'nhà mình nên theo style nào' thay vì chỉ đưa cảm hứng chung chung."
+          },
+          "explanation": "Concept POV này hiệu quả vì nó mô phỏng đúng áp lực ra quyết định trong gia đình mà nhóm 35+ rất quen. Hook có tính đời thường cao: bạn đời hỏi một câu đơn giản nhưng lại chạm thẳng painpoint 'không biết thiết kế'. Curiosity đến từ việc nhân vật bế tắc, sau đó app xuất hiện như một cách nhìn ra đáp án nhưng chưa reveal trọn vẹn ngay. Góc quay POV làm viewer cảm giác như đang ở trong chính tình huống đó.",
+          "hook": {
+            "script": "POV from a woman in her late 30s wearing a long winter coat over workout clothes, walking in from the garage with a red envelope and a Home Depot sample bag, while her husband stands in the bathroom doorway. He holds up two sample tiles under bright white bathroom light and casually asks off camera, [VOICE] \"So... which style do you want in here?\" The camera freezes on the old bathroom for a beat. She laughs awkwardly and drops the sample bag on the counter. [VOICE] \"That is exactly the problem. I don't know what style I want in here.\" She points the phone around the vanity, walls, and floor. [VOICE] \"Everything I pick looks good by itself and weird together.\" She opens an app, snaps the room, and a redesign starts loading. [VOICE] \"Wait... no, don't show me yet—\" [TEXT OVERLAY] \"When you know you want a new bathroom... but not the style\"",
+            "textOverlay": "When you know you want a new bathroom... but not the style",
+            "viTranslation": "Góc quay POV từ một phụ nữ cuối tuổi 30 mặc áo khoác mùa đông bên ngoài đồ activewear, vừa đi từ garage vào với một phong bao đỏ và túi mẫu từ Home Depot, trong khi chồng cô đứng ở cửa bathroom. Anh cầm hai mẫu gạch dưới ánh đèn bathroom trắng sáng và hỏi rất tự nhiên ngoài khung hình: \"Vậy... em muốn kiểu nào cho chỗ này?\" Camera khựng lại một nhịp trên bathroom cũ. Cô cười ngượng và đặt túi mẫu lên quầy. \"Đó chính là vấn đề. Em không biết em muốn kiểu gì cho chỗ này.\" Cô lia điện thoại qua lavabo, tường và sàn. \"Mọi thứ em chọn thì nhìn riêng lẻ đều ổn, nhưng để chung lại thì kỳ lắm.\" Cô mở app, chụp căn phòng, một bản redesign bắt đầu tải lên. \"Khoan... đừng cho em xem hết vội—\" Text overlay: \"Khi bạn biết mình muốn bathroom mới... nhưng không biết style nào\"",
+            "viewerProfile": "Viewer dễ dừng lại là phụ nữ 35-55 đã từng đi mua mẫu gạch, màu sơn hoặc đồ nhà với chồng nhưng không biết chốt kiểu nào. Họ thường là người bị kỳ vọng sẽ có mắt thẩm mỹ, dù thực tế lại rất mông lung.",
+            "viewerEmotion": "Viewer thấy tò mò vì câu hỏi 'Which style do you want?' là câu rất bình thường nhưng lại mở ra đúng nỗi bí của họ. Khi app bắt đầu render và nhân vật phản ứng kiểu sắp tìm ra câu trả lời, viewer sẽ muốn biết rốt cuộc bathroom đó hợp phong cách gì.",
+            "painpointImpact": "Viewer liên tưởng ngay tới những lần đi Home Depot, cầm mẫu sơn hay tile rồi vẫn không dám quyết vì không hình dung được tổng thể. Họ nhận ra vấn đề không phải thiếu lựa chọn mà là không biết thiết kế sao cho các món đi cùng nhau.",
+            "whyTheyStopScrolling": "Họ dừng scroll vì câu hỏi của người chồng chạm trúng painpoint thật và màn render bị cắt ngang tạo khoảng trống tò mò rất mạnh."
+          },
+          "body": {
+            "script": "Cô đặt các mẫu gạch xuống cạnh bồn rửa rồi quay cận màn hình app. [VOICE] \"I uploaded one photo and it showed me actual directions for this bathroom instead of making me guess from samples.\" Màn hình hiện các phiên bản bathroom khác nhau. Cô cầm từng mẫu gạch lên đối chiếu với render trên màn hình. [VOICE] \"Ohhh, okay. This is why I couldn't decide— I was mixing totally different looks.\" Cô dừng ở một phương án phù hợp nhất. [VOICE] \"Now I can actually say, yes, this is the vibe.\" [TEXT OVERLAY] \"See what works together before you commit\"",
+            "textOverlay": "See what works together before you commit",
+            "viTranslation": "Cô đặt các mẫu gạch xuống cạnh bồn rửa rồi quay cận màn hình app. \"Tôi chỉ upload một tấm ảnh và nó cho tôi thấy các hướng đi thật sự cho bathroom này thay vì bắt tôi đoán mò từ mấy miếng mẫu.\" Màn hình hiện các phiên bản bathroom khác nhau. Cô cầm từng mẫu gạch lên đối chiếu với bản render trên màn hình. \"À hiểu rồi. Giờ tôi mới biết vì sao mình không quyết được — tôi đã trộn lẫn những kiểu hoàn toàn khác nhau.\" Cô dừng lại ở một phương án phù hợp nhất. \"Bây giờ thì tôi có thể thật sự nói, đúng rồi, đây mới là cái vibe mình muốn.\" Text overlay: \"Xem cái gì hợp với nhau trước khi bạn chốt\""
+          },
+          "cta": {
+            "script": "Cô quay sang chồng, giơ điện thoại cho anh xem một phần thiết kế đã chọn. [VOICE] \"If you keep saying 'I don't know what style I want,' start with your real room and test it first.\" [TEXT OVERLAY] \"Design your bathroom visually\" Chồng ngoài khung hình đáp nhẹ \"Okay, that actually helps.\" Cô cười. [VOICE] \"Exactly.\"",
+            "textOverlay": "Design your bathroom visually",
+            "viTranslation": "Cô quay sang chồng và giơ điện thoại cho anh xem một phần thiết kế đã chọn. \"Nếu bạn cứ luôn miệng nói 'Tôi không biết mình muốn style gì', hãy bắt đầu bằng căn phòng thật của bạn và thử nó trước.\" Text overlay: \"Thiết kế bathroom của bạn bằng hình ảnh trực quan\". Người chồng ngoài khung hình đáp nhẹ: \"Okay, cái này đúng là có ích thật.\" Cô cười. \"Chính xác.\"",
+            "endCard": "Home Design: Interior Decor — Find your style in your own space"
+          }
+        }
+      ]
+    }
+  }
+}

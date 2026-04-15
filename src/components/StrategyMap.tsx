@@ -519,8 +519,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as const).map(key => {
           const s = LEVEL_COLORS[key];
           return (
-            <div key={key} className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.accent }} />
+            <div key={key} className="flex items-center">
               <span className="text-[10px] font-semibold text-gray-500">{s.icon} {s.label}</span>
             </div>
           );

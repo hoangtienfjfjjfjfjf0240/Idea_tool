@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2, Brain, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2, Brain, ChevronDown, ChevronUp, Clock, Heart } from 'lucide-react';
 import type { ScreenType, Hook, AppProject } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -34,6 +34,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [fullIdeasQty, setFullIdeasQty] = useState(3);
   const [ideaDirection, setIdeaDirection] = useState('');
   const [expandedIdea, setExpandedIdea] = useState<number | null>(null);
+  const [favoriteModifiedHooks, setFavoriteModifiedHooks] = useState<Set<number>>(new Set());
+  const [approvedModifiedHooks, setApprovedModifiedHooks] = useState<Set<number>>(new Set());
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -162,6 +164,27 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const scriptContent = idea.hook.script || `VISUAL: ${idea.hook.visual}\n[VOICE] ${idea.hook.voice}`;
     const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\n\n${scriptContent}\n\n[TEXT OVERLAY] ${idea.hook.textOverlay || idea.hook.text}`;
     navigator.clipboard.writeText(text);
+  };
+
+  const cleanPreviewText = (value: unknown) =>
+    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+  const truncatePreviewText = (value: unknown, limit = 150) => {
+    const text = cleanPreviewText(value);
+    if (text.length <= limit) return text;
+    return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const toggleIndexSet = (
+    setter: React.Dispatch<React.SetStateAction<Set<number>>>,
+    index: number
+  ) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   };
 
   const openEditModal = (hook?: Hook) => {
@@ -1039,12 +1062,32 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
           {generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {generatedIdeas.map((idea, idx) => (
-                <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group">
-                  <div className="h-1 bg-gradient-to-r from-pink-500 to-orange-500" />
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-3 pb-3 border-b border-gray-100">
-                      <div>
+              {generatedIdeas.map((idea, idx) => {
+                const isExpanded = expandedIdea === idx;
+                const isFavorite = favoriteModifiedHooks.has(idx);
+                const isApproved = approvedModifiedHooks.has(idx);
+                const scriptContent = idea.hook.script || idea.hook.visual || '';
+                const textOverlay = idea.hook.textOverlay || idea.hook.text || '';
+                return (
+                <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group">
+                  <div className="relative aspect-[16/9] bg-gray-100 overflow-hidden">
+                    {idea.hook.imageUrl ? (
+                      <img src={idea.hook.imageUrl} alt={idea.title || 'Hook thumbnail'} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full bg-gradient-to-br from-gray-50 via-rose-50 to-orange-100 flex flex-col items-center justify-center text-gray-400">
+                        <ImageIcon size={26} className="mb-2 text-pink-300" />
+                        <span className="text-xs font-bold text-gray-500">Visual Hook</span>
+                        <span className="text-[11px] text-gray-400 mt-1">Thumbnail slot</span>
+                      </div>
+                    )}
+                    <div className="absolute left-3 top-3 flex gap-1.5 flex-wrap">
+                      <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">Modified Hook</span>
+                      <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">English</span>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex justify-between items-start gap-3 mb-2">
+                      <div className="min-w-0">
                         <h4 className="font-bold text-sm text-gray-800">{idea.title || `Biến thể ${idx + 1}`}</h4>
                         <p className="text-[11px] text-gray-400 mt-1 italic">{idea.explanation}</p>
                       </div>
@@ -1052,6 +1095,49 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     </div>
 
                     {/* Script Block — unified storyboard */}
+                    <p className="text-sm text-gray-700 leading-relaxed min-h-[44px] mb-2">
+                      {truncatePreviewText(scriptContent || idea.explanation, 180) || 'Hook script will appear here.'}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => setExpandedIdea(isExpanded ? null : idx)}
+                      className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 mb-3 flex items-center gap-1"
+                    >
+                      {isExpanded ? 'Hide details' : 'More details'}
+                      {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+
+                    <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => toggleIndexSet(setApprovedModifiedHooks, idx)}
+                        className={`flex-1 h-8 rounded-md border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${isApproved ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                      >
+                        <VideoIcon size={13} /> {isApproved ? 'Approved' : 'Approve for Video'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleIndexSet(setFavoriteModifiedHooks, idx)}
+                        className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                        title="Favorite"
+                      >
+                        <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(idea)}
+                        className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
+                        title="Copy"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <p className="text-xs text-gray-400 italic mb-3">{idea.explanation}</p>
+
                     <div className="bg-red-50 rounded-xl p-4 border border-red-100">
                       <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2"><Target size={10} /> 🎬 KỊCH BẢN HOOK</span>
                       <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.hook.script || idea.hook.visual}</p>
@@ -1096,9 +1182,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                         )}
                       </div>
                     )}
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-20">

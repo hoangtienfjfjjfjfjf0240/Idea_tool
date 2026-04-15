@@ -45,6 +45,7 @@ export interface GeneratedIdea {
   content: IdeaContent;
   session_id: string | null;
   filters_snapshot: FilterState | null;
+  result?: string | null;
   created_at: string;
 }
 
@@ -62,16 +63,30 @@ export interface IdeaContent {
     visual: string;      // Hình ảnh / cảnh quay
     text: string;        // Text on screen (liên quan voice)
     voice: string;       // Voice-over (liên quan text)
+    script?: string;
+    textOverlay?: string;
+    viTranslation?: string;
+    viewerProfile?: string;
+    viewerEmotion?: string;
+    painpointImpact?: string;
+    whyTheyStopScrolling?: string;
   };
   body: {
     visual: string;      // Demo PSP giải quyết painpoint
     text: string;        // Text on screen (liên quan voice)
     voice: string;       // Voice-over (liên quan text)
+    script?: string;
+    textOverlay?: string;
+    viTranslation?: string;
   };
   cta: {
+    visual?: string;
     voice: string;       // Voice-over kêu gọi
     text: string;        // Text on screen
     endCard: string;     // End card content
+    script?: string;
+    textOverlay?: string;
+    viTranslation?: string;
   };
 }
 

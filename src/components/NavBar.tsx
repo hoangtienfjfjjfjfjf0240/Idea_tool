@@ -3,12 +3,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, Home, ArrowLeft, LogOut, ChevronDown, Cpu } from 'lucide-react';
 import type { ScreenType } from '@/types/database';
 
-export type AIModel = 'gemini-2.5-pro' | 'gpt-4.1' | 'o4-mini';
+export type AIModel = 'gemini-3-pro' | 'gpt-5.4';
 
 const MODEL_OPTIONS: { value: AIModel; label: string; provider: string; badge: string; color: string }[] = [
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', provider: 'Google', badge: '🟢', color: 'from-blue-500 to-cyan-400' },
-  { value: 'gpt-4.1', label: 'GPT-4.1', provider: 'OpenAI', badge: '⚡', color: 'from-emerald-500 to-green-400' },
-  { value: 'o4-mini', label: 'o4-mini', provider: 'OpenAI', badge: '🚀', color: 'from-violet-500 to-purple-400' },
+  { value: 'gemini-3-pro', label: 'Gemini 3 Pro', provider: 'Google', badge: '🔷', color: 'from-blue-600 to-indigo-500' },
+  { value: 'gpt-5.4', label: 'GPT-5.4', provider: 'OpenAI', badge: '✦', color: 'from-emerald-600 to-teal-500' },
 ];
 
 interface NavBarProps {

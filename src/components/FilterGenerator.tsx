@@ -33,6 +33,264 @@ const DEFAULT_CATEGORIES: CategoryConfig[] = [
 
 const CATEGORIES_STORAGE_KEY = (appId: string) => `idea_tool_categories_${appId}`;
 
+type SeasonalVisualInsights = {
+  costumes: string[];
+  behaviors: string[];
+  colors: string[];
+  props: string[];
+  moods: string[];
+};
+
+type SeasonConfig = {
+  label: string;
+  icon: string;
+  months: string;
+  events: string[];
+  visualInsights: SeasonalVisualInsights;
+};
+
+type MonthVisualConfig = {
+  id: string;
+  label: string;
+  season: string;
+  events: string[];
+  visualInsights: SeasonalVisualInsights;
+};
+
+type SeasonalVisualContext = {
+  seasonKey: string;
+  seasonLabel: string;
+  seasonIcon: string;
+  monthId: string | null;
+  monthLabel: string | null;
+  monthRange: string;
+  events: string[];
+  costumes: string[];
+  behaviors: string[];
+  colors: string[];
+  props: string[];
+  moods: string[];
+  emphasis: string[];
+};
+
+const SEASONS: Record<string, SeasonConfig> = {
+  spring: {
+    label: 'Xuân',
+    icon: '🌸',
+    months: 'Mar – May',
+    events: ['Easter', 'St Patrick', "Mother's Day", 'Earth Day', 'April Fools'],
+    visualInsights: {
+      costumes: ['Pastel outfits', 'Floral patterns', 'Easter bunny ears', 'Light layers', 'Rain jackets'],
+      behaviors: ['Spring cleaning', 'Outdoor picnics', 'Gardening', 'Family gatherings', 'Window shopping'],
+      colors: ['Pastel pink', 'Mint green', 'Lavender', 'Soft yellow', 'Sky blue'],
+      props: ['Flowers', 'Easter eggs', 'Butterflies', 'Garden tools', 'Baskets'],
+      moods: ['Renewal', 'Fresh start', 'Hope', 'Joy', 'Optimism'],
+    },
+  },
+  summer: {
+    label: 'Hè',
+    icon: '☀️',
+    months: 'Jun – Aug',
+    events: ['Summer Sale', 'Independence Day (US)', 'Back to School', "Father's Day"],
+    visualInsights: {
+      costumes: ['Swimwear', 'Sunglasses', 'Tank tops', 'Shorts', 'Hats & caps'],
+      behaviors: ['Beach trips', 'BBQ parties', 'Road trips', 'Late-night hangouts', 'Ice cream runs'],
+      colors: ['Bright orange', 'Ocean blue', 'Coral', 'Lime green', 'Sunset gold'],
+      props: ['Sunscreen', 'Pool floats', 'Surfboards', 'Popsicles', 'Camping gear'],
+      moods: ['Freedom', 'Adventure', 'Relaxation', 'FOMO', 'Carefree'],
+    },
+  },
+  autumn: {
+    label: 'Thu',
+    icon: '🍂',
+    months: 'Sep – Nov',
+    events: ['Halloween', 'Thanksgiving', 'Black Friday', 'Cyber Monday', 'Singles Day 11/11'],
+    visualInsights: {
+      costumes: ['Cozy sweaters', 'Scarves', 'Boots', 'Halloween costumes', 'Leather jackets'],
+      behaviors: ['Pumpkin spice shopping', 'Binge-watching', 'Early holiday prep', 'Cozy nights in', 'Trick-or-treating'],
+      colors: ['Burnt orange', 'Deep red', 'Golden yellow', 'Burgundy', 'Forest green'],
+      props: ['Pumpkins', 'Fall leaves', 'Candles', 'Blankets', 'Mugs'],
+      moods: ['Nostalgia', 'Cozy', 'Urgency (deals)', 'Excitement', 'Gratitude'],
+    },
+  },
+  winter: {
+    label: 'Đông',
+    icon: '❄️',
+    months: 'Dec – Feb',
+    events: ['Christmas', 'New Year', "Valentine's Day", 'Lunar New Year', 'Super Bowl'],
+    visualInsights: {
+      costumes: ['Winter coats', 'Ugly sweaters', 'Beanies', 'Scarves & gloves', 'Formal party wear'],
+      behaviors: ['Gift shopping', 'New Year resolutions', 'Indoor activities', 'Family dinners', 'Hot cocoa nights'],
+      colors: ['Red & green', 'Silver & gold', 'Icy blue', 'White & cream', 'Deep purple'],
+      props: ['Gift boxes', 'Christmas tree', 'Snowflakes', 'Fireworks', 'Heart decorations'],
+      moods: ['Warmth', 'Generosity', 'Romance', 'Reflection', 'Celebration'],
+    },
+  },
+};
+
+const SEASON_MONTHS: MonthVisualConfig[] = [
+  {
+    id: 'mar',
+    label: 'Tháng 3',
+    season: 'spring',
+    events: ['St Patrick', 'Spring Reset', 'Women\'s History Month'],
+    visualInsights: {
+      costumes: ['Light layers', 'Green accessories', 'Rain jackets', 'Casual cardigans'],
+      behaviors: ['Spring cleaning', 'Outdoor coffee walks', 'Closet reset', 'First picnic plans'],
+      colors: ['Mint green', 'Fresh white', 'Soft yellow', 'Sky blue'],
+      props: ['Flowers', 'Reusable tote bags', 'Garden tools', 'Rain umbrellas'],
+      moods: ['Fresh start', 'Optimism', 'Reset energy', 'Lightness'],
+    },
+  },
+  {
+    id: 'apr',
+    label: 'Tháng 4',
+    season: 'spring',
+    events: ['Easter', 'Earth Day', 'April Fools'],
+    visualInsights: {
+      costumes: ['Pastel outfits', 'Floral patterns', 'Easter bunny ears', 'Light denim'],
+      behaviors: ['Easter prep', 'Gardening', 'Eco-friendly swaps', 'Playful prank reactions'],
+      colors: ['Pastel pink', 'Lavender', 'Mint green', 'Soft yellow'],
+      props: ['Easter eggs', 'Flowers', 'Baskets', 'Reusable bottles'],
+      moods: ['Playful', 'Renewal', 'Hope', 'Gentle joy'],
+    },
+  },
+  {
+    id: 'may',
+    label: 'Tháng 5',
+    season: 'spring',
+    events: ["Mother's Day", 'Memorial Day (US)', 'Graduation Season'],
+    visualInsights: {
+      costumes: ['Floral dresses', 'Light blazers', 'Smart casual outfits', 'Soft cardigans'],
+      behaviors: ['Family brunch', 'Gift planning', 'Graduation prep', 'Weekend shopping'],
+      colors: ['Rose pink', 'Cream white', 'Sage green', 'Warm gold'],
+      props: ['Bouquets', 'Greeting cards', 'Gift bags', 'Brunch tableware'],
+      moods: ['Gratitude', 'Warmth', 'Pride', 'Family care'],
+    },
+  },
+  {
+    id: 'jun',
+    label: 'Tháng 6',
+    season: 'summer',
+    events: ["Father's Day", 'Summer Sale', 'Pride Month'],
+    visualInsights: {
+      costumes: ['Tank tops', 'Shorts', 'Sunglasses', 'Light shirts'],
+      behaviors: ['BBQ parties', 'Road trips', 'Outdoor workouts', 'Family hangouts'],
+      colors: ['Ocean blue', 'Bright orange', 'Rainbow accents', 'Sunset gold'],
+      props: ['Sunscreen', 'Cooler bags', 'Grill tools', 'Travel mugs'],
+      moods: ['Freedom', 'Warm connection', 'Adventure', 'Carefree'],
+    },
+  },
+  {
+    id: 'jul',
+    label: 'Tháng 7',
+    season: 'summer',
+    events: ['Independence Day (US)', 'Summer Sale', 'Beach Season'],
+    visualInsights: {
+      costumes: ['Swimwear', 'Sunglasses', 'Hats & caps', 'Red-white-blue accents'],
+      behaviors: ['Beach trips', 'Pool parties', 'Fireworks watching', 'Ice cream runs'],
+      colors: ['Bright orange', 'Ocean blue', 'Coral', 'Red & blue accents'],
+      props: ['Pool floats', 'Popsicles', 'Beach towels', 'Firework sparklers'],
+      moods: ['FOMO', 'Celebration', 'Fun', 'Vacation energy'],
+    },
+  },
+  {
+    id: 'aug',
+    label: 'Tháng 8',
+    season: 'summer',
+    events: ['Back to School', 'End-of-Summer Sale', 'Late Summer Trips'],
+    visualInsights: {
+      costumes: ['Casual tees', 'Shorts', 'Caps', 'Backpack outfits'],
+      behaviors: ['School shopping', 'Dorm prep', 'Last beach trip', 'Routine reset'],
+      colors: ['Sunset gold', 'Lime green', 'Denim blue', 'Warm coral'],
+      props: ['Backpacks', 'Notebooks', 'Camping gear', 'Travel suitcases'],
+      moods: ['FOMO', 'Reset pressure', 'Adventure', 'Last chance urgency'],
+    },
+  },
+  {
+    id: 'sep',
+    label: 'Tháng 9',
+    season: 'autumn',
+    events: ['Back to School', 'Fall Reset', 'Labor Day (US)'],
+    visualInsights: {
+      costumes: ['Light sweaters', 'Denim jackets', 'Sneakers', 'Workwear basics'],
+      behaviors: ['Desk reset', 'Routine planning', 'Coffee runs', 'School commute'],
+      colors: ['Golden yellow', 'Forest green', 'Warm beige', 'Deep red'],
+      props: ['Notebooks', 'Coffee cups', 'Planners', 'Laptop bags'],
+      moods: ['Fresh start', 'Focus', 'Productive', 'Grounded'],
+    },
+  },
+  {
+    id: 'oct',
+    label: 'Tháng 10',
+    season: 'autumn',
+    events: ['Halloween', 'Fall Festival', 'Pumpkin Season'],
+    visualInsights: {
+      costumes: ['Halloween costumes', 'Cozy sweaters', 'Boots', 'Dark hoodies'],
+      behaviors: ['Trick-or-treating', 'Pumpkin decorating', 'Binge-watching', 'Night walks'],
+      colors: ['Burnt orange', 'Black accents', 'Deep purple', 'Burgundy'],
+      props: ['Pumpkins', 'Candles', 'Candy bowls', 'Fall leaves'],
+      moods: ['Mystery', 'Cozy suspense', 'Playful fear', 'Excitement'],
+    },
+  },
+  {
+    id: 'nov',
+    label: 'Tháng 11',
+    season: 'autumn',
+    events: ['Thanksgiving', 'Black Friday', 'Cyber Monday', 'Singles Day 11/11'],
+    visualInsights: {
+      costumes: ['Cozy sweaters', 'Scarves', 'Boots', 'Home loungewear'],
+      behaviors: ['Gift hunting', 'Deal comparison', 'Family dinners', 'Early holiday prep'],
+      colors: ['Burgundy', 'Burnt orange', 'Warm brown', 'Golden yellow'],
+      props: ['Shopping bags', 'Blankets', 'Mugs', 'Deal stickers'],
+      moods: ['Urgency (deals)', 'Gratitude', 'Cozy', 'Smart saving'],
+    },
+  },
+  {
+    id: 'dec',
+    label: 'Tháng 12',
+    season: 'winter',
+    events: ['Christmas', 'Year-End Sale', 'Holiday Travel'],
+    visualInsights: {
+      costumes: ['Winter coats', 'Ugly sweaters', 'Scarves & gloves', 'Holiday pajamas'],
+      behaviors: ['Gift shopping', 'Holiday decorating', 'Family dinners', 'Travel packing'],
+      colors: ['Red & green', 'Silver & gold', 'Icy blue', 'Warm white'],
+      props: ['Gift boxes', 'Christmas tree', 'String lights', 'Suitcases'],
+      moods: ['Warmth', 'Generosity', 'Celebration', 'Year-end pressure'],
+    },
+  },
+  {
+    id: 'jan',
+    label: 'Tháng 1',
+    season: 'winter',
+    events: ['New Year', 'Lunar New Year Prep', 'Resolution Season'],
+    visualInsights: {
+      costumes: ['Winter coats', 'Formal party wear', 'Clean activewear', 'Beanies'],
+      behaviors: ['New Year resolutions', 'Decluttering', 'Budget planning', 'Family prep'],
+      colors: ['Silver & gold', 'Icy blue', 'White & cream', 'Lucky red accents'],
+      props: ['Fireworks', 'Planners', 'Red envelopes', 'Fitness bottles'],
+      moods: ['Reflection', 'Fresh ambition', 'Celebration', 'Discipline'],
+    },
+  },
+  {
+    id: 'feb',
+    label: 'Tháng 2',
+    season: 'winter',
+    events: ["Valentine's Day", 'Super Bowl', 'Lunar New Year'],
+    visualInsights: {
+      costumes: ['Red outfits', 'Scarves & gloves', 'Smart casual date outfits', 'Team jerseys'],
+      behaviors: ['Date planning', 'Party watching', 'Family visits', 'Gift wrapping'],
+      colors: ['Red & pink', 'Gold accents', 'Icy blue', 'Deep purple'],
+      props: ['Heart decorations', 'Gift boxes', 'Snack bowls', 'Red envelopes'],
+      moods: ['Romance', 'Celebration', 'Family luck', 'Social energy'],
+    },
+  },
+];
+
+const CALENDAR_MONTH_ORDER = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+const uniqueSeasonItems = (items: string[]) => [...new Set(items.filter(Boolean))];
+
 function loadCategories(appId: string): CategoryConfig[] {
   if (typeof window === 'undefined') return DEFAULT_CATEGORIES;
   try {
@@ -93,11 +351,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // New feature states
   const [expandedIdeas, setExpandedIdeas] = useState<Set<string>>(new Set());
   const [favoriteIdeas, setFavoriteIdeas] = useState<Set<string>>(new Set());
-  const [imagePrompts, setImagePrompts] = useState<Record<string, string>>({});
-  const [generatingThumbnail, setGeneratingThumbnail] = useState<string | null>(null);
+  const [approvedIdeas, setApprovedIdeas] = useState<Set<string>>(new Set());
   const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
   const [trendingInput, setTrendingInput] = useState('');
   const [selectedSeasonInsights, setSelectedSeasonInsights] = useState<Set<string>>(new Set());
+  const [selectedSeasonEvents, setSelectedSeasonEvents] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setCategories(loadCategories(app.id));
@@ -267,15 +525,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
    CTA: "${c?.cta?.voice || ''}"`;
       }).join('\n');
 
-      // Split into batches of 5 to avoid gateway timeout
-      const batchSize = 5;
-      const batches = Math.ceil(quantity / batchSize);
       let allData: any[] = [];
+      const maxConcurrent = 3;
 
-      for (let batch = 0; batch < batches; batch++) {
-        const batchQty = Math.min(batchSize, quantity - batch * batchSize);
-        setProgressLabel(`Đang tạo batch ${batch + 1}/${batches} (${batchQty} ideas)...`);
-
+      const requestOneIdea = async (index: number) => {
         const res = await fetch('/api/generate-ideas', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -283,7 +536,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             appName: app.name,
             appCategory: app.category,
             filters,
-            config: { quantity: batchQty, duration, ideaDescription, visualType: filters.visualType?.join(', ') || 'UGC (Người thật)' },
+            config: {
+              quantity: 1,
+              duration,
+              ideaDescription,
+              visualType: filters.visualType?.join(', ') || 'UGC (Người thật)',
+              seasonalVisualContext,
+              variationIndex: index + 1,
+              totalVariations: quantity,
+            },
             previousIdeas: previousIdeasSummary || null,
             appKnowledge: app.app_knowledge || null,
             selectedModel: selectedModel || '',
@@ -292,12 +553,29 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           signal: controller.signal,
         });
         const result = await res.json();
+        if (!res.ok || !result.success || !result.data?.length) {
+          throw new Error(result.error || `AI không phản hồi ở idea ${index + 1}`);
+        }
+        return result.data as any[];
+      };
 
-        if (res.ok && result.success && result.data?.length > 0) {
-          allData = [...allData, ...result.data];
-        } else if (batch === 0) {
-          // First batch failed — show error immediately
-          throw new Error(result.error || 'AI không phản hồi');
+      for (let start = 0; start < quantity; start += maxConcurrent) {
+        const end = Math.min(start + maxConcurrent, quantity);
+        setProgressLabel(`Đang tạo full brief ${start + 1}-${end}/${quantity}...`);
+        const chunk = await Promise.allSettled(
+          Array.from({ length: end - start }, (_, offset) => requestOneIdea(start + offset))
+        );
+        const successful = chunk
+          .filter((item): item is PromiseFulfilledResult<any[]> => item.status === 'fulfilled')
+          .flatMap(item => item.value);
+        allData = [...allData, ...successful];
+
+        const failed = chunk.filter(item => item.status === 'rejected');
+        if (failed.length > 0) {
+          console.warn('Some idea requests failed:', failed);
+        }
+        if (allData.length === 0 && end >= quantity) {
+          throw new Error('AI không phản hồi');
         }
       }
 
@@ -315,23 +593,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
             hook: {
-              script: item.hook?.script || '',
+              script: item.hook?.script || item.hook?.visual || '',
               textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
-              visual: item.hook?.script || item.hook?.visual || '',
+              visual: item.hook?.visual || item.hook?.script || '',
               text: item.hook?.textOverlay || item.hook?.text_overlay || item.hook?.text || '',
               voice: item.hook?.voice || '',
             },
             body: {
-              script: item.body?.script || '',
+              script: item.body?.script || item.body?.visual || '',
               textOverlay: item.body?.textOverlay || item.body?.text_overlay || '',
-              visual: item.body?.script || item.body?.visual || '',
+              visual: item.body?.visual || item.body?.script || '',
               text: item.body?.textOverlay || item.body?.text_overlay || item.body?.text || '',
               voice: item.body?.voice || '',
             },
             cta: {
-              script: item.cta?.script || '',
+              script: item.cta?.script || item.cta?.visual || '',
+              visual: item.cta?.visual || item.cta?.script || '',
               voice: item.cta?.voice || '',
               text: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
+              textOverlay: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
               endCard: item.cta?.endCard || item.cta?.end_card || '',
             },
           },
@@ -349,9 +629,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               psp: filters.solution[0] || app.name,
             },
             explanation: `Video ${duration} kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
-            hook: { visual: 'Cận cảnh tay cầm điện thoại', text: filters.painPoint[0] || 'Bạn có biết?', voice: `"${filters.painPoint[0] || 'Điều gì sẽ xảy ra nếu...'}"` },
-            body: { visual: `Mở app ${app.name}, demo tính năng`, text: `${filters.solution[0] || 'Tính năng chính'}`, voice: `"Chỉ cần 1 phút với ${app.name}"` },
-            cta: { voice: '"Tải ngay link ở bio!"', text: `Tải ${app.name} Miễn Phí`, endCard: `${app.name} - Tải miễn phí` },
+            hook: {
+              visual: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
+              script: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
+              text: filters.painPoint[0] || 'Bạn có biết?',
+              textOverlay: filters.painPoint[0] || 'Bạn có biết?',
+              voice: `"${filters.painPoint[0] || 'Điều gì đang không ổn ở đây vậy?'}"`,
+            },
+            body: {
+              visual: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
+              script: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
+              text: `${filters.solution[0] || 'Tính năng chính'}`,
+              textOverlay: `${filters.solution[0] || 'Tính năng chính'}`,
+              voice: `"Chỉ cần thử trên ảnh thật là thấy ngay hướng đi."`,
+            },
+            cta: {
+              visual: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
+              script: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
+              voice: '"Thử ngay trước khi chốt style."',
+              text: `Thử ${app.name}`,
+              textOverlay: `Thử ${app.name}`,
+              endCard: `${app.name} - Tải miễn phí`,
+            },
           },
         }));
       }
@@ -412,11 +711,32 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const handleCopy = (idea: GeneratedIdea) => {
     const c = idea.content as any;
     const fw = c.framework;
-    const hookScript = c.hook?.script || c.hook?.visual || '';
-    const bodyScript = c.body?.script || c.body?.visual || '';
-    const ctaScript = c.cta?.script || '';
-    const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n${hookScript}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY (10-25s)\n${bodyScript}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA (3-5s)\n${ctaScript}\n[TEXT OVERLAY] ${c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
+    const hookVisual = c.hook?.visual || c.hook?.script || '';
+    const bodyVisual = c.body?.visual || c.body?.script || '';
+    const ctaVisual = c.cta?.visual || c.cta?.script || '';
+    const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n[VISUAL] ${hookVisual}\n[VOICE] ${c.hook?.voice || ''}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY (10-25s)\n[VISUAL] ${bodyVisual}\n[VOICE] ${c.body?.voice || ''}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA (3-5s)\n[VISUAL] ${ctaVisual}\n[VOICE] ${c.cta?.voice || ''}\n[TEXT OVERLAY] ${c.cta?.textOverlay || c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
     navigator.clipboard.writeText(copyText);
+  };
+
+  const cleanPreviewText = (value: unknown) =>
+    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+  const truncatePreviewText = (value: unknown, limit = 150) => {
+    const text = cleanPreviewText(value);
+    if (text.length <= limit) return text;
+    return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const toggleIdeaSet = (
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+    key: string
+  ) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const startEditIdea = (idea: GeneratedIdea) => {
@@ -427,7 +747,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       explanation: c.explanation || '',
       hook: { script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', visual: c.hook?.visual || '', text: c.hook?.text || '', voice: c.hook?.voice || '' },
       body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', visual: c.body?.visual || '', text: c.body?.text || '', voice: c.body?.voice || '' },
-      cta: { script: c.cta?.script || '', voice: c.cta?.voice || '', text: c.cta?.text || '', endCard: c.cta?.endCard || '' },
+      cta: { script: c.cta?.script || '', visual: c.cta?.visual || '', voice: c.cta?.voice || '', text: c.cta?.text || '', textOverlay: c.cta?.textOverlay || '', endCard: c.cta?.endCard || '' },
     });
   };
 
@@ -449,18 +769,44 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer(null);
   };
 
-  // ===== SEASONAL EVENTS =====
-  const SEASONS: Record<string, { label: string; icon: string; months: string; events: string[]; visualInsights: { costumes: string[]; behaviors: string[]; colors: string[]; props: string[]; moods: string[] } }> = {
-    spring: { label: 'Xuân', icon: '🌸', months: 'Mar – May', events: ['Easter', 'St Patrick', "Mother's Day", 'Earth Day', 'April Fools'], visualInsights: { costumes: ['Pastel outfits', 'Floral patterns', 'Easter bunny ears', 'Light layers', 'Rain jackets'], behaviors: ['Spring cleaning', 'Outdoor picnics', 'Gardening', 'Family gatherings', 'Window shopping'], colors: ['Pastel pink', 'Mint green', 'Lavender', 'Soft yellow', 'Sky blue'], props: ['Flowers', 'Easter eggs', 'Butterflies', 'Garden tools', 'Baskets'], moods: ['Renewal', 'Fresh start', 'Hope', 'Joy', 'Optimism'] } },
-    summer: { label: 'Hè', icon: '☀️', months: 'Jun – Aug', events: ['Summer Sale', 'Independence Day (US)', 'Back to School', "Father's Day"], visualInsights: { costumes: ['Swimwear', 'Sunglasses', 'Tank tops', 'Shorts', 'Hats & caps'], behaviors: ['Beach trips', 'BBQ parties', 'Road trips', 'Late-night hangouts', 'Ice cream runs'], colors: ['Bright orange', 'Ocean blue', 'Coral', 'Lime green', 'Sunset gold'], props: ['Sunscreen', 'Pool floats', 'Surfboards', 'Popsicles', 'Camping gear'], moods: ['Freedom', 'Adventure', 'Relaxation', 'FOMO', 'Carefree'] } },
-    autumn: { label: 'Thu', icon: '🍂', months: 'Sep – Nov', events: ['Halloween', 'Thanksgiving', 'Black Friday', 'Cyber Monday', 'Singles Day 11/11'], visualInsights: { costumes: ['Cozy sweaters', 'Scarves', 'Boots', 'Halloween costumes', 'Leather jackets'], behaviors: ['Pumpkin spice shopping', 'Binge-watching', 'Early holiday prep', 'Cozy nights in', 'Trick-or-treating'], colors: ['Burnt orange', 'Deep red', 'Golden yellow', 'Burgundy', 'Forest green'], props: ['Pumpkins', 'Fall leaves', 'Candles', 'Blankets', 'Mugs'], moods: ['Nostalgia', 'Cozy', 'Urgency (deals)', 'Excitement', 'Gratitude'] } },
-    winter: { label: 'Đông', icon: '❄️', months: 'Dec – Feb', events: ['Christmas', 'New Year', "Valentine's Day", 'Lunar New Year', 'Super Bowl'], visualInsights: { costumes: ['Winter coats', 'Ugly sweaters', 'Beanies', 'Scarves & gloves', 'Formal party wear'], behaviors: ['Gift shopping', 'New Year resolutions', 'Indoor activities', 'Family dinners', 'Hot cocoa nights'], colors: ['Red & green', 'Silver & gold', 'Icy blue', 'White & cream', 'Deep purple'], props: ['Gift boxes', 'Christmas tree', 'Snowflakes', 'Fireworks', 'Heart decorations'], moods: ['Warmth', 'Generosity', 'Romance', 'Reflection', 'Celebration'] } },
-  };
-
   const [wizardStep, setWizardStep] = useState(0);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [selectedSeasonMonth, setSelectedSeasonMonth] = useState<string | null>(null);
   const [generatingAngles, setGeneratingAngles] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const seasonalVisualContext = useMemo<SeasonalVisualContext | null>(() => {
+    const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
+    const seasonKey = activeMonth?.season || selectedSeason;
+    if (!seasonKey) return null;
+
+    const season = SEASONS[seasonKey];
+    if (!season) return null;
+
+    const sourceVisual = activeMonth?.visualInsights || season.visualInsights;
+    const pick = (items: string[]) => {
+      const cleanItems = uniqueSeasonItems(items);
+      if (selectedSeasonInsights.size === 0) return cleanItems;
+      const focused = cleanItems.filter(item => selectedSeasonInsights.has(item));
+      return focused.length > 0 ? focused : cleanItems;
+    };
+
+    return {
+      seasonKey,
+      seasonLabel: season.label,
+      seasonIcon: season.icon,
+      monthId: activeMonth?.id || null,
+      monthLabel: activeMonth?.label || null,
+      monthRange: season.months,
+      events: (activeMonth?.events?.length ? activeMonth.events : season.events).filter(event => selectedSeasonEvents.has(event)),
+      costumes: pick(sourceVisual.costumes),
+      behaviors: pick(sourceVisual.behaviors),
+      colors: pick(sourceVisual.colors),
+      props: pick(sourceVisual.props),
+      moods: pick(sourceVisual.moods),
+      emphasis: Array.from(selectedSeasonInsights),
+    };
+  }, [selectedSeason, selectedSeasonMonth, selectedSeasonInsights, selectedSeasonEvents]);
 
   const WIZARD_STEPS = [
     { label: 'Core User & PSP', icon: Users, categories: ['coreUser', 'solution'], required: ['coreUser', 'solution'] },
@@ -536,9 +882,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       } else {
         // Fallback: generate angles locally from painpoints
         const fallbackAngles = selectedPainpoints.flatMap(pp => [
-          `Sợ hãi: ${pp}`,
-          `Giải pháp cho: ${pp}`,
-          `So sánh trước/sau: ${pp}`,
+          `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
+          `${pp} và mỗi lần nhìn vào nhà lại càng rối hơn`,
+          `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
         ]);
         setOptions(prev => {
           const existing = prev.angle || [];
@@ -549,9 +895,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     } catch {
       // Fallback on error
       const fallbackAngles = (filters.painPoint || []).flatMap(pp => [
-        `Sợ hãi: ${pp}`,
-        `Giải pháp cho: ${pp}`,
-        `So sánh trước/sau: ${pp}`,
+        `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
+        `${pp} và mỗi lần nhìn vào nhà lại càng rối hơn`,
+        `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
       ]);
       setOptions(prev => {
         const existing = prev.angle || [];
@@ -727,101 +1073,95 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             </div>
           </div>
 
-          {/* Seasonal Events — Expanded */}
+          {/* Seasonal Events */}
           <div className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 p-5">
-            <h3 className="text-xs font-bold text-violet-600 uppercase mb-3 flex items-center gap-2">📅 Sự kiện theo mùa</h3>
-            <div className="flex gap-2 mb-3">
-              {Object.entries(SEASONS).map(([key, season]) => (
-                <button key={key} onClick={() => {
-                  if (selectedSeason === key) {
-                    setSelectedSeason(null);
-                    setSelectedSeasonInsights(new Set());
-                    setIdeaDescription(prev => {
-                      // Remove all season-related text
-                      return Object.values(SEASONS).reduce((txt, s) => {
-                        return txt.replace(new RegExp(`\\[${s.icon}[^\\]]*\\][^\\n]*`, 'g'), '').trim();
-                      }, prev);
-                    });
-                  } else {
-                    setSelectedSeason(key);
-                    setSelectedSeasonInsights(new Set());
-                    const events = season.events.join(', ');
-                    setIdeaDescription(prev => {
-                      const cleaned = Object.values(SEASONS).reduce((txt, s) => {
-                        return txt.replace(new RegExp(`\\[${s.icon}[^\\]]*\\][^\\n]*`, 'g'), '').trim();
-                      }, prev);
-                      return cleaned ? `${cleaned}\n[${season.icon} ${season.label}] ${events}` : `[${season.icon} ${season.label}] ${events}`;
-                    });
-                  }
-                }}
-                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all flex flex-col items-center gap-1 ${selectedSeason === key
-                    ? 'bg-white text-violet-700 border-2 border-violet-400 shadow-md'
-                    : 'bg-white/50 text-gray-500 border border-gray-200 hover:bg-white hover:border-violet-300'
-                    }`}>
-                  <span className="text-lg">{season.icon}</span>
-                  <span>{season.label}</span>
-                  <span className="text-[10px] font-normal text-gray-400">{season.months}</span>
-                </button>
-              ))}
+            <h3 className="text-xs font-bold text-violet-600 uppercase mb-3 flex items-center gap-2">📅 Sự kiện theo tháng</h3>
+            <div className="grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-12 gap-2 mb-4">
+              {CALENDAR_MONTH_ORDER
+                .map(monthId => SEASON_MONTHS.find(month => month.id === monthId))
+                .filter((month): month is MonthVisualConfig => Boolean(month))
+                .map(month => {
+                  const isActive = selectedSeasonMonth === month.id;
+                  return (
+                    <button key={month.id} onClick={() => {
+                      if (isActive) {
+                        setSelectedSeason(null);
+                        setSelectedSeasonMonth(null);
+                      } else {
+                        setSelectedSeason(month.season);
+                        setSelectedSeasonMonth(month.id);
+                      }
+                      setSelectedSeasonInsights(new Set());
+                      setSelectedSeasonEvents(new Set());
+                    }}
+                      className={`rounded-lg border px-2 py-2 text-xs font-bold transition-all ${isActive
+                        ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300 hover:bg-violet-50'
+                        }`}>
+                      {month.label.replace('Tháng ', 'T')}
+                    </button>
+                  );
+                })}
             </div>
-            {selectedSeason && (() => {
-              const season = SEASONS[selectedSeason];
-              const insightGroups = [
-                { key: 'events', label: '🎉 Sự kiện', items: season.events, color: 'violet' },
-                { key: 'costumes', label: '👗 Trang phục', items: season.visualInsights.costumes, color: 'pink' },
-                { key: 'behaviors', label: '🎭 Hành vi', items: season.visualInsights.behaviors, color: 'blue' },
-                { key: 'colors', label: '🎨 Màu sắc', items: season.visualInsights.colors, color: 'amber' },
-                { key: 'props', label: '🎬 Props', items: season.visualInsights.props, color: 'emerald' },
-                { key: 'moods', label: '💫 Mood', items: season.visualInsights.moods, color: 'purple' },
-              ];
-              const toggleInsight = (item: string) => {
-                const next = new Set(selectedSeasonInsights);
-                if (next.has(item)) next.delete(item); else next.add(item);
-                setSelectedSeasonInsights(next);
-                // Update ideaDescription with selected insights
-                const allSelected = Array.from(next);
-                const events = season.events.join(', ');
-                const insightsText = allSelected.length > 0 ? `\n[Visual Insights] ${allSelected.join(', ')}` : '';
-                setIdeaDescription(prev => {
-                  let cleaned = prev.replace(/\[Visual Insights\][^\n]*/g, '').trim();
-                  cleaned = Object.values(SEASONS).reduce((txt, s) => {
-                    return txt.replace(new RegExp(`\\[${s.icon}[^\\]]*\\][^\\n]*`, 'g'), '').trim();
-                  }, cleaned);
-                  return `${cleaned ? cleaned + '\n' : ''}[${season.icon} ${season.label}] ${events}${insightsText}`.trim();
-                });
-              };
-              return (
-                <div className="space-y-3 animate-in fade-in duration-200">
-                  {insightGroups.map(group => (
-                    <div key={group.key}>
-                      <span className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">{group.label}</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {group.items.map(item => {
-                          const isSelected = selectedSeasonInsights.has(item);
-                          return (
-                            <button key={item} onClick={() => group.key !== 'events' ? toggleInsight(item) : undefined}
-                              className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
-                                group.key === 'events'
-                                  ? 'bg-white text-violet-600 border-violet-200 cursor-default'
-                                  : isSelected
-                                    ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
-                                    : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'
-                              }`}>
-                              {group.key === 'events' ? `🎉 ${item}` : item}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                  {selectedSeasonInsights.size > 0 && (
-                    <div className="bg-white rounded-lg px-3 py-2 border border-indigo-200 text-xs text-indigo-600 font-medium">
-                      ✅ Đã chọn {selectedSeasonInsights.size} visual insights — sẽ kết hợp vào prompt AI
-                    </div>
-                  )}
+
+            {seasonalVisualContext && (
+              <div className="space-y-2 animate-in fade-in duration-200">
+                {(() => {
+                  const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
+                  const availableEvents = activeMonth?.events || [];
+                  return (
+                    <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">Mùa tự nhận</span>
+                  <span className="text-xs font-bold text-violet-700">
+                    {seasonalVisualContext.seasonIcon} {seasonalVisualContext.seasonLabel}
+                    {seasonalVisualContext.monthLabel ? ` / ${seasonalVisualContext.monthLabel}` : ''}
+                  </span>
                 </div>
-              );
-            })()}
+                <div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">🎉 Sự kiện tùy chọn</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSeasonEvents(new Set())}
+                      className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${selectedSeasonEvents.size === 0
+                        ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                        : 'bg-white text-gray-500 border-gray-200 hover:border-violet-300 hover:bg-violet-50'
+                        }`}
+                    >
+                      Không chọn sự kiện
+                    </button>
+                    {availableEvents.map(event => {
+                      const isSelected = selectedSeasonEvents.has(event);
+                      return (
+                        <button
+                          key={event}
+                          type="button"
+                          onClick={() => setSelectedSeasonEvents(prev => {
+                            const next = new Set(prev);
+                            if (next.has(event)) next.delete(event);
+                            else next.add(event);
+                            return next;
+                          })}
+                          className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${isSelected
+                            ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                            : 'bg-white text-violet-600 border-violet-200 hover:bg-violet-50 hover:border-violet-300'
+                            }`}
+                        >
+                          🎉 {event}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    {selectedSeasonEvents.size === 0 ? 'Không chọn sự kiện nào: AI chỉ dùng tháng/mùa, không ép event cụ thể.' : `Đang áp dụng: ${Array.from(selectedSeasonEvents).join(', ')}`}
+                  </p>
+                </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           {/* Import Trending */}
@@ -1000,21 +1340,31 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           {results.map((idea, idx) => {
             const c = idea.content as any;
             const isEditing = editingIdea === idea.id;
+            const ideaKey = idea.id || `idea-${idx}`;
+            const isExpanded = expandedIdeas.has(ideaKey);
+            const isFavorite = favoriteIdeas.has(ideaKey);
+            const isApproved = approvedIdeas.has(ideaKey);
+            const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
+            const hookVisual = hookData?.visual || hookData?.script || '';
+            const hookVoice = hookData?.voice || '';
+            const hookText = hookData?.textOverlay || hookData?.text || '';
+            const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
             return (
-              <div key={idea.id || idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
-                <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500 w-full" />
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
+              <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
+                <div className="p-4">
+                  <div className="flex justify-between items-start gap-3 mb-3">
                     <div className="flex-1 min-w-0">
                       {isEditing ? (
                         <input value={editBuffer?.title || ''} onChange={e => setEditBuffer({ ...editBuffer, title: e.target.value })}
-                          className="font-bold text-lg text-gray-800 mb-1 w-full border-b-2 border-indigo-300 focus:outline-none bg-transparent" />
+                          className="font-bold text-base text-gray-800 mb-1 w-full border-b-2 border-indigo-300 focus:outline-none bg-transparent" />
                       ) : (
-                        <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title}</h4>
+                        <h4 className="font-bold text-base text-gray-900 leading-snug mb-1">{idea.title}</h4>
                       )}
                       <div className="flex gap-2 flex-wrap">
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
-                        <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-400 rounded">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
+                        <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
+                        <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
+                        <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{idea.duration || '30s'}</span>
+                        {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
                       </div>
                     </div>
                     <div className="flex gap-1">
@@ -1043,13 +1393,93 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   </div>
 
-                  {/* Explanation */}
-                  {isEditing ? (
-                    <textarea value={editBuffer?.explanation || ''} onChange={e => setEditBuffer({ ...editBuffer, explanation: e.target.value })}
-                      className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
-                  ) : (
-                    <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
-                  )}
+                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-3">
+                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2">Hook (3-5s)</span>
+                    {isEditing ? (
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
+                          <textarea value={hookData?.visual || hookData?.script || ''}
+                            onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, visual: e.target.value, script: e.target.value } })}
+                            className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-24 bg-white mt-1"
+                            placeholder="Mô tả cảnh quay / hành động / camera" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
+                          <textarea value={hookData?.voice || ''}
+                            onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, voice: e.target.value } })}
+                            className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-20 bg-white mt-1"
+                            placeholder="Lời nhân vật nói" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
+                          <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mt-1">{hookVisual || 'Hook visual will appear here.'}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
+                          <p className="text-sm text-gray-800 mt-1">{hookVoice || '—'}</p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-3">
+                      <span className="text-[10px] font-bold text-amber-600 uppercase">Text Overlay</span>
+                      {isEditing ? (
+                        <input value={hookData?.textOverlay || hookData?.text || ''}
+                          onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, textOverlay: e.target.value, text: e.target.value } })}
+                          className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-red-200 bg-white mt-1" />
+                      ) : (
+                        <p className="text-sm text-gray-800 font-bold mt-0.5">{hookText || '-'}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleIdeaSet(setExpandedIdeas, ideaKey)}
+                    className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 mb-3 flex items-center gap-1"
+                  >
+                    {isExpanded ? 'Hide details' : 'More details'}
+                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+
+                  <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => toggleIdeaSet(setApprovedIdeas, ideaKey)}
+                      className={`flex-1 h-8 rounded-md border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${isApproved ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      <Video size={13} /> {isApproved ? 'Approved' : 'Approve for Video'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
+                      className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                      title="Favorite"
+                    >
+                      <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(idea)}
+                      className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
+                      title="Copy"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  </div>
+
+                  {(isExpanded || isEditing || refiningIdea === idea.id) && (
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      {/* Explanation */}
+                      {isEditing ? (
+                        <textarea value={editBuffer?.explanation || ''} onChange={e => setEditBuffer({ ...editBuffer, explanation: e.target.value })}
+                          className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
+                      ) : (
+                        <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
+                      )}
 
                   {/* AI Refine Panel */}
                   {refiningIdea === idea.id && !isEditing && (
@@ -1085,9 +1515,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                                 ...idea.content,
                                 framework: refined.framework || (idea.content as any).framework,
                                 explanation: refined.explanation || (idea.content as any).explanation,
-                                hook: refined.hook ? { script: refined.hook.script || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.script || '', text: refined.hook.textOverlay || '', voice: '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
-                                body: refined.body ? { script: refined.body.script || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.script || '', text: refined.body.textOverlay || '', voice: '', viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
-                                cta: refined.cta ? { script: refined.cta.script || '', voice: '', text: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
+                                hook: refined.hook ? { script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', voice: refined.hook.voice || '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
+                                body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', voice: refined.body.voice || '', viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
+                                cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', voice: refined.cta.voice || '', text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
                               };
                               const newTitle = refined.title || idea.title;
                               await dbService.updateIdeaContent(idea.id, newTitle, newContent);
@@ -1118,13 +1548,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   )}
 
-                  {/* Sections: HOOK, BODY, CTA — unified script format */}
-                  {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
-                  { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
+                  {/* Details: Body + CTA. Hook stays visible above. */}
+                  {[{ key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
                   ].map(sec => {
                     const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
-                    const scriptContent = secData?.script || secData?.visual || '';
+                    const visualContent = secData?.visual || secData?.script || '';
+                    const voiceContent = secData?.voice || '';
                     const textOverlay = secData?.textOverlay || secData?.text || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
                     const viTranslation = secData?.viTranslation || '';
@@ -1132,14 +1562,34 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                         <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
 
-                        {/* Script — unified storyboard */}
                         {isEditing ? (
-                          <textarea value={secData?.script || secData?.visual || ''}
-                            onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], script: e.target.value, visual: e.target.value } })}
-                            className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-32 bg-white mb-2"
-                            placeholder="Kịch bản liền mạch: visual + [VOICE] + [TEXT OVERLAY] + [SFX]" />
+                          <div className="space-y-3 mb-3">
+                            <div>
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
+                              <textarea value={secData?.visual || secData?.script || ''}
+                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], visual: e.target.value, script: e.target.value } })}
+                                className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-28 bg-white mt-1"
+                                placeholder="Mô tả cảnh quay / thao tác / diễn biến" />
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
+                              <textarea value={secData?.voice || ''}
+                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], voice: e.target.value } })}
+                                className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white mt-1"
+                                placeholder="Lời nhân vật nói / CTA voice" />
+                            </div>
+                          </div>
                         ) : (
-                          <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
+                          <div className="space-y-3 mb-3">
+                            <div>
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
+                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mt-1">{visualContent || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
+                              <p className="text-sm text-gray-800 mt-1 whitespace-pre-line">{voiceContent || '—'}</p>
+                            </div>
+                          </div>
                         )}
 
                         {/* Vietnamese Translation */}
@@ -1147,36 +1597,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                           <div className="mb-3 bg-white/60 rounded-lg px-3 py-2 border border-gray-200">
                             <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
                             <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{viTranslation}</p>
-                          </div>
-                        )}
-
-                        {/* Hook Analysis — only for hook section */}
-                        {sec.key === 'hook' && !isEditing && (secData?.viewerProfile || secData?.viewerEmotion || secData?.painpointImpact) && (
-                          <div className="mb-3 space-y-2">
-                            {secData?.viewerProfile && (
-                              <div className="bg-purple-50 rounded-lg px-3 py-2 border border-purple-200">
-                                <span className="text-[10px] font-bold text-purple-500 uppercase">👁️ Ai đang xem?</span>
-                                <p className="text-xs text-gray-700 mt-0.5">{secData.viewerProfile}</p>
-                              </div>
-                            )}
-                            {secData?.viewerEmotion && (
-                              <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
-                                <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
-                                <p className="text-xs text-gray-700 mt-0.5">{secData.viewerEmotion}</p>
-                              </div>
-                            )}
-                            {secData?.painpointImpact && (
-                              <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
-                                <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
-                                <p className="text-xs text-gray-700 mt-0.5">{secData.painpointImpact}</p>
-                              </div>
-                            )}
-                            {secData?.whyTheyStopScrolling && (
-                              <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
-                                <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
-                                <p className="text-xs text-gray-700 font-semibold mt-0.5">{secData.whyTheyStopScrolling}</p>
-                              </div>
-                            )}
                           </div>
                         )}
 
@@ -1208,6 +1628,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       </div>
                     );
                   })}
+                    </div>
+                  )}
                 </div>
               </div>
             );
