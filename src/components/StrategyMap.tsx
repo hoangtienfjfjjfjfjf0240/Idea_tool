@@ -19,37 +19,6 @@ interface TreeNode {
   monitoring: number;
 }
 
-interface StrategyBranch {
-  key: string;
-  baseKey: string;
-  filters: Partial<FilterState>;
-  coreUser: string;
-  psp: string;
-  emotion: string;
-  visual: string;
-  painPoint: string;
-  angle: string;
-  ideas: any[];
-  ideaCount: number;
-  wins: number;
-  fails: number;
-  monitoring: number;
-}
-
-interface StrategyGroup {
-  key: string;
-  coreUser: string;
-  psp: string;
-  emotion: string;
-  visual: string;
-  painPoint: string;
-  branches: StrategyBranch[];
-  ideaCount: number;
-  wins: number;
-  fails: number;
-  monitoring: number;
-}
-
 // ===== Layout constants =====
 const NODE_W = 176;
 const NODE_H = 76;
@@ -194,11 +163,6 @@ function normalizeFilterSnapshot(value: unknown): Partial<FilterState> {
   ) as Partial<FilterState>;
 }
 
-function filterLabel(filters: Partial<FilterState>, key: keyof FilterState, fallback = 'Chung'): string {
-  const values = filters[key];
-  return Array.isArray(values) && values.length > 0 ? values.join(' + ') : fallback;
-}
-
 export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = false, onCreateFromBranch }) => {
   const [sessions, setSessions] = useState<IdeaSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,8 +172,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [selectedWeek, setSelectedWeek] = useState<string>('all');
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [containerWidth, setContainerWidth] = useState(900);
-  const [viewMode, setViewMode] = useState<'compact' | 'tree'>('compact');
-  const [selectedBranchKey, setSelectedBranchKey] = useState<string | null>(null);
   const treeContainerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -237,7 +199,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   }, []);
 
   useEffect(() => {
-    if (viewMode !== 'tree') return;
+    if (loading) return;
 
     const node = treeContainerRef.current;
     if (!node) return;
@@ -253,7 +215,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
     window.addEventListener('resize', updateWidth);
     return () => window.removeEventListener('resize', updateWidth);
-  }, [viewMode]);
+  }, [loading]);
 
   // ===== Full weekly timeline: current week → end of 2026 =====
   const allWeeks = useMemo(() => generateWeekTimeline(), []);
@@ -302,95 +264,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     if (selectedWeek === 'all') return sessions;
     return sessions.filter(s => getWeekKey(s.createdAt) === selectedWeek);
   }, [sessions, selectedWeek]);
-
-  const strategyBranches = useMemo((): StrategyBranch[] => {
-    const map = new Map<string, StrategyBranch>();
-
-    filteredSessions.forEach(session => {
-      session.ideas.forEach((idea: any) => {
-        const filters = normalizeFilterSnapshot(idea.filters_snapshot || session.filters);
-        const coreUser = filterLabel(filters, 'coreUser');
-        const psp = filterLabel(filters, 'solution');
-        const emotion = filterLabel(filters, 'emotion');
-        const visual = filterLabel(filters, 'visualType');
-        const painPoint = filterLabel(filters, 'painPoint');
-        const angle = filterLabel(filters, 'angle', 'Chưa có angle');
-        const baseKey = [coreUser, psp, emotion, visual, painPoint].join('|||');
-        const key = `${baseKey}|||${angle}`;
-
-        if (!map.has(key)) {
-          map.set(key, {
-            key,
-            baseKey,
-            filters,
-            coreUser,
-            psp,
-            emotion,
-            visual,
-            painPoint,
-            angle,
-            ideas: [],
-            ideaCount: 0,
-            wins: 0,
-            fails: 0,
-            monitoring: 0,
-          });
-        }
-
-        const branch = map.get(key)!;
-        branch.ideas.push(idea);
-        branch.ideaCount++;
-
-        const result = ideaResults[idea.id] || idea.result;
-        if (result === 'win') branch.wins++;
-        if (result === 'failed') branch.fails++;
-        if (result === 'monitoring') branch.monitoring++;
-      });
-    });
-
-    return [...map.values()].sort((a, b) => b.ideaCount - a.ideaCount);
-  }, [filteredSessions, ideaResults]);
-
-  const compactGroups = useMemo((): StrategyGroup[] => {
-    const map = new Map<string, StrategyGroup>();
-
-    strategyBranches.forEach(branch => {
-      if (!map.has(branch.baseKey)) {
-        map.set(branch.baseKey, {
-          key: branch.baseKey,
-          coreUser: branch.coreUser,
-          psp: branch.psp,
-          emotion: branch.emotion,
-          visual: branch.visual,
-          painPoint: branch.painPoint,
-          branches: [],
-          ideaCount: 0,
-          wins: 0,
-          fails: 0,
-          monitoring: 0,
-        });
-      }
-
-      const group = map.get(branch.baseKey)!;
-      group.branches.push(branch);
-      group.ideaCount += branch.ideaCount;
-      group.wins += branch.wins;
-      group.fails += branch.fails;
-      group.monitoring += branch.monitoring;
-    });
-
-    return [...map.values()]
-      .map(group => ({
-        ...group,
-        branches: group.branches.sort((a, b) => b.ideaCount - a.ideaCount),
-      }))
-      .sort((a, b) => b.ideaCount - a.ideaCount);
-  }, [strategyBranches]);
-
-  const selectedBranch = useMemo(
-    () => strategyBranches.find(branch => branch.key === selectedBranchKey) || null,
-    [strategyBranches, selectedBranchKey]
-  );
 
   // Build tree: root → coreUser → psp → emotion → visual → painPoint → angle
   // Skip levels where filter value is empty (no "Chung" nodes)
@@ -503,7 +376,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
   // Click node → highlight path + show ideas for painpoint
   const handleNodeClick = (node: TreeNode) => {
-    setSelectedBranchKey(null);
     if (node.level === 'root') { setActivePath([]); setSelectedNode(null); return; }
     const findPath = (current: TreeNode, target: string, path: string[]): string[] | null => {
       const np = [...path, current.id];
@@ -534,11 +406,11 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const selectedTreeFilters = selectedNode
     ? selectedNode.filters || normalizeFilterSnapshot(selectedNode.ideas[0]?.filters_snapshot)
     : null;
-  const activeCreateFilters = selectedBranch?.filters || selectedTreeFilters;
+  const activeCreateFilters = selectedTreeFilters;
   const canCreateFromBranch = !!activeCreateFilters && Object.keys(activeCreateFilters).length > 0;
-  const detailIdeas = selectedBranch?.ideas || selectedNode?.ideas || [];
-  const detailLabel = selectedBranch?.angle || selectedNode?.label || '';
-  const detailIdeaCount = selectedBranch?.ideaCount || selectedNode?.ideaCount || detailIdeas.length;
+  const detailIdeas = selectedNode?.ideas || [];
+  const detailLabel = selectedNode?.label || '';
+  const detailIdeaCount = selectedNode?.ideaCount || detailIdeas.length;
 
   if (loading) {
     if (inline) return <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-indigo-400" /></div>;
@@ -601,7 +473,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                     { key: currentWeekKey, label: 'Tuần này', icon: '📌' },
                     { key: 'all', label: 'Tất cả', icon: '📊' },
                   ].map(q => (
-                    <button key={q.key} onClick={() => { setSelectedWeek(q.key); setShowWeekDropdown(false); setSelectedNode(null); setSelectedBranchKey(null); setActivePath([]); }}
+                    <button key={q.key} onClick={() => { setSelectedWeek(q.key); setShowWeekDropdown(false); setSelectedNode(null); setActivePath([]); }}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                         selectedWeek === q.key
                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
@@ -632,7 +504,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                         const isSelected = selectedWeek === w.key;
                         return (
                           <button key={w.key}
-                            onClick={() => { setSelectedWeek(w.key); setShowWeekDropdown(false); setSelectedNode(null); setSelectedBranchKey(null); setActivePath([]); }}
+                            onClick={() => { setSelectedWeek(w.key); setShowWeekDropdown(false); setSelectedNode(null); setActivePath([]); }}
                             className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all ${
                               isSelected
                                 ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200'
@@ -670,39 +542,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
-          {[
-            { key: 'compact' as const, label: 'Dễ nhìn', hint: 'Gom theo chiến lược' },
-            { key: 'tree' as const, label: 'Cây đầy đủ', hint: 'Soi đúng nhánh' },
-          ].map(mode => (
-            <button
-              key={mode.key}
-              onClick={() => {
-                setViewMode(mode.key);
-                if (mode.key === 'compact') {
-                  setSelectedNode(null);
-                  setActivePath([]);
-                } else {
-                  setSelectedBranchKey(null);
-                }
-              }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                viewMode === mode.key
-                  ? 'bg-gray-900 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-              title={mode.hint}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-gray-400">
-          Dễ nhìn = nhóm theo filter chính, mỗi angle là một card. Cây đầy đủ = xem quan hệ cha-con.
-        </p>
-      </div>
-
       {/* Stats */}
       <div className={`grid gap-2 mb-4 ${inline ? 'grid-cols-4 md:grid-cols-8' : 'grid-cols-4 md:grid-cols-8'}`}>
         {[
@@ -736,80 +575,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       </div>
 
       {/* ===== TREE DIAGRAM — simple auto-fit ===== */}
-      {viewMode === 'compact' ? (
-        <div className="space-y-4">
-          {compactGroups.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm text-center py-16">
-              <p className="text-4xl mb-3">🗺️</p>
-              <p className="text-lg font-bold text-gray-400 mb-2">Chưa có dữ liệu chiến lược</p>
-              <p className="text-sm text-gray-400">Tạo ý tưởng với bộ lọc để bắt đầu xây dựng Strategy Map</p>
-            </div>
-          ) : (
-            compactGroups.map(group => (
-              <div key={group.key} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 md:p-5">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { label: 'Core', value: group.coreUser, color: 'bg-blue-50 text-blue-700 border-blue-100' },
-                      { label: 'PSP', value: group.psp, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-                      { label: 'Emotion', value: group.emotion, color: 'bg-violet-50 text-violet-700 border-violet-100' },
-                      { label: 'Visual', value: group.visual, color: 'bg-amber-50 text-amber-700 border-amber-100' },
-                      { label: 'Pain', value: group.painPoint, color: 'bg-rose-50 text-rose-700 border-rose-100' },
-                    ].map(item => (
-                      <span key={item.label} className={`rounded-full border px-3 py-1 text-[11px] font-bold ${item.color}`}>
-                        {item.label}: <span className="font-semibold">{item.value}</span>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs font-bold">
-                    <span className="rounded-full bg-gray-100 text-gray-600 px-3 py-1">{group.ideaCount} ideas</span>
-                    {group.wins > 0 && <span className="rounded-full bg-emerald-100 text-emerald-600 px-2.5 py-1">🏆 {group.wins}</span>}
-                    {group.fails > 0 && <span className="rounded-full bg-red-100 text-red-500 px-2.5 py-1">❌ {group.fails}</span>}
-                    {group.monitoring > 0 && <span className="rounded-full bg-amber-100 text-amber-600 px-2.5 py-1">👁 {group.monitoring}</span>}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mt-4">
-                  {group.branches.map(branch => {
-                    const active = selectedBranchKey === branch.key;
-                    return (
-                      <button
-                        key={branch.key}
-                        onClick={() => {
-                          setSelectedBranchKey(branch.key);
-                          setSelectedNode(null);
-                          setActivePath([]);
-                        }}
-                        className={`text-left rounded-2xl border p-4 transition-all ${
-                          active
-                            ? 'border-teal-400 bg-teal-50 shadow-md shadow-teal-100'
-                            : 'border-gray-200 bg-gray-50/60 hover:border-teal-200 hover:bg-white hover:shadow-sm'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wide font-bold text-teal-500 mb-1">Angle</p>
-                            <h4 className="text-sm font-extrabold text-gray-800 leading-snug line-clamp-2">{branch.angle}</h4>
-                          </div>
-                          <span className="shrink-0 rounded-full bg-white border border-gray-200 px-2.5 py-1 text-[11px] font-bold text-gray-600">
-                            {branch.ideaCount}
-                          </span>
-                        </div>
-                        <div className="mt-3 flex items-center gap-2 text-[10px] font-bold text-gray-400">
-                          {branch.wins > 0 && <span className="text-emerald-600">🏆 {branch.wins}</span>}
-                          {branch.fails > 0 && <span className="text-red-500">❌ {branch.fails}</span>}
-                          {branch.monitoring > 0 && <span className="text-amber-600">👁 {branch.monitoring}</span>}
-                          <span className="ml-auto text-teal-500">Xem ideas →</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      ) : (
       <div ref={treeContainerRef} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         {tree.children.length === 0 ? (
           <div className="text-center py-16">
@@ -963,7 +728,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           </div>
         )}
       </div>
-      )}
 
       {/* ===== SELECTED ANGLE → Ideas Detail ===== */}
       {detailIdeas.length > 0 && (
@@ -973,7 +737,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               🧭 {detailLabel}
               <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">{detailIdeaCount} ideas</span>
             </h3>
-            <button onClick={() => { setSelectedNode(null); setSelectedBranchKey(null); setActivePath([]); }}
+            <button onClick={() => { setSelectedNode(null); setActivePath([]); }}
               className="text-gray-400 hover:text-gray-600 text-sm font-medium px-3 py-1 hover:bg-gray-100 rounded-lg transition-colors">
               Đóng ✕
             </button>
