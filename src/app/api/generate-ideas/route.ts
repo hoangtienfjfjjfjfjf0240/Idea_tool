@@ -219,6 +219,89 @@ CÁCH DÙNG:
 - Nếu thị trường mục tiêu không hợp với tuyết/lạnh/ngày lễ Mỹ, hãy localize chi tiết mùa/sự kiện cho hợp văn hóa.`;
 }
 
+function buildBatchDiversityBlock(quantity: number, angle: string, angleIndex: number, totalAngles: number): string {
+  if (quantity <= 1) return '';
+
+  const lanes = [
+    'Idea 1: UGC/POV đời thường, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.',
+    'Idea 2: Reaction hoặc social interruption, có người/vật thứ hai làm tình huống đổi nhịp.',
+    'Idea 3: Split-screen hoặc reveal bất ngờ, mở bằng một blocking object/không gian khác hẳn idea 1.',
+    'Idea 4: ASMR/oddly satisfying, mở bằng texture/âm thanh/chuyển động nhỏ gây dừng scroll.',
+    'Idea 5: Comment-reply/social proof, mở bằng một câu hỏi hoặc phản ứng từ người khác.',
+  ].slice(0, quantity).join('\n');
+
+  return `
+[BATCH DIVERSITY CONTRACT — BẮT BUỘC CHO LẦN GEN NÀY]
+Bạn đang tạo ${quantity} ideas trong CÙNG MỘT batch${angle ? ` cho angle "${angle}"` : ''}${totalAngles > 1 ? ` (angle ${angleIndex}/${totalAngles})` : ''}.
+Các ideas KHÔNG được là 3 biến thể của cùng một cảnh.
+
+MỖI idea phải khác rõ ở ÍT NHẤT 4/6 trục:
+1. creativeType
+2. địa điểm/góc phòng/bối cảnh mở đầu
+3. hành động đầu tiên của nhân vật
+4. vật cản/props chính tạo painpoint
+5. camera reveal hoặc transition
+6. câu voice mở đầu + text overlay
+
+Nếu painpoint bắt buộc xoay quanh cùng một object/vấn đề, vẫn phải đổi hoàn cảnh, lý do không thể xử lý, camera reveal và payoff. Không được chỉ đổi vài chữ như "sàn ướt" thành "tay bận".
+
+Gán lane theo thứ tự:
+${lanes}
+
+TRƯỚC KHI OUTPUT, tự kiểm tra:
+- Không có 2 title cùng cấu trúc.
+- Không có 2 hook.visual cùng địa điểm + hành động mở đầu.
+- Không có 2 hook.voice cùng ý nói.
+- Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
+}
+
+function ideaSignature(idea: any): string {
+  return [
+    idea?.title,
+    idea?.creativeType,
+    idea?.hook?.visual,
+    idea?.hook?.voice,
+    idea?.hook?.textOverlay,
+    idea?.body?.visual,
+  ].filter(Boolean).join(' ');
+}
+
+function tokenSet(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .split(/[^a-z0-9]+/)
+      .filter(word => word.length > 3)
+  );
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const left = tokenSet(a);
+  const right = tokenSet(b);
+  if (left.size === 0 || right.size === 0) return 0;
+
+  let overlap = 0;
+  left.forEach(word => {
+    if (right.has(word)) overlap++;
+  });
+
+  return overlap / (left.size + right.size - overlap);
+}
+
+function hasNearDuplicateIdeas(ideas: any[]): boolean {
+  for (let i = 0; i < ideas.length; i++) {
+    for (let j = i + 1; j < ideas.length; j++) {
+      if (jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.62) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -354,9 +437,12 @@ Trả JSON array of strings. KHÔNG markdown.`;
     const seasonalVisualBlock = buildSeasonalVisualBlock(config?.seasonalVisualContext);
     const variationIndex = Number(config?.variationIndex || 0);
     const totalVariations = Number(config?.totalVariations || quantity);
+    const angleIndex = Number(config?.angleIndex || 1);
+    const totalAngles = Number(config?.totalAngles || 1);
     const variationBlock = variationIndex > 0
       ? `\n[VARIATION TRONG LẦN GEN HIỆN TẠI]\nĐây là idea ${variationIndex}/${totalVariations}. Phải khác các idea còn lại về tình huống mở đầu, hành động đầu tiên, creative type hoặc nhân vật phụ. Vẫn giữ ĐÚNG core user, painpoint, emotion, PSP, target market, month/season/event và output schema.\n`
       : '';
+    const diversityBlock = buildBatchDiversityBlock(quantity, angleContext, angleIndex, totalAngles);
 
     const prompt = `[ROLE] Bạn là Senior Creative Strategist chuyên tạo Production Brief cho Meta/TikTok Video Ads.
 Output của bạn PHẢI giống hệt một dòng trong Google Sheet production mà team editor đọc xong có thể quay/gen ngay — không cần hỏi thêm.
@@ -365,6 +451,7 @@ ${ideasBlock}
 ${trendingBlock}
 ${seasonalVisualBlock}
 ${variationBlock}
+${diversityBlock}
 
 [APP] "${appName}" — Category: "${appCategory || 'General'}"
 [PSP] ${featureContext}
@@ -653,9 +740,9 @@ Framework/explanation/phân tích = TIẾNG VIỆT. Voice/text overlay = ${targe
 }]`;
 
     console.log('[generate-ideas] Prompt length:', prompt.length, 'chars, model:', selectedModel || 'gemini-2.5-pro');
-    const text = await askAI(prompt, {
+    let text = await askAI(prompt, {
       model: resolveModel(selectedModel),
-      temperature: 0.8,
+      temperature: quantity > 1 ? 0.9 : 0.8,
       max_tokens: 16384,
       useCreativePersona: false
     });
@@ -665,15 +752,43 @@ Framework/explanation/phân tích = TIẾNG VIỆT. Voice/text overlay = ${targe
     }
     console.log('[generate-ideas] AI response length:', text.length, 'chars');
 
-    const parsed = parseJson(text);
+    let parsed = parseJson(text);
     if (!parsed) {
       console.error('[generate-ideas] Failed to parse:', text.substring(0, 300));
       return NextResponse.json({ error: 'Không parse được response. Thử lại.' }, { status: 500 });
     }
 
-    const arr = Array.isArray(parsed) ? parsed : [parsed];
+    let arr = Array.isArray(parsed) ? parsed : [parsed];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const valid = arr.filter((i: any) => i?.hook).slice(0, quantity);
+    let valid = arr.filter((i: any) => i?.hook).slice(0, quantity);
+
+    if (quantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid)) {
+      console.warn('[generate-ideas] Near-duplicate batch detected; retrying with stricter diversity prompt');
+      const retryText = await askAI(`${prompt}
+
+[RETRY — BATCH BỊ TRÙNG Ý]
+Batch trước có các hook quá giống nhau. Hãy tạo lại TOÀN BỘ ${quantity} ideas.
+Bắt buộc mỗi idea khác scene family: đổi địa điểm, nhân vật phụ, object blocker, opening action, camera reveal, voice mở đầu và creativeType.
+Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`, {
+        model: resolveModel(selectedModel),
+        temperature: 0.95,
+        max_tokens: 16384,
+        useCreativePersona: false
+      });
+
+      if (retryText) {
+        const retryParsed = parseJson(retryText);
+        const retryArr = Array.isArray(retryParsed) ? retryParsed : retryParsed ? [retryParsed] : [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const retryValid = retryArr.filter((i: any) => i?.hook).slice(0, quantity);
+        if (retryValid.length > 0 && !hasNearDuplicateIdeas(retryValid)) {
+          text = retryText;
+          parsed = retryParsed;
+          arr = retryArr;
+          valid = retryValid;
+        }
+      }
+    }
 
     if (valid.length === 0) {
       console.error('[generate-ideas] No valid ideas:', JSON.stringify(arr[0]).substring(0, 200));

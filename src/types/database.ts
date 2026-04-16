@@ -50,6 +50,7 @@ export interface GeneratedIdea {
 }
 
 export interface IdeaContent {
+  creativeType?: string;
   // 4 yếu tố framework
   framework: {
     coreUser: string;    // Chân dung user nhắm tới
