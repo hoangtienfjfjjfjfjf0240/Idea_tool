@@ -26,6 +26,7 @@ interface ChatAgentProps {
   app: AppProject;
   appContext: AppContextData;
   onIdeasGenerated?: (ideas: GeneratedIdea[]) => void;
+  onAppKnowledgeUpdated?: (knowledge: string) => void;
   onOpenIdeas?: () => void;
 }
 
@@ -36,7 +37,7 @@ const QUICK_PROMPTS = [
   { icon: <Zap size={14} />, text: 'Gợi ý hook viral cho app', color: '#ef4444' },
 ];
 
-export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGenerated, onOpenIdeas }) => {
+export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGenerated, onAppKnowledgeUpdated, onOpenIdeas }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -85,10 +86,21 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
         // If ideas were generated, save to DB and add to message
         let savedIdeas: GeneratedIdea[] | undefined;
         if (data.ideas && Array.isArray(data.ideas) && data.ideas.length > 0) {
+          const sessionId = crypto.randomUUID();
           const mapped = data.ideas.map((item: Record<string, unknown>) => ({
             title: (item.title as string) || 'Ý tưởng AI',
             duration: (item.duration as string) || '30s',
+            filtersSnapshot: ((item.selectedFilters as Record<string, string[]>) || {
+              coreUser: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).coreUser || '')].filter(Boolean) : [],
+              painPoint: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).painpoint || '')].filter(Boolean) : [],
+              solution: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).psp || '')].filter(Boolean) : [],
+              emotion: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).emotion || '')].filter(Boolean) : [],
+              angle: [],
+              targetMarket: [],
+              visualType: [(item.creativeType as string) || ''],
+            }),
             content: {
+              creativeType: (item.creativeType as string) || '',
               framework: (item.framework as IdeaContent['framework']) || { coreUser: '', painpoint: '', emotion: '', psp: '' },
               explanation: (item.explanation as string) || '',
               hook: (item.hook as IdeaContent['hook']) || { visual: '', text: '', voice: '' },
@@ -96,7 +108,7 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
               cta: (item.cta as IdeaContent['cta']) || { voice: '', text: '', endCard: '' },
             },
           }));
-          savedIdeas = await dbService.saveIdeas(app.id, mapped);
+          savedIdeas = await dbService.saveIdeas(app.id, mapped, sessionId);
           if (onIdeasGenerated && savedIdeas) onIdeasGenerated(savedIdeas);
 
           // Background learn
@@ -104,9 +116,17 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              appId: app.id, appName: app.name, appCategory: app.category,
-              newIdeas: mapped.slice(0, 5), existingKnowledge: app.app_knowledge || '',
+              appId: app.id,
+              appName: app.name,
+              appCategory: app.category,
+              sessionId,
+              existingKnowledge: app.app_knowledge || '',
             }),
+          }).then(async response => {
+            const learnData = await response.json().catch(() => null);
+            if (response.ok && learnData?.success && learnData.knowledge && onAppKnowledgeUpdated) {
+              onAppKnowledgeUpdated(learnData.knowledge);
+            }
           }).catch(() => {});
         }
 

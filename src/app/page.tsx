@@ -12,7 +12,7 @@ import { ChatAgent } from '@/components/ChatAgent';
 
 import { supabase } from '@/lib/supabase';
 import type { AppProject, FilterState, ScreenType } from '@/types/database';
-import { getHooks, getFilterOptions } from '@/lib/db';
+import { getHooks, getFilterOptions, getFeatures, getIdeas } from '@/lib/db';
 import { Loader2 } from 'lucide-react';
 
 export default function Home() {
@@ -23,6 +23,8 @@ export default function Home() {
   const [prefillFilters, setPrefillFilters] = useState<Partial<FilterState> | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
+  const [chatFeatures, setChatFeatures] = useState<string[]>([]);
+  const [chatRecentIdeas, setChatRecentIdeas] = useState<import('@/types/database').GeneratedIdea[]>([]);
   const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
   const [selectedModel, setSelectedModel] = useState<AIModel>(() => {
     if (typeof window !== 'undefined') {
@@ -69,8 +71,17 @@ export default function Home() {
   // Load ChatAgent context when app is selected
   useEffect(() => {
     if (selectedApp) {
-      getHooks(selectedApp.id).then(setChatHooks).catch(() => {});
-      getFilterOptions(selectedApp).then(setChatFilters).catch(() => {});
+      Promise.all([
+        getHooks(selectedApp.id),
+        getFilterOptions(selectedApp),
+        getFeatures(selectedApp.id),
+        getIdeas(selectedApp.id),
+      ]).then(([hooks, filters, features, ideas]) => {
+        setChatHooks(hooks);
+        setChatFilters(filters);
+        setChatFeatures(features.map(feature => feature.name));
+        setChatRecentIdeas(ideas.slice(0, 24));
+      }).catch(() => {});
     }
   }, [selectedApp?.id]);
 
@@ -205,11 +216,18 @@ export default function Home() {
           appContext={{
             name: selectedApp.name,
             category: selectedApp.category,
-            features: [],
+            features: chatFeatures,
             storeLink: selectedApp.store_link || undefined,
             appKnowledge: selectedApp.app_knowledge || undefined,
+            recentIdeas: chatRecentIdeas,
             hooks: chatHooks,
             filters: chatFilters,
+          }}
+          onIdeasGenerated={(ideas) => {
+            setChatRecentIdeas(prev => [...ideas, ...prev].slice(0, 24));
+          }}
+          onAppKnowledgeUpdated={(knowledge) => {
+            setSelectedApp(prev => prev ? { ...prev, app_knowledge: knowledge } : prev);
           }}
           onOpenIdeas={handleOpenIdeas}
         />
