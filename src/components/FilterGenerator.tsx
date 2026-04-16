@@ -13,6 +13,7 @@ interface FilterGeneratorProps {
   selectedModel?: AIModel;
   prefillFilters?: Partial<FilterState> | null;
   onPrefillConsumed?: () => void;
+  onAppKnowledgeUpdated?: (knowledge: string) => void;
 }
 
 interface CategoryConfig {
@@ -321,7 +322,7 @@ function saveCategories(appId: string, cats: CategoryConfig[]) {
   );
 }
 
-export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed }) => {
+export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed, onAppKnowledgeUpdated }) => {
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
   const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
@@ -732,20 +733,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           const tempIds = new Set(tempResults.map(t => t.id));
           setResults(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
           setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
-        }
-      }).catch(err => console.warn('Background DB save failed:', err));
 
-      fetch('/api/learn-app', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appId: app.id,
-          appName: app.name,
-          appCategory: app.category,
-          newIdeas: ideas.slice(0, 5),
-          existingKnowledge: app.app_knowledge || '',
-        }),
-      }).catch(err => console.warn('Background learning failed:', err));
+          return fetch('/api/learn-app', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              appId: app.id,
+              appName: app.name,
+              appCategory: app.category,
+              sessionId,
+              existingKnowledge: app.app_knowledge || '',
+            }),
+          }).then(async response => {
+            const data = await response.json().catch(() => null);
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.error || 'Background learning failed');
+            }
+            if (data.knowledge && onAppKnowledgeUpdated) {
+              onAppKnowledgeUpdated(data.knowledge);
+            }
+          });
+        }
+      }).catch(err => console.warn('Background DB save or learning failed:', err));
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       console.error('Generate failed:', err);

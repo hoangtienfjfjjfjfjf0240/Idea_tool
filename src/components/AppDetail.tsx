@@ -32,6 +32,8 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
   const [featureDesc, setFeatureDesc] = useState('');
   const [editingFeature, setEditingFeature] = useState<Feature | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [brainRefreshing, setBrainRefreshing] = useState(false);
+  const [brainError, setBrainError] = useState('');
 
   // Quick stats
   const [sessions, setSessions] = useState<IdeaSession[]>([]);
@@ -100,6 +102,35 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
     setSyncing(false);
   };
 
+  const handleRefreshBrain = async () => {
+    setBrainRefreshing(true);
+    setBrainError('');
+    try {
+      const res = await fetch('/api/learn-app', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appId: app.id,
+          appName: app.name,
+          appCategory: app.category,
+          existingKnowledge: app.app_knowledge || '',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'AI Brain learning failed');
+      }
+      if (onAppUpdated) {
+        onAppUpdated({ ...app, app_knowledge: data.knowledge });
+      }
+      await loadStats();
+    } catch (err) {
+      setBrainError(err instanceof Error ? err.message : 'Không học lại được AI Brain');
+    } finally {
+      setBrainRefreshing(false);
+    }
+  };
+
   const handleTabClick = (tab: AppTab) => {
     setActiveTab(tab);
   };
@@ -166,10 +197,25 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
               </p>
             </div>
           </div>
-          <div className={`px-4 py-1.5 rounded-full text-sm font-semibold ${app.app_knowledge ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-            {app.app_knowledge ? '✅ Active' : '⏹ Empty'}
+          <div className="flex items-center gap-2">
+            <div className={`px-4 py-1.5 rounded-full text-sm font-semibold ${app.app_knowledge ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+              {app.app_knowledge ? '✅ Active' : '⏹ Empty'}
+            </div>
+            <button
+              onClick={handleRefreshBrain}
+              disabled={brainRefreshing}
+              className="px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 disabled:opacity-50 flex items-center gap-2"
+            >
+              <RefreshCw size={14} className={brainRefreshing ? 'animate-spin' : ''} />
+              {brainRefreshing ? 'Đang học...' : 'Học lại toàn bộ'}
+            </button>
           </div>
         </div>
+        {brainError && (
+          <div className="mb-3 rounded-lg border border-red-100 bg-red-50 px-4 py-2 text-sm text-red-600">
+            {brainError}
+          </div>
+        )}
         {app.app_knowledge ? (
           <div className="p-4 bg-white/70 rounded-xl text-sm text-gray-600 whitespace-pre-wrap max-h-96 overflow-y-auto leading-relaxed border border-emerald-100">
             {app.app_knowledge}

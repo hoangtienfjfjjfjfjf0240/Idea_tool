@@ -137,6 +137,9 @@ export default function Home() {
           selectedModel={selectedModel}
           prefillFilters={prefillFilters}
           onPrefillConsumed={() => setPrefillFilters(null)}
+          onAppKnowledgeUpdated={(knowledge) => {
+            setSelectedApp(prev => prev ? { ...prev, app_knowledge: knowledge } : prev);
+          }}
         />
       );
     }
