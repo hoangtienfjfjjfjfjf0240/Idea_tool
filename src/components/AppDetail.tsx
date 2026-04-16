@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles, PenTool } from 'lucide-react';
-import type { AppProject, Feature, SyncLog, ScreenType } from '@/types/database';
+import type { AppProject, Feature, FilterState, SyncLog, ScreenType } from '@/types/database';
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
 import { StrategyMap } from '@/components/StrategyMap';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
@@ -19,9 +19,10 @@ interface AppDetailProps {
   onBack: () => void;
   onNavigate: (path: string) => void;
   onAppUpdated?: (app: AppProject) => void;
+  onCreateFromBranch?: (filters: Partial<FilterState>) => void;
 }
 
-export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, onAppUpdated }) => {
+export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, onAppUpdated, onCreateFromBranch }) => {
   const [activeTab, setActiveTab] = useState<AppTab>('overview');
   const [features, setFeatures] = useState<Feature[]>([]);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
@@ -138,6 +139,10 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
 
       {/* Strategy Map — inline tree diagram */}
       <StrategyMap app={app} onBack={() => {}} inline onCreateFromBranch={(filters) => {
+        if (onCreateFromBranch) {
+          onCreateFromBranch(filters);
+          return;
+        }
         onNavigate('f2.1');
       }} />
     </div>

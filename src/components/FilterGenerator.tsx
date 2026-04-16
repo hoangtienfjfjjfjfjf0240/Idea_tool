@@ -11,7 +11,7 @@ interface FilterGeneratorProps {
   currentScreen: ScreenType;
   setScreen: (s: ScreenType) => void;
   selectedModel?: AIModel;
-  prefillFilters?: { coreUser: string[]; emotion: string[]; painPoint: string[]; solution: string[] } | null;
+  prefillFilters?: Partial<FilterState> | null;
   onPrefillConsumed?: () => void;
 }
 
@@ -354,6 +354,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [trendingInput, setTrendingInput] = useState('');
   const [selectedSeasonInsights, setSelectedSeasonInsights] = useState<Set<string>>(new Set());
   const [selectedSeasonEvents, setSelectedSeasonEvents] = useState<Set<string>>(new Set());
+  const [wizardStep, setWizardStep] = useState(0);
+  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [selectedSeasonMonth, setSelectedSeasonMonth] = useState<string | null>(null);
+  const [generatingAngles, setGeneratingAngles] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const mergeOptionSelections = (existing: Record<string, string[]>, nextFilters: Partial<FilterState>) => {
+    const merged = { ...existing };
+    Object.entries(nextFilters).forEach(([key, raw]) => {
+      if (!Array.isArray(raw)) return;
+      const values = raw
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map(item => item.trim());
+      if (values.length === 0) return;
+      merged[key] = [...new Set([...(merged[key] || []), ...values])];
+    });
+    return merged;
+  };
 
   useEffect(() => {
     setCategories(loadCategories(app.id));
@@ -364,16 +382,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // Auto-fill from Strategy Map → xuyên suốt
   useEffect(() => {
     if (prefillFilters) {
+      const normalized = Object.fromEntries(
+        Object.entries(prefillFilters)
+          .map(([key, raw]) => {
+            if (!Array.isArray(raw)) return [key, []] as const;
+            const values = raw
+              .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+              .map(item => item.trim());
+            return [key, values] as const;
+          })
+          .filter(([, values]) => values.length > 0)
+      ) as Partial<FilterState>;
+
       setFilters(prev => ({
         ...prev,
-        coreUser: prefillFilters.coreUser || [],
-        emotion: prefillFilters.emotion || [],
-        painPoint: prefillFilters.painPoint || [],
-        solution: prefillFilters.solution || [],
-      }));
+        ...normalized,
+      } as FilterState));
+      setOptions(prev => mergeOptionSelections(prev, normalized));
+      setWizardStep(4);
+      setValidationError(null);
       onPrefillConsumed?.();
     }
-  }, [prefillFilters]);
+  }, [prefillFilters, onPrefillConsumed]);
 
   // Auto-load results from DB when entering results screen
   useEffect(() => {
@@ -391,7 +421,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const marketPresets = ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'];
     const dbMarket = fullOptions.targetMarket || [];
     const mergedMarket = [...new Set([...marketPresets, ...dbMarket])];
-    setOptions({ ...fullOptions, targetMarket: mergedMarket });
+    setOptions(prev => mergeOptionSelections({ ...fullOptions, targetMarket: mergedMarket }, prefillFilters || filters));
   };
 
   const loadHistory = async () => {
@@ -781,12 +811,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditingIdea(null);
     setEditBuffer(null);
   };
-
-  const [wizardStep, setWizardStep] = useState(0);
-  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
-  const [selectedSeasonMonth, setSelectedSeasonMonth] = useState<string | null>(null);
-  const [generatingAngles, setGeneratingAngles] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
 
   const seasonalVisualContext = useMemo<SeasonalVisualContext | null>(() => {
     const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
@@ -1496,14 +1520,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
                   {(isExpanded || isEditing || refiningIdea === idea.id) && (
                     <div className="mt-4 pt-4 border-t border-gray-100">
-                      {/* Explanation */}
-                      {isEditing ? (
-                        <textarea value={editBuffer?.explanation || ''} onChange={e => setEditBuffer({ ...editBuffer, explanation: e.target.value })}
-                          className="w-full text-sm text-gray-500 italic mb-4 border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-16" />
-                      ) : (
-                        <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-indigo-200 pl-3">{c.explanation}</p>
-                      )}
-
                   {/* AI Refine Panel */}
                   {refiningIdea === idea.id && !isEditing && (
                     <div className="mb-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-200 animate-in slide-in-from-top duration-200">

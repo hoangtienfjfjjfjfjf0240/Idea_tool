@@ -11,7 +11,7 @@ import { StrategyMap } from '@/components/StrategyMap';
 import { ChatAgent } from '@/components/ChatAgent';
 
 import { supabase } from '@/lib/supabase';
-import type { AppProject, ScreenType } from '@/types/database';
+import type { AppProject, FilterState, ScreenType } from '@/types/database';
 import { getHooks, getFilterOptions } from '@/lib/db';
 import { Loader2 } from 'lucide-react';
 
@@ -20,7 +20,7 @@ export default function Home() {
   const [userName, setUserName] = useState('');
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('f1');
   const [selectedApp, setSelectedApp] = useState<AppProject | null>(null);
-  const [prefillFilters, setPrefillFilters] = useState<{ coreUser: string[]; emotion: string[]; painPoint: string[]; solution: string[] } | null>(null);
+  const [prefillFilters, setPrefillFilters] = useState<Partial<FilterState> | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
   const [chatFilters, setChatFilters] = useState<Record<string, string[]>>({});
@@ -119,6 +119,10 @@ export default function Home() {
           onBack={() => setCurrentScreen('f1')}
           onNavigate={(path) => setCurrentScreen(path as ScreenType)}
           onAppUpdated={handleAppUpdated}
+          onCreateFromBranch={(filters) => {
+            setPrefillFilters(filters);
+            setCurrentScreen('f2.1');
+          }}
         />
       );
     }
