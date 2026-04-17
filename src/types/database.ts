@@ -49,8 +49,27 @@ export interface GeneratedIdea {
   created_at: string;
 }
 
+export interface IdeaMeta {
+  builderVersion?: string;
+  pillar?: string;
+  pillarIndex?: number;
+  angleName?: string;
+  angleType?: string;
+  angleDesc?: string;
+  hookPrimary?: string;
+  hookAlt1?: string;
+  hookAlt2?: string;
+  visualRefNotes?: string;
+  talentProfile?: string;
+  dontDo?: string;
+  track?: string;
+  trackReason?: string;
+  priority?: string;
+}
+
 export interface IdeaContent {
   creativeType?: string;
+  meta?: IdeaMeta;
   // 4 yếu tố framework
   framework: {
     coreUser: string;    // Chân dung user nhắm tới

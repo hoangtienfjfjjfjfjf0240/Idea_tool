@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
+import {
+  buildFrameworkInjection,
+  buildIdeaOutputSpec,
+  CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+  CREATIVE_PROMPT_RULES,
+  normalizeIdeaOutput,
+  parseJsonLoose,
+  TOOL_COMPATIBILITY_GUARDRAILS,
+} from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
 
 function parseJson(text: string) {
-  try {
-    let clean = text.replace(/```json\s*|```/g, '').trim();
-    const s = clean.indexOf('['), e = clean.lastIndexOf(']');
-    const s2 = clean.indexOf('{'), e2 = clean.lastIndexOf('}');
-    if (s !== -1 && e !== -1 && (s2 === -1 || s < s2)) clean = clean.substring(s, e + 1);
-    else if (s2 !== -1 && e2 !== -1) clean = clean.substring(s2, e2 + 1);
-    return JSON.parse(clean);
-  } catch { return null; }
+  return parseJsonLoose(text);
 }
 
 function resolveModel(selected?: string): string {
@@ -26,120 +28,53 @@ function resolveModel(selected?: string): string {
 export async function POST(request: NextRequest) {
   try {
     const { hook, quantity = 3, duration = '30s', appName, appCategory, ideaDirection, selectedModel } = await request.json();
-
     const cappedQty = Math.min(quantity, 5);
+    const targetLanguage = 'English';
 
-    const prompt = `[ROLE] Bạn là Senior Creative Strategist chuyên tạo Production Brief cho Meta/TikTok Video Ads.
-Output PHẢI giống hệt một dòng trong Google Sheet production — team editor đọc xong có thể quay/gen ngay.
+    const frameworkInjection = buildFrameworkInjection({
+      appName,
+      category: appCategory || 'General',
+      coreUsers: [hook.core_user || ''].filter(Boolean),
+      primaryEmotion: hook.emotion || 'Curiosity',
+      visualTheme: `${hook.creative_type || hook.subtitle || 'UGC'}; use the winning hook as DNA, then expand it into a full brief.`,
+      psp: hook.hook_concept || hook.description || appName,
+      pillars: [hook.painpoint || 'General user friction'].filter(Boolean),
+      anglesPerPillar: 1,
+      ideasPerAngle: cappedQty,
+      language: `Vietnamese strategy notes + ${targetLanguage} copy`,
+      priority: 'A',
+      extraContext: [
+        'Task type: expand a proven winning hook into new full ideas.',
+        'Keep the same strategic DNA, but change situation, character, setting, and opening approach enough to avoid clones.',
+        ideaDirection ? `User direction: ${ideaDirection}` : 'No additional user direction.',
+      ],
+    });
 
-═══════════════════════════════════════
-🏆 WINNING HOOK GỐC — ĐÃ CHỨNG MINH HIỆU QUẢ
-═══════════════════════════════════════
-📌 Tên: "${hook.title}"
-📝 Mô tả: ${hook.description || 'N/A'}
-🧠 Hook Concept: ${hook.hook_concept || 'N/A'}
-🎬 Creative Type: ${hook.creative_type || hook.subtitle || 'N/A'}
-👁️ Visual: ${hook.visual_detail || 'N/A'}
-👤 Core User: ${hook.core_user || 'N/A'}
-💔 Painpoint: ${hook.painpoint || 'N/A'}
-😱 Emotion: ${hook.emotion || 'N/A'}
-📱 App: "${appName}" (${appCategory || 'General'})
+    const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
-${ideaDirection ? `═══════════════════════════════════════
-📝 HƯỚNG ĐI TỪ USER
-═══════════════════════════════════════
-"${ideaDirection}"
-→ Kết hợp hướng đi này VỚI framework từ hook gốc.
-→ Hướng đi user ĐƯỢC ƯU TIÊN — nhưng vẫn giữ DNA hook gốc.
-` : ''}
-═══════════════════════════════════════
-NHIỆM VỤ: Tạo ${cappedQty} FULL IDEAS MỚI lấy cảm hứng từ hook gốc
-═══════════════════════════════════════
-Mỗi idea PHẢI:
-- Lấy DNA + framework + pattern từ winning hook
-- KHÁC gốc: tình huống, nhân vật, bối cảnh, góc tiếp cận
-- Có ĐẦY ĐỦ: Hook (3-5s) + Body (10-25s) + CTA (3-5s)
+${frameworkInjection}
 
-═══════════════════════════════════════
-RULE #1: EMOTION = CẢM XÚC CỦA VIEWER, KHÔNG PHẢI ACTOR
-═══════════════════════════════════════
-Emotion gốc: ${hook.emotion || 'theo hook gốc'}
-→ Đây là emotion NGƯỜI ĐANG LƯỚT FEED phải CẢM NHẬN.
-→ KHÔNG mô tả nhân vật "run rẩy, hoảng sợ, khóc" → đó là DIỄN XUẤT actor.
+## WINNING HOOK DNA
+- Title: "${hook.title}"
+- Description: ${hook.description || 'N/A'}
+- Hook concept: ${hook.hook_concept || 'N/A'}
+- Creative type: ${hook.creative_type || hook.subtitle || 'N/A'}
+- Visual: ${hook.visual_detail || 'N/A'}
+- Core user: ${hook.core_user || 'N/A'}
+- Painpoint: ${hook.painpoint || 'N/A'}
+- Viewer emotion target: ${hook.emotion || 'N/A'}
 
-📌 CÁCH TẠO EMOTION CHO VIEWER:
-🔍 TÒ MÒ → curiosity gap, CẮT NGANG trước reveal
-😱 SỢ HÃI → tình huống relatable viewer tự liên tưởng
-🤩 FOMO → "mọi người biết trừ mình"
-🤯 SHOCK → contrast mạnh, before/after
-😢 ĐỒNG CẢM → tình huống quen thuộc
+## TASK
+Create ${cappedQty} full ideas inspired by the winning hook.
+- Keep the same strategic DNA and problem-solution logic.
+- Change situation, character, setting, and opening mechanism enough that they are not shallow rewrites.
+- Each output must include hook, body, and CTA for a ${duration} video.
+- If the user provided an idea direction, prioritize it without breaking the winning DNA.
 
-═══════════════════════════════════════
-RULE #2: PAINPOINT ĐÁNH ĐÚNG — KHÔNG THAY THẾ
-═══════════════════════════════════════
-Painpoint gốc: "${hook.painpoint || 'N/A'}"
-→ PHẢI đánh ĐÚNG painpoint này. KHÔNG thay thế dù liên quan.
-→ Painpoint hiện qua HÀNH ĐỘNG + LỜI NÓI TỰ NHIÊN − không setup giả tạo.
+${buildIdeaOutputSpec({ quantity: cappedQty, duration, appName, language: targetLanguage })}
 
-═══════════════════════════════════════
-RULE #3: VOICE TỰ NHIÊN
-═══════════════════════════════════════
-✅ Có ngập ngừng, đứt quãng, reaction thật
-❌ Không concept name, không formal, không youtuber opening
-
-═══════════════════════════════════════
-RULE #4: SCRIPT = KỊCH BẢN HÀNH ĐỘNG LIỀN MẠCH
-═══════════════════════════════════════
-MỖI CÂU = 1 HÀNH ĐỘNG. Voice/text xen kẽ trong flow.
-[VOICE] chèn đúng lúc nhân vật nói
-[TEXT OVERLAY] chèn rõ text hiện lúc nào
-Painpoint = KHOẢNH KHẮC, không phải mô tả suông.
-
-═══════════════════════════════════════
-CẤU TRÚC VIDEO ${duration}
-═══════════════════════════════════════
-🎣 HOOK (3-5s): script → TẠO EMOTION CHO VIEWER
-📖 BODY (10-25s): script → DEMO PSP giải quyết Painpoint
-🔥 CTA (3-5s): script → KÊU GỌI HÀNH ĐỘNG
-
-═══════════════════════════════════════
-OUTPUT FORMAT — JSON ARRAY (GIỐNG HỆT GENERATE-IDEAS)
-═══════════════════════════════════════
-[{
-  "id": 1,
-  "title": "Tên concept ngắn tiếng Việt",
-  "duration": "${duration}",
-  "creativeType": "UGC / POV / Interview / Reaction / ...",
-  "framework": {
-    "coreUser": "Chân dung viewer TARGET (tiếng Việt, 2-3 câu)",
-    "painpoint": "Nỗi đau CỤ THỂ (tiếng Việt, 2-3 câu)",
-    "emotion": "Cảm xúc VIEWER khi xem hook (tiếng Việt, 2-3 câu)",
-    "psp": "Tính năng app giải quyết painpoint (tiếng Việt)"
-  },
-  "explanation": "Tại sao idea hiệu quả + so sánh hook gốc (tiếng Việt, 3-5 câu)",
-  "hook": {
-    "script": "KỊCH BẢN LIỀN MẠCH 3-5s: tình huống ĐỜI THƯỜNG → painpoint → [VOICE tự nhiên] + [TEXT OVERLAY]. Tối thiểu 4-6 câu hành động.",
-    "textOverlay": "1 câu text overlay",
-    "viTranslation": "Bản dịch tiếng Việt",
-    "viewerProfile": "VIEWER LƯỚT FEED là ai? (tiếng Việt, 2 câu)",
-    "viewerEmotion": "VIEWER CẢM NHẬN GÌ? TỰ HỎI gì? (tiếng Việt, 2-3 câu)",
-    "painpointImpact": "VIEWER tự thấy mình ở đâu? (tiếng Việt, 2-3 câu)",
-    "whyTheyStopScrolling": "VIEWER dừng scroll vì? (tiếng Việt, 1 câu)"
-  },
-  "body": {
-    "script": "KỊCH BẢN body 10-25s + [VOICE] + [TEXT OVERLAY]",
-    "textOverlay": "Text kết quả/con số",
-    "viTranslation": "Bản dịch tiếng Việt"
-  },
-  "cta": {
-    "script": "KỊCH BẢN CTA 3-5s + [VOICE] + [TEXT OVERLAY]",
-    "textOverlay": "CTA bold",
-    "viTranslation": "Bản dịch tiếng Việt",
-    "endCard": "${appName} + tagline"
-  }
-}]
-
-Trả về ĐÚNG ${cappedQty} objects. KHÔNG markdown. KHÔNG giải thích thêm.`;
+${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
     console.log('[generate-ideas-from-hook] Prompt length:', prompt.length, 'chars, model:', selectedModel || 'gemini-2.5-pro');
     const text = await askAI(prompt, {
@@ -151,21 +86,26 @@ Trả về ĐÚNG ${cappedQty} objects. KHÔNG markdown. KHÔNG giải thích th
 
     if (!text) {
       console.error('[generate-ideas-from-hook] AI returned null');
-      return NextResponse.json({ error: 'AI không phản hồi. Thử lại.' }, { status: 500 });
+      return NextResponse.json({ error: 'AI khong phan hoi. Thu lai.' }, { status: 500 });
     }
 
     const parsed = parseJson(text);
     if (!parsed) {
       console.error('[generate-ideas-from-hook] Failed to parse:', text.substring(0, 300));
-      return NextResponse.json({ error: 'Không parse được response.' }, { status: 500 });
+      return NextResponse.json({ error: 'Khong parse duoc response.' }, { status: 500 });
     }
 
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const valid = arr.filter((i: any) => i?.hook).slice(0, cappedQty);
+    const valid = arr
+      .map(item => normalizeIdeaOutput(item, { duration, appName, pillar: hook.painpoint || 'General user friction' }))
+      .filter(item => {
+        const section = (item?.hook || {}) as Record<string, unknown>;
+        return String(section.visual || section.script || '').trim().length > 0;
+      })
+      .slice(0, cappedQty);
 
     if (valid.length === 0) {
-      return NextResponse.json({ error: 'AI trả về format sai.' }, { status: 500 });
+      return NextResponse.json({ error: 'AI tra ve format sai.' }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data: valid });

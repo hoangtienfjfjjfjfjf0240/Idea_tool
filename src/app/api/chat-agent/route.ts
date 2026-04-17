@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callAI, CREATIVE_SYSTEM_PROMPT } from '@/lib/aiClient';
+import { callAI } from '@/lib/aiClient';
+import {
+  buildIdeaOutputSpec,
+  CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+  CREATIVE_PROMPT_RULES,
+  normalizeIdeaOutput,
+  TOOL_COMPATIBILITY_GUARDRAILS,
+} from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
 
@@ -115,7 +122,7 @@ Target Market: ${f.targetMarket?.join(', ') || 'N/A'}`);
       }
     }
 
-    const agentInstructions = `${CREATIVE_SYSTEM_PROMPT}
+    const agentInstructions = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
 BẠN LÀ CHAT AGENT - CREATIVE STRATEGIST CỦA APP NÀY.
 
@@ -129,6 +136,7 @@ CÁCH HOẠT ĐỘNG:
 - Khi tạo ideas, phải nhìn recent ideas để tránh lặp lại cùng scene family, cùng hook opening và cùng blocker nếu user không yêu cầu lặp
 - Khi user hỏi chiến lược, bạn phân tích dựa trên DỮ LIỆU THỰC TẾ của app
 - Mỗi câu trả lời phải CỤ THỂ, ACTIONABLE, có ví dụ
+- Khi user yêu cầu tạo ideas, phải tuân thủ prompt system, output spec, và rules bên dưới
 
 ĐỊNH DẠNG OUTPUT:
 - Khi tạo ideas: trả về JSON block trong \`\`\`json ... \`\`\`
@@ -136,10 +144,11 @@ CÁCH HOẠT ĐỘNG:
 - Khi so sánh: dùng bảng so sánh
 - Luôn viết tiếng Việt tự nhiên
 
-NẾU USER YÊU CẦU TẠO IDEAS, trả JSON dạng:
-\`\`\`json
-[{"id":1,"title":"...","duration":"30s","creativeType":"UGC","selectedFilters":{"coreUser":["..."],"painPoint":["..."],"solution":["..."],"emotion":["..."],"angle":["..."],"targetMarket":["..."],"visualType":["..."]},"framework":{"coreUser":"...","painpoint":"...","emotion":"...","psp":"..."},"explanation":"...","hook":{"visual":"...","content":"...","voice":"..."},"body":{"visual":"...","content":"...","voice":"..."},"cta":{"voice":"...","text":"...","endCard":"..."}}]
-\`\`\``;
+NẾU USER YÊU CẦU TẠO IDEAS, tuân thủ đúng schema sau:
+${buildIdeaOutputSpec({ quantity: 3, duration: '30s', appName: appContext?.name || 'App', language: 'the chosen market language', includeSelectedFilters: true })}
+
+${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
     // Build messages array with history
     interface HistoryMessage {
@@ -172,9 +181,18 @@ NẾU USER YÊU CẦU TẠO IDEAS, trả JSON dạng:
     // Check if response contains JSON ideas
     let ideas = null;
     const jsonMatch = response.match(/```json\s*([\s\S]*?)```/);
-    if (jsonMatch) {
+    const rawJson = jsonMatch?.[1] || response.trim();
+    if (rawJson.startsWith('[') || rawJson.startsWith('{')) {
       try {
-        ideas = JSON.parse(jsonMatch[1]);
+        const parsed = JSON.parse(rawJson);
+        const arr = Array.isArray(parsed) ? parsed : [parsed];
+        ideas = arr.map(item =>
+          normalizeIdeaOutput(item, {
+            duration: '30s',
+            appName: appContext?.name || 'App',
+            pillar: appContext?.filters?.painPoint?.[0] || 'General user friction',
+          })
+        );
       } catch {
         // Not valid JSON
       }

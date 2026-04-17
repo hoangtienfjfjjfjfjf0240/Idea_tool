@@ -637,6 +637,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           filtersSnapshot,
           content: {
             creativeType: item.creativeType || '',
+            meta: item.meta || undefined,
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
             hook: {
@@ -1566,6 +1567,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                               const refined = result.data;
                               const newContent = {
                                 ...idea.content,
+                                meta: refined.meta || (idea.content as any).meta,
                                 framework: refined.framework || (idea.content as any).framework,
                                 explanation: refined.explanation || (idea.content as any).explanation,
                                 hook: refined.hook ? { script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', voice: refined.hook.voice || '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,

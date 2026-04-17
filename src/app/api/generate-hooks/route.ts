@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
+import {
+  buildFrameworkInjection,
+  buildHookOutputSpec,
+  CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+  CREATIVE_PROMPT_RULES,
+  normalizeHookOutput,
+  parseJsonLoose,
+  TOOL_COMPATIBILITY_GUARDRAILS,
+} from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
 
 function parseJson(text: string) {
-  try {
-    let clean = text.replace(/```json\s*|```/g, '').trim();
-    const s = clean.indexOf('['), e = clean.lastIndexOf(']');
-    const s2 = clean.indexOf('{'), e2 = clean.lastIndexOf('}');
-    if (s !== -1 && e !== -1 && (s2 === -1 || s < s2)) clean = clean.substring(s, e + 1);
-    else if (s2 !== -1 && e2 !== -1) clean = clean.substring(s2, e2 + 1);
-    return JSON.parse(clean);
-  } catch { return null; }
+  return parseJsonLoose(text);
 }
 
-// Map frontend model names to gateway model identifiers
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
@@ -27,105 +28,60 @@ function resolveModel(selected?: string): string {
 export async function POST(request: NextRequest) {
   try {
     const { hook, instruction, quantity = 3, appName, appCategory, selectedModel } = await request.json();
+    const targetLanguage = 'English';
 
-    const prompt = `[ROLE] Senior Creative Strategist chuyên Meta/TikTok Performance Ads.
-Bạn đang MODIFY một Winning Hook — tạo ${quantity} biến thể MỚI.
+    const frameworkInjection = buildFrameworkInjection({
+      appName,
+      category: appCategory || 'General',
+      coreUsers: [hook.core_user || ''].filter(Boolean),
+      primaryEmotion: hook.emotion || 'Curiosity',
+      visualTheme: `${hook.creative_type || hook.subtitle || 'UGC'}; keep the winning hook DNA but change the visual execution.`,
+      psp: `Reuse the same product promise that made the winning hook work for ${appName}.`,
+      pillars: [hook.painpoint || 'General user friction'].filter(Boolean),
+      anglesPerPillar: 1,
+      ideasPerAngle: quantity,
+      language: `Vietnamese strategy notes + ${targetLanguage} copy`,
+      priority: 'A',
+      extraContext: [
+        'Task type: modify a winning hook, not a full-video brief.',
+        'Keep the same painpoint, core user, and viewer emotion unless the user explicitly changes them.',
+      ],
+    });
 
-═══════════════════════════════════════
-HOOK GỐC (WINNING — ĐÃ CHẠY TỐT)
-═══════════════════════════════════════
-📌 Tên: "${hook.title}"
-📝 Mô tả: ${hook.description || 'N/A'}
-🧠 Concept: ${hook.hook_concept || 'N/A'}
-🎬 Creative Type: ${hook.creative_type || hook.subtitle || 'N/A'}
-👁️ Visual gốc: ${hook.visual_detail || 'N/A'}
-👤 Core User: ${hook.core_user || 'N/A'}
-💔 Painpoint: ${hook.painpoint || 'N/A'}
-😱 Emotion: ${hook.emotion || 'N/A'}
-📱 App: "${appName}" (${appCategory || 'General'})
+    const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
-═══════════════════════════════════════
-CHỈ THỊ MODIFY TỪ USER
-═══════════════════════════════════════
+${frameworkInjection}
+
+## WINNING HOOK DNA
+- Title: "${hook.title}"
+- Description: ${hook.description || 'N/A'}
+- Hook concept: ${hook.hook_concept || 'N/A'}
+- Creative type: ${hook.creative_type || hook.subtitle || 'N/A'}
+- Original visual: ${hook.visual_detail || 'N/A'}
+- Core user: ${hook.core_user || 'N/A'}
+- Painpoint: ${hook.painpoint || 'N/A'}
+- Viewer emotion target: ${hook.emotion || 'N/A'}
+
+## USER MODIFY BRIEF
 "${instruction}"
 
-═══════════════════════════════════════
-⚠️ RULE #1: EMOTION = CẢM XÚC CỦA VIEWER, KHÔNG PHẢI ACTOR
-═══════════════════════════════════════
-Emotion gốc: ${hook.emotion || 'theo hook gốc'}
-→ Đây là emotion mà NGƯỜI ĐANG LƯỚT FEED phải CẢM NHẬN.
-→ KHÔNG mô tả nhân vật "run rẩy, hoảng sợ, khóc" → đó là DIỄN XUẤT actor.
-→ PHẢI thiết kế CÁCH KỂ CHUYỆN để VIEWER tự cảm nhận emotion:
-  • Tò mò → curiosity gap, CẮT NGANG trước reveal
-  • Sợ hãi → tình huống relatable viewer tự liên tưởng đến mình
-  • FOMO → "mọi người biết trừ tôi"
-  • Shock → before/after contrast mạnh
+## TASK
+Create ${quantity} hook-only variations.
+- Keep the winning DNA and same problem/emotion target.
+- Change the visual execution enough that each variation is distinct.
+- Preserve the interaction pattern and number of people when possible.
+- Each variation should differ from the original on at least 3 of these axes: situation, character, setting, blocker, mood.
 
-═══════════════════════════════════════
-RULE #2: PAINPOINT ĐÚNG + VOICE TỰ NHIÊN
-═══════════════════════════════════════
-⚠️ Hook hay = PAINPOINT ĐÚNG (khớp filter đã chọn) + VOICE TỰ NHIÊN + VIEWER EMOTION đúng.
+${buildHookOutputSpec({ quantity, language: targetLanguage })}
 
-📌 PAINPOINT PHẢI ĐÚNG VỚI FILTER ĐÃ CHỌN — không thay thế bằng painpoint khác:
-- Đọc painpoint từ hook gốc → modify PHẢI giữ ĐÚNG painpoint đó
-- KHÔNG tự suy diễn sang vấn đề liên quan nhưng KHÁC BẢN CHẤT
-- VD: Painpoint "ăn mất kiểm soát" ≠ "tốn tiền ăn ngoài", "ko biết thiết kế" ≠ "tốn tiền contractor"
-
-📌 PAINPOINT PHẢI TỪ ĐỜI THỰC — tình huống core user THỰC SỰ gặp hàng ngày:
-✅ Khoảnh khắc tự nhiên: đang scroll phone, nói chuyện, dọn nhà, nấu ăn → painpoint bật ra
-❌ Setup giả tạo: cầm giấy rồi tự nói, đứng trong phòng thở dài, monologue trước camera
-
-📌 VOICE PHẢI TỰ NHIÊN — như người thật nói:
-✅ Có ngập ngừng, đứt quãng, reaction thật
-❌ Concept name trong voice, quá formal, mở đầu kiểu youtuber
-
-═══════════════════════════════════════
-RULE #3: NGUYÊN TẮC MODIFY — CHỈ ĐỔI VISUAL, GIỮ DNA + CẤU TRÚC
-═══════════════════════════════════════
-⚠️ KHÔNG ĐỔI: Concept hook, painpoint, emotion, core user (trừ khi user yêu cầu).
-⚠️ CHỈ ĐỔI: VISUAL — nhân vật, bối cảnh, tình huống, cách kể.
-
-📐 GIỮ CẤU TRÚC TƯƠNG TÁC:
-🎭 SỐ NGƯỜI: Gốc bao nhiêu → modify bấy nhiêu.
-🗣️ KIỂU TƯƠNG TÁC: Gốc A nói với B → modify X nói với Y (khác người, cùng pattern).
-📝 CHẤT LƯỢNG: Modify PHẢI hay bằng hoặc hơn gốc — painpoint thật, voice tự nhiên.
-
-🎬 VISUAL VARIATION MATRIX — Mỗi biến thể khác gốc tối thiểu 3/5:
-① TÌNH HUỐNG khác ② NHÂN VẬT khác ③ BỐI CẢNH khác ④ PAINPOINT ANGLE khác ⑤ MOOD khác
-
-═══════════════════════════════════════
-FORMAT SCRIPT — KỊCH BẢN HÀNH ĐỘNG LIỀN MẠCH
-═══════════════════════════════════════
-"script" = KỊCH BẢN STORYBOARD cho 3-5 giây hook.
-Viết theo timeline: MỖI CÂU = 1 HÀNH ĐỘNG. Voice xen kẽ trong flow, KHÔNG tách riêng.
-Painpoint phải HIỆN qua HÀNH ĐỘNG + LỜI NÓI TỰ NHIÊN — không setup giả tạo.
-
-📝 Mô tả cảnh liền mạch + [VOICE tiếng Anh xen kẽ đúng lúc] + [TEXT OVERLAY tiếng Anh].
-🔄 viTranslation = dịch lại sang tiếng Việt.
-
-═══════════════════════════════════════
-OUTPUT: JSON ARRAY — MỖI BIẾN THỂ = 1 VISUAL HOOK MỚI
-═══════════════════════════════════════
-[{
-  "id": 1,
-  "title": "Tên biến thể (tiếng Việt)",
-  "explanation": "So sánh visual gốc vs mới + tại sao hiệu quả (tiếng Việt, 3-5 câu)",
-  "hook": {
-    "script": "KỊCH BẢN liền mạch: tình huống ĐỜI THƯỜNG + painpoint THẬT qua hành động + [VOICE tự nhiên như người thật nói, tiếng Anh] + [TEXT OVERLAY tiếng Anh]. KHÔNG setup giả tạo. KHÔNG copy ví dụ cũ.",
-    "textOverlay": "1 câu text overlay tiếng Anh",
-    "viTranslation": "Bản dịch tiếng Việt của voice + text overlay",
-    "visualDiff": "KHÁC GỐC: gốc [...] → biến thể này [...]. Khác về: [liệt kê]",
-    "viewerEmotion": "VIEWER cảm nhận gì? Họ tự hỏi gì? (tiếng Việt, 2-3 câu)",
-    "painpointImpact": "VIEWER tự thấy mình ở đâu? (tiếng Việt, 2-3 câu)",
-    "whyTheyStopScrolling": "VIEWER dừng scroll vì? 1 câu (tiếng Việt)"
-  }
-}]`;
+${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
     const text = await askAI(prompt, {
       model: resolveModel(selectedModel),
       temperature: 0.8,
       max_tokens: 16384,
-      useCreativePersona: false
+      useCreativePersona: false,
     });
     if (!text) return NextResponse.json({ error: 'No AI response' }, { status: 500 });
 
@@ -133,21 +89,27 @@ OUTPUT: JSON ARRAY — MỖI BIẾN THỂ = 1 VISUAL HOOK MỚI
     if (!parsed) return NextResponse.json({ error: 'Failed to parse' }, { status: 500 });
 
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = arr.slice(0, quantity).map((item: any, i: number) => ({
-      id: `hook-${Date.now()}-${i}`,
-      title: item.title || `Biến thể ${i + 1}`,
-      explanation: item.explanation || '',
-      hook: {
-        // New merged format
-        script: item.hook?.script || '',
-        textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
-        // Legacy compat — map from new format
-        visual: item.hook?.script || item.hook?.visual || '',
-        text: item.hook?.textOverlay || item.hook?.text_overlay || item.hook?.text || '',
-        voice: '',
-      },
-    }));
+    const data = arr.slice(0, quantity).map((item: unknown, i: number) => {
+      const normalized = normalizeHookOutput(item);
+      const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
+      return {
+        id: `hook-${Date.now()}-${i}`,
+        title: normalized.title || `Bien the ${i + 1}`,
+        explanation: normalized.explanation || '',
+        meta: normalized.meta || {},
+        hook: {
+          script: normalizedHook.script || '',
+          textOverlay: normalizedHook.textOverlay || '',
+          visual: normalizedHook.visual || normalizedHook.script || '',
+          text: normalizedHook.text || normalizedHook.textOverlay || '',
+          voice: normalizedHook.voice || '',
+          viTranslation: normalizedHook.viTranslation || '',
+          viewerEmotion: normalizedHook.viewerEmotion || '',
+          painpointImpact: normalizedHook.painpointImpact || '',
+          whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',
+        },
+      };
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (err) {

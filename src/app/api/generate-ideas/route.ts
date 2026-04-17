@@ -1,48 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
+import {
+  buildFrameworkInjection,
+  buildIdeaOutputSpec,
+  CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+  CREATIVE_PROMPT_RULES,
+  normalizeIdeaOutput,
+  parseJsonLoose,
+  TOOL_COMPATIBILITY_GUARDRAILS,
+} from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
 
 function parseJson(text: string) {
-  try {
-    // Step 1: Strip markdown fences and trim
-    let clean = text.replace(/```json\s*|```/g, '').trim();
-
-    // Step 2: Remove BOM and zero-width chars
-    clean = clean.replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '');
-
-    // Step 3: Extract JSON array or object
-    const s = clean.indexOf('['), e = clean.lastIndexOf(']');
-    const s2 = clean.indexOf('{'), e2 = clean.lastIndexOf('}');
-    if (s !== -1 && e !== -1 && (s2 === -1 || s < s2)) clean = clean.substring(s, e + 1);
-    else if (s2 !== -1 && e2 !== -1) clean = clean.substring(s2, e2 + 1);
-
-    // Step 4: Try direct parse first
-    try { return JSON.parse(clean); } catch {}
-
-    // Step 5: Fix common issues and retry
-    let fixed = clean
-      .replace(/,\s*([}\]])/g, '$1')        // trailing commas
-      .replace(/\n/g, '\\n')                 // unescaped newlines in strings
-      .replace(/\r/g, '\\r')                 // unescaped carriage returns
-      .replace(/\t/g, '\\t');                // unescaped tabs
-    try { return JSON.parse(fixed); } catch {}
-
-    // Step 6: More aggressive — fix unescaped newlines inside string values
-    fixed = clean.replace(/("(?:[^"\\]|\\.)*")|[\n\r\t]/g, (match, str) => {
-      if (str) return str; // inside string, keep as-is
-      return ' '; // outside string, replace with space
-    });
-    try { return JSON.parse(fixed); } catch {}
-
-    // Step 7: Last resort — eval-safe parse via Function
-    try {
-      const fn = new Function('return ' + clean);
-      return fn();
-    } catch {}
-
-    return null;
-  } catch { return null; }
+  return parseJsonLoose(text);
 }
 
 // Detect language from Core User text
@@ -309,27 +280,49 @@ export async function POST(request: NextRequest) {
     // === MODE: REFINE (AI chỉnh sửa idea có sẵn) ===
     if (body.mode === 'refine') {
       const { originalIdea, instruction, appName, appCategory, selectedModel } = body;
-      const refinePrompt = `[ROLE] Bạn là Senior Creative Strategist. User muốn CHỈNH SỬA một idea quảng cáo video.
+      const originalFramework = originalIdea?.framework || {};
+      const refineFramework = buildFrameworkInjection({
+        appName,
+        category: appCategory || 'General',
+        coreUsers: [String(originalFramework.coreUser || '')].filter(Boolean),
+        primaryEmotion: String(originalFramework.emotion || 'Curiosity'),
+        visualTheme: String(originalIdea?.creativeType || 'UGC') || 'UGC',
+        psp: String(originalFramework.psp || appName),
+        pillars: [String(originalFramework.painpoint || '')].filter(Boolean),
+        anglesPerPillar: 1,
+        ideasPerAngle: 1,
+        language: 'Vietnamese strategy notes + original copy language',
+        priority: 'A',
+        extraContext: [
+          'Task type: refine an existing idea, do not rewrite unrelated parts.',
+          'Preserve the current JSON field structure and keep meta coherent after edits.',
+        ],
+      });
+      const refinePrompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
-[APP] "${appName}" — Category: "${appCategory || 'General'}"
+${refineFramework}
 
-[IDEA GỐC]
+## TASK
+Refine one existing production brief using the user instruction below.
+- Apply only the requested changes.
+- Preserve the same problem-solution chain unless the user explicitly changes it.
+- Keep visual, voice, and textOverlay separated for hook, body, and CTA.
+- Return exactly 1 JSON object, not an array.
+
+[EXISTING IDEA JSON]
 ${JSON.stringify(originalIdea, null, 2)}
 
-[YÊU CẦU CHỈNH SỬA TỪ USER]
+[USER REFINE BRIEF]
 "${instruction}"
 
-[NHIỆM VỤ]
-1. Đọc hiểu idea gốc và yêu cầu chỉnh sửa
-2. Áp dụng ĐÚNG yêu cầu chỉnh sửa — chỉ thay đổi phần user yêu cầu, giữ nguyên phần không đề cập
-3. Giữ NGUYÊN JSON structure y hệt idea gốc
-4. Giữ rõ format tách field visual, voice, textOverlay cho hook/body/cta; không trộn voice/text overlay vào visual
-5. Trả về ĐÚNG 1 JSON object (KHÔNG phải array). KHÔNG markdown. KHÔNG giải thích.
+## OBJECT SCHEMA
+Use the same field schema as one item from the standard idea output spec:
+${buildIdeaOutputSpec({ quantity: 1, duration: originalIdea?.duration || '30s', appName, language: 'original copy language' })}
 
-⚠️ QUAN TRỌNG:
-- Emotion mục tiêu = cảm xúc mà NGƯỜI XEM cảm nhận khi xem video, KHÔNG phải cảm xúc nhân vật diễn
-- Visual phải thực tế, dễ quay (UGC style), KHÔNG cinematic/TVC
-- Nếu user yêu cầu đổi emotion → thiết kế lại hook để trigger đúng emotion MỚI cho viewer`;
+For this refine task, return only the single object body, not the surrounding array.
+
+${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       const text = await askAI(refinePrompt, {
         model: resolveModel(selectedModel),
@@ -340,7 +333,14 @@ ${JSON.stringify(originalIdea, null, 2)}
       if (!text) return NextResponse.json({ error: 'AI không phản hồi' }, { status: 500 });
       const parsed = parseJson(text);
       if (!parsed) return NextResponse.json({ error: 'Không parse được' }, { status: 500 });
-      return NextResponse.json({ success: true, data: parsed });
+      return NextResponse.json({
+        success: true,
+        data: normalizeIdeaOutput(parsed, {
+          duration: originalIdea?.duration || '30s',
+          appName,
+          pillar: String(originalFramework.painpoint || ''),
+        }),
+      });
     }
 
     // === MODE: GENERATE ANGLES (tạo angle từ painpoint) ===
@@ -418,6 +418,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
     const targetLang = detectLang(filters?.coreUser);
     const marketContext = buildMarketContext(filters?.targetMarket);
     const angleContext = filters?.angle?.length ? filters.angle.join(', ') : '';
+    const primaryPillar = filters?.painPoint?.[0] || 'General user friction';
 
     // Truncate knowledge to avoid prompt overflow
     const rawKnowledge = appKnowledge || '';
@@ -444,300 +445,66 @@ Trả JSON array of strings. KHÔNG markdown.`;
       : '';
     const diversityBlock = buildBatchDiversityBlock(quantity, angleContext, angleIndex, totalAngles);
 
-    const prompt = `[ROLE] Bạn là Senior Creative Strategist chuyên tạo Production Brief cho Meta/TikTok Video Ads.
-Output của bạn PHẢI giống hệt một dòng trong Google Sheet production mà team editor đọc xong có thể quay/gen ngay — không cần hỏi thêm.
-${knowledgeBlock}
-${ideasBlock}
-${trendingBlock}
-${seasonalVisualBlock}
-${variationBlock}
-${diversityBlock}
+    const frameworkInjection = buildFrameworkInjection({
+      appName,
+      category: appCategory || 'General',
+      coreUsers: filters?.coreUser || [],
+      primaryEmotion: filters?.emotion?.[0] || 'Curiosity',
+      visualTheme: `${visualType}. Keep the scenes native to ${filters?.targetMarket?.join(', ') || 'the selected market'}.`,
+      psp: featureContext,
+      pillars: filters?.painPoint?.length ? filters.painPoint : ['General user friction'],
+      trendingHooks: trendingTopics || [],
+      performanceData: [
+        rawKnowledge ? `AI Brain memory: ${truncatedKnowledge}` : 'No AI Brain memory yet',
+        previousIdeas ? `Recent idea history for anti-repeat:\n${previousIdeas}` : 'No recent idea history',
+        angleContext ? `Angle focus: ${angleContext}` : 'No locked angle',
+      ],
+      doList: [
+        'Keep every idea production-ready and executable today',
+        'Stay social-first, UGC-friendly, and market-native',
+        'Differentiate opening action, blocker, reveal, and voice opening across ideas',
+      ],
+      dontList: [
+        'Do not drift away from the selected pain point',
+        'Do not output cinematic brand-film copy',
+        'Do not repeat the same scene family with new wording',
+      ],
+      anglesPerPillar: 1,
+      ideasPerAngle: quantity,
+      trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
+      language: `Vietnamese strategy notes, ${targetLang} voice/text overlay`,
+      priority: 'A',
+      extraContext: [
+        `Selected angle: ${angleContext || 'Creative freedom'}`,
+        `Idea description: ${config?.ideaDescription || 'Creative freedom'}`,
+        `Target market: ${filters?.targetMarket?.join(', ') || 'Default market'}`,
+      ],
+    });
 
-[APP] "${appName}" — Category: "${appCategory || 'General'}"
-[PSP] ${featureContext}
-[CORE USER] ${filters?.coreUser?.join(', ') || 'General'}
-[PAINPOINT] ${filters?.painPoint?.join(', ') || 'General'}
-[ANGLE] ${angleContext || 'Creative Freedom'}
-[EMOTION MỤC TIÊU — CẢM XÚC PHẢI TẠO RA CHO NGƯỜI XEM] ${filters?.emotion?.join(', ') || 'General'}
-[DẠNG VISUAL] ${visualType}
-[NGÔN NGỮ MỤC TIÊU] ${targetLang}
-[MÔ TẢ BỔ SUNG] ${config?.ideaDescription || 'Creative Freedom'}
-[SỐ LƯỢNG] ${quantity} ideas
+    const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
-═══════════════════════════════════════
-RULE #1: EMOTION = CẢM XÚC CỦA NGƯỜI XEM (VIEWER), KHÔNG PHẢI NHÂN VẬT (ACTOR)
-═══════════════════════════════════════
-⚠️⚠️⚠️ ĐÂY LÀ RULE QUAN TRỌNG NHẤT ⚠️⚠️⚠️
+${frameworkInjection}
 
-EMOTION MỤC TIÊU LÀ: ${filters?.emotion?.join(', ') || 'General'}
-→ Đây là cảm xúc mà NGƯỜI ĐANG LƯỚT FEED phải CẢM NHẬN khi xem hook.
-→ KHÔNG PHẢI cảm xúc nhân vật trong video diễn ra.
-
-❌ SAI: Mô tả nhân vật "run rẩy, hoảng sợ, khóc lóc, stress" → đây là DIỄN XUẤT của actor, KHÔNG liên quan đến viewer
-✅ ĐÚNG: Thiết kế TÌNH HUỐNG + CÁCH KỂ CHUYỆN khiến NGƯỜI XEM cảm thấy emotion mục tiêu
-
-📌 CÁCH TẠO EMOTION CHO VIEWER THEO TỪNG LOẠI:
-
-🔍 TÒ MÒ (Curious) — VIEWER phải TỰ HỎI "cái gì vậy? phải xem tiếp!":
-   → Dùng: CURIOSITY GAP — cho thấy 1 phần kết quả bất ngờ nhưng CẮT NGANG, không reveal hết
-   → Dùng: reaction bất ngờ "Wait what?!", before/after tease, "I didn't expect this"
-   → Dùng: Expert/authority figure nghi ngờ rồi bị BẤT NGỜ
-   → VD: Người quay UGC chụp bathroom cũ → app render kết quả → MẮT MỞ TO "No way..." → CẮT, không cho thấy kết quả
-   → ❌ KHÔNG: mô tả nhân vật sợ hãi, stress, khóc — đó KHÔNG tạo tò mò cho viewer
-
-😱 SỢ HÃI (Fear) — VIEWER phải cảm thấy ĐỒNG CẢM + LO CHO MÌNH:
-   → Dùng: tình huống relatable mà viewer tự thấy "trời ơi mình cũng có thể bị vậy"
-   → KHÔNG dùng: mô tả nhân vật run rẩy ớn lạnh kiểu horror movie
-   → VD: UGC bình thường, người quay cho thấy screen phone hiện cảnh báo "storage 99% full" → "Tôi suýt mất hết ảnh..."
-
-🤩 FOMO — VIEWER phải cảm thấy "mọi người biết hết rồi trừ mình":
-   → Dùng: social proof, before/after dramatic, "why didn't anyone tell me about this?"
-   → VD: "My neighbor showed me this app..." → kết quả wow → viewer: "mình cũng phải thử"
-
-🤯 SHOCK — VIEWER phải "KHÔNG THỂ TIN":
-   → Dùng: contrast mạnh, con số bất ngờ, reveal bất ngờ
-   → VD: "This FREE app just did what my $5000 interior designer did" → before/after
-
-😢 ĐỒNG CẢM — VIEWER phải thấy MÌNH trong video:
-   → Dùng: tình huống quen thuộc, "ai cũng từng trải qua"
-   → VD: Bố già loay hoay với phone, con gái thở dài → viewer 35+: "đúng bố mình luôn"
-
-⚠️ EMOTION CHECKPOINT — TỰ KIỂM TRA TRƯỚC KHI OUTPUT:
-→ Đọc lại hook: MỘT NGƯỜI ĐANG LƯỚT TIKTOK/REELS sẽ CẢM NHẬN "${filters?.emotion?.join(', ') || 'General'}" CHƯA?
-→ Nếu hook chỉ mô tả nhân vật stress/sợ hãi riêng → viewer KHÔNG tự động cảm thấy gì → SAI
-→ Hook phải thiết kế để viewer TỰ cảm nhận emotion thông qua: curiosity gap, relatable situation, social proof, shock value
-
-═══════════════════════════════════════
-RULE #2: HOOK FORMULA — NHÂN VẬT + PAINPOINT + VIEWER EMOTION
-═══════════════════════════════════════
-Hook = NHÂN VẬT (core user) GẶP PAINPOINT → nhưng CÁCH KỂ phải trigger EMOTION cho VIEWER.
-
-🔺 BẮT BUỘC:
-1. NHÂN VẬT KHỚP CORE USER: Nếu Core User = "Phụ nữ 35-45" → nhân vật phải là phụ nữ 35-45
-2. PAINPOINT HIỆN QUA TÌNH HUỐNG: Nhân vật đang gặp painpoint trong tình huống ĐỜI THƯỜNG, THỰC TẾ
-3. CÁCH KỂ trigger VIEWER EMOTION: Không phải nhân vật diễn emotion → mà CÁCH KỂ CHUYỆN tạo emotion cho viewer
-
-→ Hook KHÔNG giới thiệu app. App chỉ xuất hiện ở BODY và CTA.
-
-═══════════════════════════════════════
-RULE #3: HOOK PHẢI ĐÁNH ĐÚNG PAINPOINT ĐÃ CHỌN — KHÔNG THAY THẾ
-═══════════════════════════════════════
-Visual type đã chọn: ${visualType}
-
-⚠️⚠️⚠️ RULE QUAN TRỌNG NHẤT:
-PAINPOINT ĐÃ CHỌN: "${filters?.painPoint?.join(', ') || 'General'}"
-APP: "${appName}" (${appCategory || 'General'})
-CORE USER: ${filters?.coreUser?.join(', ') || 'General'}
-
-→ Hook PHẢI đánh ĐÚNG painpoint "${filters?.painPoint?.join(', ') || 'General'}" cho đúng core user.
-→ KHÔNG ĐƯỢC thay thế bằng painpoint khác dù có liên quan.
-
-📌 CÁCH HIỂU PAINPOINT — ĐỌC KỸ VÀ DIỄN GIẢI ĐÚNG:
-1. Đọc painpoint từ filter: "${filters?.painPoint?.join(', ') || 'General'}"
-2. TỰ HỎI: Painpoint này NGHĨA LÀ GÌ trong đời thực của core user?
-3. Tình huống nào HÀNG NGÀY mà core user GẶP painpoint này?
-4. Họ NÓI GÌ, LÀM GÌ khi đang gặp painpoint này?
-5. Hook phải DIỄN TẢ đúng khoảnh khắc đó.
-
-⚠️ NGUYÊN TẮC DIỄN GIẢI PAINPOINT:
-- Đọc painpoint THEO NGHĨA ĐEN — nó nói gì thì hook phải nói về cái đó
-- KHÔNG tự suy diễn sang vấn đề liên quan nhưng KHÁC BẢN CHẤT
-
-VÍ DỤ CÁCH DIỄN GIẢI ĐÚNG (áp dụng cho BẤT KỲ APP NÀO):
-
-Ví dụ app ĂN UỐNG — painpoint "Ăn uống mất kiểm soát":
-= Người dùng ĂN KHÔNG KIỂM SOÁT ĐƯỢC — ăn theo cảm xúc, ăn snack đêm, ăn quá nhiều rồi hối hận
-→ TÌNH HUỐNG: Đang buồn/stress → mở tủ lạnh lúc nửa đêm → ăn hết gói snack → nhìn bao bì trống → thở dài
-→ KHÔNG PHẢI: "muốn giảm cân" (đó là MỤC TIÊU, khác với painpoint "mất kiểm soát")
-→ KHÔNG PHẢI: "không biết nấu gì" (đó là painpoint khác)
-
-Ví dụ app ĂN UỐNG — painpoint "Tăng cân lại dù đã từng cố giảm":
-= Người dùng ĐÃ GIẢM THÀNH CÔNG rồi nhưng TĂNG LẠI — yo-yo dieting, thất vọng, tự hỏi "sao lần nào cũng vậy"
-→ TÌNH HUỐNG: Cân nặng đo sáng nay lên 5 pounds so với tháng trước — dù đang cố. Nhìn ảnh cũ lúc đã slim.
-→ KHÔNG PHẢI: "sợ mắc bệnh" (đó là painpoint sức khỏe, khác)
-
-Ví dụ app THIẾT KẾ — painpoint "Ko biết thiết kế":
-= KHÔNG BIẾT chọn style gì, phối màu ra sao → confused, overwhelmed
-→ TÌNH HUỐNG: lướt Pinterest 3 giờ mà vẫn 0 quyết định
-→ KHÔNG PHẢI: "tốn tiền designer" (đó là painpoint TÀI CHÍNH, khác)
-
-❌ LỖI SAI HAY GẶP — AI THƯỜNG TRỘN LẪN PAINPOINT:
-- Painpoint = "Ăn mất kiểm soát" → AI gen hook về "tốn tiền ăn ngoài" → ❌ SAI (đó là painpoint tài chính)
-- Painpoint = "Tăng cân lại" → AI gen hook về "không biết nấu gì" → ❌ SAI (đó là painpoint kỹ năng)
-- Painpoint = "Ko biết thiết kế" → AI gen hook về "tốn tiền contractor" → ❌ SAI (đó là painpoint tài chính)
-- Mỗi painpoint là MỘT VẤN ĐỀ CỤ THỂ, RIÊNG BIỆT. KHÔNG TRỘN LẪN.
-
-📐 CÁCH PAINPOINT PHẢI HIỆN TRONG HOOK:
-1. Painpoint hiện qua HÀNH ĐỘNG + LỜI NÓI TỰ NHIÊN (không mô tả suông)
-2. Tình huống THỰC TẾ — xảy ra tự nhiên trong đời thường của core user
-3. Core user (viewer) phải NHẬN RA NGAY "à đúng rồi mình cũng bị vậy!"
-4. KHÔNG setup giả tạo, không diễn kịch
-
-📐 CHECKLIST TRƯỚC KHI OUTPUT:
-□ Hook đang nói VỀ ĐÚNG painpoint "${filters?.painPoint?.join(', ') || 'General'}" chưa?
-□ Hay đang lạc sang painpoint KHÁC (dù liên quan)?
-□ Tình huống có xảy ra TỰ NHIÊN trong đời core user không?
-□ Core user có NHẬN RA MÌNH không?
-
-═══════════════════════════════════════
-RULE #4: CREATIVE TYPE
-═══════════════════════════════════════
-Mỗi idea PHẢI thuộc 1 kiểu: UGC / POV / Split Screen / Interview / Reaction / ASMR / Trend Format / Social Proof / Challenge
-
-═══════════════════════════════════════
-RULE #5: VOICE PHẢI TỰ NHIÊN — NHƯ NGƯỜI THẬT NÓI
-═══════════════════════════════════════
-⚠️ Voice/script là yếu tố quan trọng nhất. Nếu voice nghe GIẢ → toàn bộ hook thất bại.
-
-✅ VOICE TỰ NHIÊN — nghe như người thật nói với bạn bè/camera:
-- Có ngập ngừng, có "um", "like", "okay so..."
-- Câu ngắn, đứt quãng, không hoàn chỉnh ngữ pháp
-- Giọng điệu phù hợp tình huống (bực bội, hào hứng, thì thầm, deadpan)
-- Phản ứng cảm xúc THẬT — không diễn
-
-❌ VOICE GIẢ — nghe như script quảng cáo:
-- Concept name trong voice ("bài kiểm tra sai lầm", "thử thách 30 ngày") → không ai nói thế
-- Quá formal ("Trước khi tôi bắt đầu hành trình...") → không phải UGC
-- Mở đầu kiểu youtuber ("Chào mọi người, hôm nay tôi sẽ...")
-- Tự monologue trước camera không tự nhiên
-
+## SUPPORTING CONTEXT
+${knowledgeBlock || '- No AI Brain memory yet.'}
+${ideasBlock || '- No recent saved ideas.'}
+${trendingBlock || '- No trending hooks injected.'}
 ${marketContext}
+${seasonalVisualBlock || ''}
+${variationBlock || ''}
+${diversityBlock || ''}
 
-═══════════════════════════════════════
-RULE #6: SEASON / MONTH / EVENT PHẢI ĐI VÀO VISUAL HOOK
-═══════════════════════════════════════
-Nếu có SEASONAL VISUAL CONTEXT:
-1. Hook visual PHẢI mở bằng một cảnh nhìn ra ngay mùa/tháng/sự kiện qua visual tự nhiên: trang phục, props, màu sắc, ánh sáng, hành vi hoặc set dressing.
-2. Context mùa/tháng KHÔNG được xuất hiện như phần mô tả riêng, note riêng hoặc câu giải thích. Nó phải nằm trong hành động/cảnh quay của hook.
-3. Chỉ dùng chi tiết hợp với core user, app, painpoint và target market. Ví dụ mùa đông ở SEA/VN không mặc định có tuyết; hãy localize thành gift shopping, Tết, hoodie nhẹ, mưa lạnh, mall decoration nếu hợp hơn.
-4. Sự kiện chỉ làm visual đúng thời điểm, KHÔNG thay thế painpoint. Painpoint vẫn là trục chính của Hook.
-5. Không tự thêm mùa/sự kiện vào [MÔ TẢ BỔ SUNG]; chỉ áp dụng trong hook.visual.
+## TASK
+Generate ${quantity} production-ready full ideas for the selected filter combination.
+- Duration: ${duration}
+- Each idea must stay inside the selected pillar and selected angle focus.
+- Hook, body, and CTA must follow one continuous problem-solution chain.
+- If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
 
-═══════════════════════════════════════
-RULE #7: FORMAT "SCRIPT" — KỊCH BẢN HÀNH ĐỘNG LIỀN MẠCH (QUAN TRỌNG)
-═══════════════════════════════════════
-⚠️ PHẢI tách rõ 3 field: visual / voice / textOverlay. KHÔNG trộn voice và text overlay vào visual.
-⚠️ KHÔNG viết 3 options cho text (Op1/Op2/Op3). CHỈ 1 TEXT DUY NHẤT.
+${buildIdeaOutputSpec({ quantity, duration, appName, language: targetLang })}
 
-Mỗi section (hook, body, cta) phải có:
-- "visual" = mô tả cảnh quay, hành động, camera, bối cảnh
-- "voice" = câu nhân vật nói / VOICE tự nhiên
-- "textOverlay" = text xuất hiện trên màn hình
-
-📐 QUY TẮC VIẾT:
-1. VISUAL chỉ mô tả cảnh quay và hành động theo timeline, KHÔNG chèn [VOICE] hoặc [TEXT OVERLAY]
-2. VOICE phải tự nhiên, như người thật nói trong UGC, không đọc slogan
-3. TEXT OVERLAY phải ngắn, rõ, không quảng cáo hóa
-4. MỞ ĐẦU = ai, ở đâu, đang làm gì (ĐỜI THƯỜNG)
-5. Painpoint hiện qua HÀNH ĐỘNG + LỜI NÓI TỰ NHIÊN
-6. CẮT ngang / transition / reveal = viết rõ ở visual nếu cần
-
-═══════════════════════════════════════
-RULE #8: KHÔNG ĐƯỢC TVC HÓA
-═══════════════════════════════════════
-⚠️ Output phải là UGC / social-first / handheld / phone-shot / relatable.
-⚠️ KHÔNG viết kiểu TVC bóng bẩy, cinematic montage, brand film, voiceover quá trau chuốt, hoặc copy nghe như slogan quảng cáo.
-
-❌ Tránh:
-- "Khám phá giải pháp hoàn hảo cho không gian của bạn"
-- "Biến ngôi nhà mơ ước thành hiện thực"
-- mô tả camera quá điện ảnh, quá dựng, quá staged
-
-✅ Ưu tiên:
-- lời nói ngập ngừng, đời thường, hơi lộn xộn
-- tình huống thật trong nhà, trong bathroom, khi đang nhìn đồ đạc hoặc scroll Pinterest
-- reaction thật, không diễn quá
-
-📌 PAINPOINT = KHOẢNH KHẮC, KHÔNG PHẢI MÔ TẢ:
-❌ SAI: "Cô đứng trong bếp, cô muốn giảm cân." → mô tả suông, không có hành động
-❌ SAI: "Anh ngồi nhìn cân nặng tăng." → setup giả tạo
-✅ ĐÚNG: Khoảnh khắc ĐỜI THƯỜNG — đang làm gì đó bình thường → painpoint BẬT RA tự nhiên qua hành động/lời nói
-
-═══════════════════════════════════════
-❌ TUYỆT ĐỐI KHÔNG VIẾT KIỂU SAI NÀY:
-═══════════════════════════════════════
-
-SAI 1 — LẠC PAINPOINT (LỖI NGHIÊM TRỌNG NHẤT):
-Painpoint đã chọn là A → nhưng hook lại nói về B (dù B liên quan)
-→ ❌ MỖI PAINPOINT LÀ MỘT VẤN ĐỀ RIÊNG. KHÔNG TRỘN LẪN.
-
-SAI 2 — SETUP QUÁ RÕ:
-Nhân vật cố tình tạo tình huống để nói về painpoint trước camera
-→ ❌ Không ai monologue trước camera. Painpoint phải xuất hiện TỰ NHIÊN.
-
-SAI 3 — ĐẶT TÊN CONCEPT:
-"We're running the 'XYZ' test/challenge"
-→ ❌ Không ai đặt tên hành động mình. Đây là copywriting.
-
-SAI 4 — Copy ví dụ cũ:
-→ ❌ KHÔNG copy lại bất cứ ví dụ nào. Phải TẠO MỚI dựa trên painpoint, app, core user ĐÃ CHỌN.
-
-═══════════════════════════════════════
-⚠️ RULE: HOOK PHẢI CÓ PHÂN TÍCH — FOCUS VIEWER
-═══════════════════════════════════════
-Hook PHẢI KÈM PHÂN TÍCH chi tiết về VIEWER (người đang lướt feed), KHÔNG phải nhân vật:
-- "viewerProfile": Ai đang LƯỚT FEED sẽ dừng lại? (tuổi, giới, hành vi, bối cảnh sống — CỤ THỂ)
-- "viewerEmotion": VIEWER cảm nhận gì khi xem hook? Mô tả hành trình cảm xúc CỦA VIEWER: họ TỰ HỎI gì, LIÊN TƯỞNG gì, MUỐN BIẾT gì tiếp
-- "painpointImpact": VIEWER tự thấy mình ở đâu trong tình huống? Họ liên tưởng đến vấn đề nào CỦA HỌ?
-- "whyTheyStopScrolling": Tại sao VIEWER DỪNG SCROLL? (curiosity gap, relatable, shock value...)
-
-═══════════════════════════════════════
-⚠️ RULE NGÔN NGỮ: PHẢI CÓ BẢN DỊCH TIẾNG VIỆT
-═══════════════════════════════════════
-Voice/text overlay viết bằng ${targetLang} (ngôn ngữ target).
-NHƯNG BẮT BUỘC kèm bản dịch tiếng Việt ("viTranslation") cho MỌI script.
-→ Team VN đọc hiểu nhanh, không cần tra từ điển.
-
-═══════════════════════════════════════
-CẤU TRÚC VIDEO ${duration}
-═══════════════════════════════════════
-🎣 HOOK (3-5s): script kịch bản → TẠO EMOTION CHO VIEWER
-📖 BODY (10-25s): script kịch bản → DEMO PSP giải quyết Painpoint
-🔥 CTA (3-5s): script kịch bản → KÊU GỌI HÀNH ĐỘNG
-
-═══════════════════════════════════════
-OUTPUT FORMAT
-═══════════════════════════════════════
-Trả về ĐÚNG ${quantity} objects trong JSON ARRAY.
-KHÔNG markdown. KHÔNG giải thích thêm.
-Framework/explanation/phân tích = TIẾNG VIỆT. Voice/text overlay = ${targetLang}. Visual mô tả bằng tiếng Việt tự nhiên.
-
-[{
-  "id": 1,
-  "title": "Tên concept ngắn tiếng Việt (VD: 'UGC - Chồng cá cược bathroom')",
-  "duration": "${duration}",
-  "creativeType": "UGC / POV / Interview / Reaction / ...",
-  "framework": {
-    "coreUser": "Chân dung viewer TARGET: tuổi, giới, hành vi, bối cảnh (tiếng Việt, 2-3 câu)",
-    "painpoint": "Nỗi đau CỤ THỂ, mô tả tình huống thực tế (tiếng Việt, 2-3 câu)",
-    "emotion": "Cảm xúc mà VIEWER sẽ CẢM NHẬN khi xem hook — mô tả hành trình: viewer nghĩ gì, tự hỏi gì (tiếng Việt, 2-3 câu)",
-    "psp": "Tính năng app giải quyết painpoint + cách demo (tiếng Việt)"
-  },
-  "explanation": "Tại sao idea này hiệu quả + VIEWER emotion trigger bằng cách nào (tiếng Việt, 3-5 câu)",
-  "hook": {
-    "visual": "Mô tả cảnh quay hook thật cụ thể: ai, ở đâu, đang làm gì, camera lia vào đâu, painpoint hiện ra như thế nào. Viết 3-5 câu ngắn theo timeline. KHÔNG chèn voice hoặc text overlay vào đây.",
-    "voice": "1-3 câu nhân vật nói bằng ${targetLang}. Tự nhiên, social-first, không TVC, không slogan.",
-    "textOverlay": "1 câu text overlay ngắn bằng ${targetLang}",
-    "viTranslation": "Bản dịch TIẾNG VIỆT của voice + text overlay trong hook",
-    "viewerProfile": "VIEWER ĐANG LƯỚT FEED là ai? Tuổi, giới, đang ở đâu, đang làm gì? (tiếng Việt, 2 câu CỤ THỂ)",
-    "viewerEmotion": "VIEWER CẢM NHẬN GÌ khi xem hook? Họ TỰ HỎI gì? MUỐN BIẾT gì tiếp? Mô tả hành trình cảm xúc CỤ THỂ (tiếng Việt, 2-3 câu)",
-    "painpointImpact": "VIEWER tự thấy mình ở đâu? Liên tưởng đến vấn đề gì CỦA HỌ? (tiếng Việt, 2-3 câu, nêu ví dụ tình huống thật)",
-    "whyTheyStopScrolling": "VIEWER dừng scroll vì lý do gì CỤ THỂ? (tiếng Việt, 1 câu rõ ràng)"
-  },
-  "body": {
-    "visual": "Mô tả cảnh body: demo app, thao tác, before/after, reaction. Viết theo timeline. KHÔNG chèn voice hoặc text overlay vào đây.",
-    "voice": "1-3 câu voice bằng ${targetLang}, tự nhiên như người dùng thật đang nói tiếp.",
-    "textOverlay": "Text kết quả/con số bằng ${targetLang}",
-    "viTranslation": "Bản dịch tiếng Việt voice + text overlay trong body"
-  },
-  "cta": {
-    "visual": "Mô tả cảnh CTA: màn hình app, tay chỉ, end moment, pose cuối hoặc cut cuối. KHÔNG chèn voice hoặc text overlay vào đây.",
-    "voice": "1-2 câu CTA bằng ${targetLang}, ngắn, không gồng quảng cáo.",
-    "textOverlay": "CTA bold bằng ${targetLang}",
-    "viTranslation": "Bản dịch tiếng Việt voice + text overlay trong CTA",
-    "endCard": "${appName} + tagline bằng ${targetLang}"
-  }
-}]`;
+${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
     console.log('[generate-ideas] Prompt length:', prompt.length, 'chars, model:', selectedModel || 'gemini-2.5-pro');
     let text = await askAI(prompt, {
@@ -759,8 +526,13 @@ Framework/explanation/phân tích = TIẾNG VIỆT. Voice/text overlay = ${targe
     }
 
     let arr = Array.isArray(parsed) ? parsed : [parsed];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let valid = arr.filter((i: any) => i?.hook).slice(0, quantity);
+    let valid = arr
+      .map(item => normalizeIdeaOutput(item, { duration, appName, pillar: primaryPillar }))
+      .filter(item => {
+        const hook = (item?.hook || {}) as Record<string, unknown>;
+        return String(hook.visual || hook.script || '').trim().length > 0;
+      })
+      .slice(0, quantity);
 
     if (quantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid)) {
       console.warn('[generate-ideas] Near-duplicate batch detected; retrying with stricter diversity prompt');
@@ -779,8 +551,13 @@ Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`
       if (retryText) {
         const retryParsed = parseJson(retryText);
         const retryArr = Array.isArray(retryParsed) ? retryParsed : retryParsed ? [retryParsed] : [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const retryValid = retryArr.filter((i: any) => i?.hook).slice(0, quantity);
+        const retryValid = retryArr
+          .map(item => normalizeIdeaOutput(item, { duration, appName, pillar: primaryPillar }))
+          .filter(item => {
+            const hook = (item?.hook || {}) as Record<string, unknown>;
+            return String(hook.visual || hook.script || '').trim().length > 0;
+          })
+          .slice(0, quantity);
         if (retryValid.length > 0 && !hasNearDuplicateIdeas(retryValid)) {
           text = retryText;
           parsed = retryParsed;

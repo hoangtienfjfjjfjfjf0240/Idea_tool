@@ -87,10 +87,16 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
         let savedIdeas: GeneratedIdea[] | undefined;
         if (data.ideas && Array.isArray(data.ideas) && data.ideas.length > 0) {
           const sessionId = crypto.randomUUID();
-          const mapped = data.ideas.map((item: Record<string, unknown>) => ({
-            title: (item.title as string) || 'Ý tưởng AI',
-            duration: (item.duration as string) || '30s',
-            filtersSnapshot: ((item.selectedFilters as Record<string, string[]>) || {
+          const mapped = data.ideas.map((item: Record<string, unknown>) => {
+            const selectedFilters = item.selectedFilters as Record<string, string[]> | undefined;
+            const hasSelectedFilters = !!selectedFilters && Object.values(selectedFilters).some(
+              value => Array.isArray(value) && value.length > 0
+            );
+
+            return {
+              title: (item.title as string) || 'Ý tưởng AI',
+              duration: (item.duration as string) || '30s',
+              filtersSnapshot: (hasSelectedFilters ? selectedFilters : {
               coreUser: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).coreUser || '')].filter(Boolean) : [],
               painPoint: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).painpoint || '')].filter(Boolean) : [],
               solution: item.framework && typeof item.framework === 'object' ? [String((item.framework as IdeaContent['framework']).psp || '')].filter(Boolean) : [],
@@ -98,16 +104,18 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
               angle: [],
               targetMarket: [],
               visualType: [(item.creativeType as string) || ''],
-            }),
-            content: {
-              creativeType: (item.creativeType as string) || '',
-              framework: (item.framework as IdeaContent['framework']) || { coreUser: '', painpoint: '', emotion: '', psp: '' },
-              explanation: (item.explanation as string) || '',
-              hook: (item.hook as IdeaContent['hook']) || { visual: '', text: '', voice: '' },
-              body: (item.body as IdeaContent['body']) || { visual: '', text: '', voice: '' },
-              cta: (item.cta as IdeaContent['cta']) || { voice: '', text: '', endCard: '' },
-            },
-          }));
+              }),
+              content: {
+                creativeType: (item.creativeType as string) || '',
+                meta: (item.meta as IdeaContent['meta']) || undefined,
+                framework: (item.framework as IdeaContent['framework']) || { coreUser: '', painpoint: '', emotion: '', psp: '' },
+                explanation: (item.explanation as string) || '',
+                hook: (item.hook as IdeaContent['hook']) || { visual: '', text: '', voice: '' },
+                body: (item.body as IdeaContent['body']) || { visual: '', text: '', voice: '' },
+                cta: (item.cta as IdeaContent['cta']) || { voice: '', text: '', endCard: '' },
+              },
+            };
+          });
           savedIdeas = await dbService.saveIdeas(app.id, mapped, sessionId);
           if (onIdeasGenerated && savedIdeas) onIdeasGenerated(savedIdeas);
 
