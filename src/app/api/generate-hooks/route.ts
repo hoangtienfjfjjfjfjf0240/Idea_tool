@@ -19,10 +19,14 @@ function parseJson(text: string) {
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
+    'gpt-5.4': 'openai/gpt-5.4',
+    'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
+    'gpt-5.4-mini': 'openai/gpt-5.4-mini',
     'gpt-4.1': 'openai/gpt-4.1',
     'o4-mini': 'openai/o4-mini',
   };
-  return map[selected || ''] || 'openai/gpt-4.1';
+  return map[selected || ''] || 'gemini/gemini-3-pro-preview';
 }
 
 export async function POST(request: NextRequest) {

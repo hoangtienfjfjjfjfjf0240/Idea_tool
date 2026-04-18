@@ -153,6 +153,7 @@ Before outputting each idea, internally ask:
 2. Is the pain point specific enough to feel personal?
 3. Can a video creator execute this today without asking questions?
 4. Is this angle genuinely different from the others in the batch?
+5. If an angle is provided, does the hook externalize that exact angle instead of a broader symptom?
 If any answer is no, rewrite before outputting.`;
 
 export const CREATIVE_PROMPT_RULES = `## RULES
@@ -167,11 +168,16 @@ R08. dontDo must be specific enough for QC to check.
 R09. Do not make medical claims or prohibited health promises.
 R10. Do not use before/after health outcome framing.
 R11. Return JSON only, no markdown fences or extra prose.
-R12. Metadata must be consistent and usable for tracking performance later.`;
+R12. Metadata must be consistent and usable for tracking performance later.
+R13. A selected angle is a narrow manifestation of the selected pain point, not a replacement for it.
+R14. If an angle is provided, the hook must externalize that exact angle in the first action, first spoken line, or first contrast.`;
 
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
 - Keep the selected pain point exact. Do not drift into an adjacent pain point.
+- Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
+- Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
+- If an angle exists, make it visible immediately through the first action, first line, or first contrast in the hook.
 - Voice must sound like a real person talking in-feed, not a polished ad.
 - Keep the output social-first, UGC-friendly, handheld, relatable.
 - Separate visual, voice, and textOverlay clearly for hook, body, and CTA.

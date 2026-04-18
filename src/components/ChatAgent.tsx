@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageCircle, Send, X, Bot, User, Loader2, Sparkles, ChevronDown, Lightbulb, TrendingUp, Target, Zap, ExternalLink } from 'lucide-react';
 import type { AppProject, Hook, GeneratedIdea, IdeaContent } from '@/types/database';
+import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 
 interface ChatMessage {
@@ -25,6 +26,7 @@ interface AppContextData {
 interface ChatAgentProps {
   app: AppProject;
   appContext: AppContextData;
+  selectedModel?: AIModel;
   onIdeasGenerated?: (ideas: GeneratedIdea[]) => void;
   onAppKnowledgeUpdated?: (knowledge: string) => void;
   onOpenIdeas?: () => void;
@@ -37,7 +39,7 @@ const QUICK_PROMPTS = [
   { icon: <Zap size={14} />, text: 'Gợi ý hook viral cho app', color: '#ef4444' },
 ];
 
-export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGenerated, onAppKnowledgeUpdated, onOpenIdeas }) => {
+export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, selectedModel, onIdeasGenerated, onAppKnowledgeUpdated, onOpenIdeas }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -76,6 +78,7 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, onIdeasGe
         body: JSON.stringify({
           message: msg,
           appContext,
+          selectedModel,
           chatHistory: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         }),
       });

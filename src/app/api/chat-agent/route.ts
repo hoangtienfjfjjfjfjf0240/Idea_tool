@@ -10,6 +10,19 @@ import {
 
 export const maxDuration = 120;
 
+function resolveModel(selected?: string): string {
+  const map: Record<string, string> = {
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
+    'gpt-5.4': 'openai/gpt-5.4',
+    'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
+    'gpt-5.4-mini': 'openai/gpt-5.4-mini',
+    'gpt-4.1': 'openai/gpt-4.1',
+    'o4-mini': 'openai/o4-mini',
+  };
+  return map[selected || ''] || 'gemini/gemini-3-pro-preview';
+}
+
 function asList(value: unknown): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean);
@@ -78,7 +91,7 @@ function summarizeRecentFilterCombos(recentIdeas: Array<Record<string, unknown>>
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, appContext, chatHistory } = await request.json();
+    const { message, appContext, chatHistory, selectedModel } = await request.json();
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
@@ -171,7 +184,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
     const response = await callAI(
       messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
-      { model: 'gemini/gemini-2.5-pro', temperature: 0.7, useCreativePersona: false }
+      { model: resolveModel(selectedModel), temperature: 0.7, useCreativePersona: false }
     );
 
     if (!response) {

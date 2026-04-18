@@ -23,6 +23,33 @@ interface CategoryConfig {
   isCustom?: boolean;
 }
 
+interface ImportedTrendAnalysis {
+  sourceUrl: string;
+  sourceLabel?: string;
+  resolvedVideoUrl?: string;
+  title: string;
+  summary: string;
+  creativeType: string;
+  angleType: string;
+  emotionalDriver: string;
+  hookPattern: string;
+  bodyPattern: string;
+  ctaPattern: string;
+  visualStyle: string;
+  audioStyle: string;
+  textOverlayStyle: string;
+  keyMoments: string[];
+  filterHints?: {
+    emotion?: string[];
+    angle?: string[];
+    visualType?: string[];
+  };
+  structureNotes: string[];
+  suggestedTopics: string[];
+  promptBooster: string;
+  modelUsed?: string;
+}
+
 const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
@@ -353,6 +380,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [favoriteIdeas, setFavoriteIdeas] = useState<Set<string>>(new Set());
   const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
   const [trendingInput, setTrendingInput] = useState('');
+  const [importedTrendAnalyses, setImportedTrendAnalyses] = useState<ImportedTrendAnalysis[]>([]);
+  const [isImportingTrend, setIsImportingTrend] = useState(false);
+  const [trendImportError, setTrendImportError] = useState<string | null>(null);
   const [selectedSeasonInsights, setSelectedSeasonInsights] = useState<Set<string>>(new Set());
   const [selectedSeasonEvents, setSelectedSeasonEvents] = useState<Set<string>>(new Set());
   const [wizardStep, setWizardStep] = useState(0);
@@ -372,6 +402,59 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       merged[key] = [...new Set([...(merged[key] || []), ...values])];
     });
     return merged;
+  };
+
+  const appendTrendingTopics = (items: string[]) => {
+    const normalized = items
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map(item => item.trim());
+    if (normalized.length === 0) return;
+
+    setTrendingTopics(prev => [...new Set([...prev, ...normalized])]);
+  };
+
+  const handleAddTrendingInput = async () => {
+    const value = trendingInput.trim();
+    if (!value || isImportingTrend) return;
+
+    if (!/^https?:\/\//i.test(value)) {
+      appendTrendingTopics([value]);
+      setTrendingInput('');
+      setTrendImportError(null);
+      return;
+    }
+
+    setIsImportingTrend(true);
+    setTrendImportError(null);
+
+    try {
+      const res = await fetch('/api/import-trending-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: value }),
+      });
+      const result = await res.json();
+
+      if (!res.ok || !result.success || !result.data) {
+        throw new Error(result.error || 'Không import được video từ URL này.');
+      }
+
+      const analysis = result.data as ImportedTrendAnalysis;
+      setImportedTrendAnalyses(prev => [analysis, ...prev.filter(item => item.sourceUrl !== analysis.sourceUrl)]);
+      appendTrendingTopics(analysis.suggestedTopics || []);
+      setOptions(prev =>
+        mergeOptionSelections(prev, {
+          emotion: analysis.filterHints?.emotion || [],
+          angle: analysis.filterHints?.angle || [],
+          visualType: analysis.filterHints?.visualType || [],
+        })
+      );
+      setTrendingInput('');
+    } catch (error) {
+      setTrendImportError(error instanceof Error ? error.message : 'Import URL video thất bại.');
+    } finally {
+      setIsImportingTrend(false);
+    }
   };
 
   useEffect(() => {
@@ -589,6 +672,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             appKnowledge: app.app_knowledge || null,
             selectedModel: selectedModel || '',
             trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
+            trendingStructures: importedTrendAnalyses.length > 0
+              ? importedTrendAnalyses.map(item => item.promptBooster).filter(Boolean)
+              : null,
           }),
           signal: controller.signal,
         });
@@ -1232,24 +1318,62 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             <h3 className="text-xs font-bold text-rose-600 uppercase mb-3 flex items-center gap-2"><TrendingUp size={14} /> Import Trending</h3>
             <div className="flex gap-2 mb-3">
               <input value={trendingInput} onChange={e => setTrendingInput(e.target.value)}
-                placeholder="Nhập trend hoặc paste URL TikTok..."
+                placeholder="Nhập trend, direct video URL, YouTube hoặc TikTok URL..."
                 onKeyDown={e => {
                   if (e.key === 'Enter' && trendingInput.trim()) {
-                    setTrendingTopics(prev => [...prev, trendingInput.trim()]);
-                    setTrendingInput('');
+                    void handleAddTrendingInput();
                   }
                 }}
                 className="flex-1 text-sm py-2.5 px-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-200 bg-white" />
-              <button onClick={() => {
-                if (trendingInput.trim()) {
-                  setTrendingTopics(prev => [...prev, trendingInput.trim()]);
-                  setTrendingInput('');
-                }
-              }}
+              <button onClick={() => { void handleAddTrendingInput(); }}
+                disabled={isImportingTrend || !trendingInput.trim()}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 text-white font-bold text-sm hover:shadow-lg transition-all flex items-center gap-1">
-                <Plus size={14} /> Thêm
+                {isImportingTrend ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                {isImportingTrend ? 'Đang đọc video...' : 'Thêm'}
               </button>
             </div>
+            {trendImportError && (
+              <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
+                {trendImportError}
+              </div>
+            )}
+            {importedTrendAnalyses.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {importedTrendAnalyses.map((analysis) => (
+                  <div key={analysis.sourceUrl} className="rounded-xl border border-rose-200 bg-white p-3">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-gray-800">{analysis.title}</p>
+                        <p className="truncate text-[11px] text-gray-400">{analysis.sourceLabel || analysis.sourceUrl}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setImportedTrendAnalyses(prev => prev.filter(item => item.sourceUrl !== analysis.sourceUrl))}
+                        className="text-gray-400 transition-colors hover:text-red-500"
+                        title="Remove imported video"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <p className="mb-2 text-xs leading-relaxed text-gray-600">{analysis.summary}</p>
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {[analysis.creativeType, analysis.angleType, analysis.emotionalDriver].filter(Boolean).map((label) => (
+                        <span key={label} className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="space-y-1">
+                      {analysis.structureNotes.slice(0, 4).map((note) => (
+                        <p key={note} className="text-[11px] leading-relaxed text-gray-500">
+                          • {note}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {trendingTopics.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {trendingTopics.map((topic, i) => (
@@ -1262,8 +1386,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 ))}
               </div>
             )}
-            {trendingTopics.length === 0 && (
-              <p className="text-xs text-gray-400 italic">Thêm trending topics hoặc paste URL TikTok để kết hợp vào idea</p>
+            {trendingTopics.length === 0 && importedTrendAnalyses.length === 0 && (
+              <p className="text-xs text-gray-400 italic">Nhập trend text hoặc URL video để import luôn hook/body/CTA structure vào prompt.</p>
             )}
           </div>
 

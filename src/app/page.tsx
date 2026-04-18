@@ -213,6 +213,7 @@ export default function Home() {
         <ChatAgent
           key={selectedApp.id}
           app={selectedApp}
+          selectedModel={selectedModel}
           appContext={{
             name: selectedApp.name,
             category: selectedApp.category,

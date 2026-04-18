@@ -410,7 +410,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
     }
 
     // === MODE: GENERATE (tạo idea mới) ===
-    const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics } = body;
+    const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics, trendingStructures } = body;
     const featureContext = filters?.solution?.length ? filters.solution.join(', ') : "General App Features";
     const quantity = Math.min(config?.quantity || 3, 5); // Cap at 5 to avoid gateway timeout
     const duration = config?.duration || '30s';
@@ -435,6 +435,15 @@ Trả JSON array of strings. KHÔNG markdown.`;
     const trendingBlock = trendingTopics?.length
       ? `\n[TRENDING HIỆN TẠI — KẾT HỢP NẾU PHÙ HỢP]\n${trendingTopics.join(', ')}\n→ Kết hợp trend vào tình huống/hook nếu tự nhiên. KHÔNG ép trend vào nếu không phù hợp với painpoint/emotion đã chọn.\n`
       : '';
+    const structuredTrendNotes = Array.isArray(trendingStructures)
+      ? trendingStructures
+          .map(item => String(item || '').trim())
+          .filter(Boolean)
+          .slice(0, 6)
+      : [];
+    const importedTrendBlock = structuredTrendNotes.length
+      ? `\n[IMPORTED VIDEO STRUCTURE — ƯU TIÊN HỌC CẤU TRÚC, KHÔNG COPY NGUYÊN XI]\n${structuredTrendNotes.join('\n')}\n→ Học nhịp hook/body/CTA, camera treatment, audio pattern và text overlay style. Vẫn phải bám đúng painpoint/emotion/filter của app.\n`
+      : '';
     const seasonalVisualBlock = buildSeasonalVisualBlock(config?.seasonalVisualContext);
     const variationIndex = Number(config?.variationIndex || 0);
     const totalVariations = Number(config?.totalVariations || quantity);
@@ -457,6 +466,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
       performanceData: [
         rawKnowledge ? `AI Brain memory: ${truncatedKnowledge}` : 'No AI Brain memory yet',
         previousIdeas ? `Recent idea history for anti-repeat:\n${previousIdeas}` : 'No recent idea history',
+        structuredTrendNotes.length ? `Imported video structure:\n${structuredTrendNotes.join('\n')}` : 'No imported video structure',
         angleContext ? `Angle focus: ${angleContext}` : 'No locked angle',
       ],
       doList: [
@@ -489,6 +499,7 @@ ${frameworkInjection}
 ${knowledgeBlock || '- No AI Brain memory yet.'}
 ${ideasBlock || '- No recent saved ideas.'}
 ${trendingBlock || '- No trending hooks injected.'}
+${importedTrendBlock || ''}
 ${marketContext}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
@@ -498,6 +509,8 @@ ${diversityBlock || ''}
 Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Duration: ${duration}
 - Each idea must stay inside the selected pillar and selected angle focus.
+- Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
+- If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
 - Hook, body, and CTA must follow one continuous problem-solution chain.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
 
