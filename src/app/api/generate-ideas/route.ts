@@ -16,6 +16,170 @@ function parseJson(text: string) {
   return parseJsonLoose(text);
 }
 
+const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
+const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|painful\b|awkward\b|annoying\b|sao\b|vẫn\b|đừng\b|không cần\b|thay vì|bao giờ|tệ nhất|mệt|phiền|khổ)/i;
+const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
+const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
+const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function countWords(text: string): number {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+}
+
+function normalizeCompareText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasDistinctHookVariations(variations: string[]): boolean {
+  const normalized = variations.map(normalizeCompareText);
+  if (new Set(normalized).size !== normalized.length) return false;
+
+  for (let i = 0; i < variations.length; i++) {
+    for (let j = i + 1; j < variations.length; j++) {
+      if (jaccardSimilarity(variations[i], variations[j]) >= 0.78) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function isSpecificDontDo(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  if (countWords(text) < 4) return false;
+  return !/^(dont|don't|do not|avoid|khong|không)\s+(generic|bad|boring|ugly|messy)$/.test(normalized);
+}
+
+function totalVoiceWords(item: Record<string, unknown>): number {
+  const hook = asRecord(item.hook);
+  const body = asRecord(item.body);
+  const cta = asRecord(item.cta);
+  return countWords([asText(hook.voice), asText(body.voice), asText(cta.voice)].filter(Boolean).join(' '));
+}
+
+function repairIdeaTrackingFields(
+  item: Record<string, unknown>,
+  context: { angleIndex: number; ideaIndex: number; pillar: string }
+): Record<string, unknown> {
+  const next = { ...item };
+  const meta = { ...asRecord(item.meta) };
+  const id = asText(item.id);
+
+  next.id = TRACKING_ID_PATTERN.test(id) ? id : `P0-A${context.angleIndex}-I${context.ideaIndex}`;
+  meta.builderVersion = asText(meta.builderVersion) || 'prompt_system_builder_v1';
+  meta.pillar = asText(meta.pillar) || context.pillar;
+  meta.pillarIndex = Number(meta.pillarIndex ?? 0) || 0;
+  next.meta = meta;
+
+  return next;
+}
+
+function validateIdeaOutput(item: Record<string, unknown>): string[] {
+  const meta = asRecord(item.meta);
+  const hook = asRecord(item.hook);
+  const body = asRecord(item.body);
+  const cta = asRecord(item.cta);
+
+  const id = asText(item.id);
+  const hookPrimary = asText(meta.hookPrimary);
+  const hookAlt1 = asText(meta.hookAlt1);
+  const hookAlt2 = asText(meta.hookAlt2);
+  const hookVisual = asText(hook.visual) || asText(hook.script);
+  const hookVoice = asText(hook.voice);
+  const hookTextOverlay = asText(hook.textOverlay) || asText(hook.text);
+  const dontDo = asText(meta.dontDo);
+
+  const errors: string[] = [];
+
+  if (!TRACKING_ID_PATTERN.test(id)) errors.push('id must follow P{pillar}-A{angle}-I{idea}');
+  if (!hookPrimary) errors.push('meta.hookPrimary is required');
+  if (hookPrimary && countWords(hookPrimary) > 12) errors.push('meta.hookPrimary exceeds 12 words');
+  if (!hookAlt1 || !hookAlt2) errors.push('meta.hookAlt1 and meta.hookAlt2 are required');
+  if (hookPrimary && hookAlt1 && hookAlt2 && !hasDistinctHookVariations([hookPrimary, hookAlt1, hookAlt2])) {
+    errors.push('hook variations must be genuinely different');
+  }
+  if (hookPrimary && !PATTERN_INTERRUPT_PATTERN.test([hookPrimary, hookVoice, hookTextOverlay].filter(Boolean).join(' '))) {
+    errors.push('meta.hookPrimary lacks a clear interrupt signal');
+  }
+  if (!hookVisual) errors.push('hook.visual is required');
+  if (!hookVoice && !hookTextOverlay) errors.push('hook needs voice or text overlay');
+  if (totalVoiceWords(item) > 60) errors.push('voiceover exceeds 60 words');
+  if (!isSpecificDontDo(dontDo)) errors.push('meta.dontDo is too generic');
+
+  const complianceText = [
+    hookPrimary,
+    hookAlt1,
+    hookAlt2,
+    hookVisual,
+    hookVoice,
+    hookTextOverlay,
+    asText(body.visual) || asText(body.script),
+    asText(body.voice),
+    asText(body.textOverlay) || asText(body.text),
+    asText(cta.visual) || asText(cta.script),
+    asText(cta.voice),
+    asText(cta.textOverlay) || asText(cta.text),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (MEDICAL_CLAIM_PATTERN.test(complianceText)) {
+    errors.push('contains prohibited medical claim language');
+  }
+
+  if (BEFORE_AFTER_PATTERN.test(complianceText) && HEALTH_CONTEXT_PATTERN.test(complianceText)) {
+    errors.push('contains prohibited before/after health framing');
+  }
+
+  return errors;
+}
+
+function normalizeAndValidateIdeas(
+  items: unknown[],
+  context: { duration: string; appName: string; pillar: string; angleIndex: number }
+) {
+  const valid: Record<string, unknown>[] = [];
+  const invalidReasons: string[] = [];
+
+  items.forEach((item, ideaIndex) => {
+    const normalized = repairIdeaTrackingFields(
+      normalizeIdeaOutput(item, {
+        duration: context.duration,
+        appName: context.appName,
+        pillar: context.pillar,
+      }),
+      { angleIndex: context.angleIndex, ideaIndex, pillar: context.pillar }
+    );
+    const errors = validateIdeaOutput(normalized);
+
+    if (errors.length === 0) valid.push(normalized);
+    else invalidReasons.push(`Idea ${ideaIndex + 1}: ${errors.join('; ')}`);
+  });
+
+  return { valid, invalidReasons };
+}
+
 // Detect language from Core User text
 function detectLang(coreUsers: string[]): string {
   const joined = (coreUsers || []).join(' ').toLowerCase();
@@ -539,15 +703,72 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
     }
 
     let arr = Array.isArray(parsed) ? parsed : [parsed];
-    let valid = arr
-      .map(item => normalizeIdeaOutput(item, { duration, appName, pillar: primaryPillar }))
-      .filter(item => {
-        const hook = (item?.hook || {}) as Record<string, unknown>;
-        return String(hook.visual || hook.script || '').trim().length > 0;
-      })
-      .slice(0, quantity);
+    let validation = normalizeAndValidateIdeas(arr, {
+      duration,
+      appName,
+      pillar: primaryPillar,
+      angleIndex: Math.max(angleIndex - 1, 0),
+    });
+    let valid = validation.valid.slice(0, quantity);
+    const duplicateDetected = quantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid);
+    const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < quantity;
 
-    if (quantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid)) {
+    if (needsValidationRetry || duplicateDetected) {
+      if (validation.invalidReasons.length > 0) {
+        console.warn('[generate-ideas] Invalid ideas detected:', validation.invalidReasons);
+      }
+      if (duplicateDetected) {
+        console.warn('[generate-ideas] Near-duplicate batch detected; retrying with stricter diversity prompt');
+      }
+
+      const retryNotes: string[] = [];
+      if (validation.invalidReasons.length > 0) {
+        retryNotes.push(`Fix these rule violations:\n- ${validation.invalidReasons.slice(0, 5).join('\n- ')}`);
+      }
+      if (duplicateDetected) {
+        retryNotes.push(`Batch trước có các hook quá giống nhau. Hãy tạo lại TOÀN BỘ ${quantity} ideas.
+Bắt buộc mỗi idea khác scene family: đổi địa điểm, nhân vật phụ, object blocker, opening action, camera reveal, voice mở đầu và creativeType.
+Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`);
+      }
+
+      const retryText = await askAI(`${prompt}
+
+[RETRY — INVALID HOẶC QUÁ YẾU]
+Tạo lại TOÀN BỘ ${quantity} ideas. Tuân thủ nghiêm ngặt hard rules.
+${retryNotes.join('\n\n')}`, {
+        model: resolveModel(selectedModel),
+        temperature: 0.95,
+        max_tokens: 16384,
+        useCreativePersona: false
+      });
+
+      if (retryText) {
+        const retryParsed = parseJson(retryText);
+        const retryArr = Array.isArray(retryParsed) ? retryParsed : retryParsed ? [retryParsed] : [];
+        const retryValidation = normalizeAndValidateIdeas(retryArr, {
+          duration,
+          appName,
+          pillar: primaryPillar,
+          angleIndex: Math.max(angleIndex - 1, 0),
+        });
+        const retryValid = retryValidation.valid.slice(0, quantity);
+        const retryHasDuplicates = retryValid.length > 1 && hasNearDuplicateIdeas(retryValid);
+
+        const shouldUseRetry = retryValid.length > valid.length
+          || (valid.length === 0 && retryValid.length > 0)
+          || (duplicateDetected && retryValid.length > 0 && !retryHasDuplicates);
+
+        if (shouldUseRetry && (retryValid.length > 0 || retryValidation.invalidReasons.length === 0)) {
+          text = retryText;
+          parsed = retryParsed;
+          arr = retryArr;
+          validation = retryValidation;
+          valid = retryValid;
+        }
+      }
+    }
+
+    /* Legacy duplicate retry block retained during transition.
       console.warn('[generate-ideas] Near-duplicate batch detected; retrying with stricter diversity prompt');
       const retryText = await askAI(`${prompt}
 
@@ -578,10 +799,13 @@ Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`
           valid = retryValid;
         }
       }
-    }
+    */
 
     if (valid.length === 0) {
       console.error('[generate-ideas] No valid ideas:', JSON.stringify(arr[0]).substring(0, 200));
+      if (validation.invalidReasons.length > 0) {
+        console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
+      }
       return NextResponse.json({ error: 'AI trả về format sai. Thử lại.' }, { status: 500 });
     }
 

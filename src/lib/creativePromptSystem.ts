@@ -138,12 +138,14 @@ An idea without a clear pain point is decoration, not advertising.
 - Every idea must be actionable: a video creator or agency can execute it without asking questions
 - Specificity beats generality
 - Hooks must create pattern interruption in the first 3 seconds
+- Every hook variation must feel testable on Meta as a different opening approach
 
 ## WHAT YOU NEVER DO
 - Never generate generic ideas that could apply to any app
 - Never repeat the same angle with different words
 - Never output cinematic brand-film copy for a social-first UGC workflow
 - Never violate platform policy or invent medical claims
+- Never hide the real hook inside a later body line
 - Never output anything outside the requested JSON format
 - Never combine multiple pain point pillars into one idea
 
@@ -154,23 +156,27 @@ Before outputting each idea, internally ask:
 3. Can a video creator execute this today without asking questions?
 4. Is this angle genuinely different from the others in the batch?
 5. If an angle is provided, does the hook externalize that exact angle instead of a broader symptom?
+6. Would a media buyer have 3 truly different hook options to test from this idea?
 If any answer is no, rewrite before outputting.`;
 
 export const CREATIVE_PROMPT_RULES = `## RULES
-R01. Hook primary must stay under 12 words.
+R01. meta.hookPrimary must stay under 12 words.
 R02. Hook must create pattern interrupt, not just describe the product.
 R03. Every idea must include 3 hook variations: primary + alt 1 + alt 2.
 R04. Each angle must have a distinct angle type inside the same pillar.
 R05. Angle means a genuinely different opening approach, not a paraphrase.
 R06. Every visual scene must be executable without follow-up questions.
-R07. Voiceover must be speakable inside the requested duration and stay concise.
+R07. hook.voice + body.voice + cta.voice together must stay concise, and hook.voice on its own should stay punchy.
 R08. dontDo must be specific enough for QC to check.
 R09. Do not make medical claims or prohibited health promises.
 R10. Do not use before/after health outcome framing.
 R11. Return JSON only, no markdown fences or extra prose.
-R12. Metadata must be consistent and usable for tracking performance later.
-R13. A selected angle is a narrow manifestation of the selected pain point, not a replacement for it.
-R14. If an angle is provided, the hook must externalize that exact angle in the first action, first spoken line, or first contrast.`;
+R12. id must follow tracking format P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
+R13. Metadata must stay consistent and usable for tracking performance later.
+R14. A selected angle is a narrow manifestation of the selected pain point, not a replacement for it.
+R15. If an angle is provided, the hook must externalize that exact angle in the first action, first spoken line, or first contrast.
+R16. hook.voice and hook.textOverlay must express the same hook DNA as meta.hookPrimary, not a softer generic rewrite.
+R17. hook.visual must stay concrete and dense: include camera/framing, exact blocker or pain object, location, and the first visible sign of the selected pain point or angle.`;
 
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
@@ -178,8 +184,10 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in the hook.
+- meta.hookPrimary, meta.hookAlt1, meta.hookAlt2 must use 3 different rhetorical approaches, not 3 paraphrases.
 - Voice must sound like a real person talking in-feed, not a polished ad.
 - Keep the output social-first, UGC-friendly, handheld, relatable.
+- hook.visual should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
 - Separate visual, voice, and textOverlay clearly for hook, body, and CTA.
 - Include Vietnamese translation fields so the VN team can review fast.
 - When a batch requests multiple ideas, diversify creative type, opening action, blocker, reveal, and voice opening.
@@ -262,7 +270,7 @@ Return a JSON array ONLY. No markdown fences. No explanation.
 Return ${quantityLabel} objects in this exact schema:
 
 [{
-  "id": 1,
+  "id": "P0-A0-I0",
   "title": "Short Vietnamese concept title",
   "duration": "${options.duration}",
   "creativeType": "UGC|POV|Split Screen|Reaction|ASMR|Trend Format|Social Proof|Interview|Challenge",
@@ -274,8 +282,8 @@ Return ${quantityLabel} objects in this exact schema:
     "angleType": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
     "angleDesc": "1 sentence describing the unique approach",
     "hookPrimary": "Main hook text under 12 words",
-    "hookAlt1": "Alternative hook variation A",
-    "hookAlt2": "Alternative hook variation B",
+    "hookAlt1": "Alternative hook variation A using a different rhetorical approach",
+    "hookAlt2": "Alternative hook variation B using a different rhetorical approach",
     "visualRefNotes": "Specific production note",
     "talentProfile": "Age, look, clothing, or No talent",
     "dontDo": "1 specific thing not to do",
@@ -291,9 +299,9 @@ ${selectedFiltersBlock}  "framework": {
   },
   "explanation": "Vietnamese explanation of why this idea works",
   "hook": {
-    "visual": "Detailed opening visual in Vietnamese, pure visual only",
-    "voice": "Natural voice line in ${options.language}",
-    "textOverlay": "Short on-screen text in ${options.language}",
+    "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense sentences covering camera, location, blocker, and visible painpoint clue",
+    "voice": "Natural voice line in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
+    "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
     "viTranslation": "Vietnamese translation of hook voice + text",
     "viewerProfile": "Vietnamese description of who stops scrolling",
     "viewerEmotion": "Vietnamese description of what the viewer feels",
@@ -317,8 +325,13 @@ ${selectedFiltersBlock}  "framework": {
 
 ## OUTPUT RULES
 - Fill every field. Use "N/A" only when genuinely not applicable.
+- id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - meta.hookPrimary must stay under 12 words.
+- meta.hookAlt1 and meta.hookAlt2 must not be paraphrases of meta.hookPrimary.
 - hook/body/cta.visual must stay visual-only. Do not mix voice or textOverlay into visual.
+- hook.visual must make the selected pain point and selected angle visible through the first object, first action, or first contrast. Avoid generic one-line visuals.
+- hook.voice and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
+- hook.voice + body.voice + cta.voice together must stay speakable within ${options.duration}, with hook.voice staying short.
 - voice must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
 - Respect the selected language for voice and textOverlay, while strategy fields stay in Vietnamese.
@@ -333,22 +346,22 @@ Return a JSON array ONLY. No markdown fences. No explanation.
 Return ${quantityLabel} objects in this exact schema:
 
 [{
-  "id": 1,
+  "id": "P0-A0-I0",
   "title": "Vietnamese variant title",
   "explanation": "Vietnamese explanation of what changed and why it works",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
     "hookPrimary": "Hook under 12 words",
-    "hookAlt1": "Alternative hook A",
-    "hookAlt2": "Alternative hook B",
+    "hookAlt1": "Alternative hook A with a different rhetorical approach",
+    "hookAlt2": "Alternative hook B with a different rhetorical approach",
     "visualRefNotes": "Specific production note",
     "talentProfile": "Age, look, clothing, or No talent",
     "dontDo": "1 specific thing not to do"
   },
   "hook": {
     "visual": "Detailed hook-only visual in Vietnamese",
-    "voice": "Natural hook voice in ${options.language}",
-    "textOverlay": "Short on-screen text in ${options.language}",
+    "voice": "Natural hook voice in ${options.language} aligned with meta.hookPrimary",
+    "textOverlay": "Short on-screen text in ${options.language} aligned with meta.hookPrimary",
     "viTranslation": "Vietnamese translation of hook voice + text",
     "viewerEmotion": "Vietnamese description of what the viewer feels",
     "painpointImpact": "Vietnamese description of why this pain lands",
@@ -359,6 +372,7 @@ Return ${quantityLabel} objects in this exact schema:
 ## OUTPUT RULES
 - Focus on the first 3-5 seconds only.
 - Keep the winning hook DNA unless the user explicitly asks to change it.
+- id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - The variation must be visually distinct, not just paraphrased text.`;
 }
 
@@ -398,8 +412,7 @@ export function parseJsonLoose(text: string) {
       return JSON.parse(fixed);
     } catch {}
 
-    const fn = new Function(`return ${clean}`);
-    return fn();
+    return null;
   } catch {
     return null;
   }

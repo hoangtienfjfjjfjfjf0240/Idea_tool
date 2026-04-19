@@ -330,6 +330,25 @@ export async function getFilterOptions(app: AppProject): Promise<Record<string, 
     customOptions[cat]!.push(row.value);
   });
 
+  const manualOnlyResult: Record<string, string[]> = {
+    coreUser: customOptions.coreUser || [],
+    painPoint: customOptions.painPoint || [],
+    solution: customOptions.solution || [],
+    emotion: customOptions.emotion || [],
+    videoStructure: customOptions.videoStructure || [],
+    visualType: customOptions.visualType || [],
+    targetMarket: customOptions.targetMarket || [],
+  };
+
+  const customCategoryKeys = new Set(['coreUser', 'painPoint', 'solution', 'emotion', 'videoStructure', 'visualType', 'targetMarket']);
+  for (const [key, values] of Object.entries(customOptions)) {
+    if (!customCategoryKeys.has(key)) {
+      manualOnlyResult[key] = values;
+    }
+  }
+
+  return manualOnlyResult;
+
   // Get app features for "solution"
   const features = await getFeatures(app.id);
   const featureNames = features.map(f => f.name);

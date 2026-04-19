@@ -391,6 +391,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [generatingAngles, setGeneratingAngles] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setOptions({
+      coreUser: [],
+      painPoint: [],
+      solution: [],
+      emotion: [],
+      videoStructure: [],
+      visualType: [],
+      targetMarket: [],
+    });
+  }, [app.id]);
+
   const mergeOptionSelections = (existing: Record<string, string[]>, nextFilters: Partial<FilterState>) => {
     const merged = { ...existing };
     Object.entries(nextFilters).forEach(([key, raw]) => {
@@ -501,6 +513,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const loadOptions = async () => {
     const fullOptions = await dbService.getFilterOptions(app);
+    setOptions(prev => mergeOptionSelections(fullOptions, prefillFilters || filters));
+    return;
     // Merge market presets with any DB options
     const marketPresets = ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'];
     const dbMarket = fullOptions.targetMarket || [];
@@ -761,6 +775,20 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             } as FilterState,
             content: {
               creativeType: 'UGC',
+              meta: {
+                builderVersion: 'prompt_system_builder_v1',
+                pillar: filters.painPoint[0] || 'Nỗi đau phổ biến',
+                pillarIndex: 0,
+                angleName: angle || 'Core angle',
+                angleType: 'Curiosity',
+                angleDesc: angle || filters.painPoint[0] || 'Core angle',
+                hookPrimary: filters.painPoint[0] || 'Bạn có biết?',
+                hookAlt1: `Vẫn đang bị ${filters.painPoint[0] || 'vấn đề này'}?`,
+                hookAlt2: `${filters.solution[0] || app.name} xử lý chuyện này thế nào?`,
+                dontDo: 'Không dùng visual chung chung không gắn với painpoint.',
+                track: 'B',
+                priority: 'A',
+              },
               framework: {
                 coreUser: filters.coreUser[0] || 'Người dùng phổ thông',
                 painpoint: filters.painPoint[0] || 'Nỗi đau phổ biến',
@@ -852,16 +880,68 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
 
-  const handleCopy = (idea: GeneratedIdea) => {
+  /* Legacy copy helper retained during transition.
     const c = idea.content as any;
     const fw = c.framework;
+    const meta = c.meta || {};
     const hookVisual = c.hook?.visual || c.hook?.script || '';
     const bodyVisual = c.body?.visual || c.body?.script || '';
     const ctaVisual = c.cta?.visual || c.cta?.script || '';
+    const hookVariantsBlock = [meta?.hookPrimary, meta?.hookAlt1, meta?.hookAlt2].some(Boolean)
+      ? `\nðŸ§  HOOK VARIATIONS\n[PRIMARY] ${meta?.hookPrimary || ''}\n[ALT 1] ${meta?.hookAlt1 || ''}\n[ALT 2] ${meta?.hookAlt2 || ''}\n`
+      : '';
     const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n[VISUAL] ${hookVisual}\n[VOICE] ${c.hook?.voice || ''}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY (10-25s)\n[VISUAL] ${bodyVisual}\n[VOICE] ${c.body?.voice || ''}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA (3-5s)\n[VISUAL] ${ctaVisual}\n[VOICE] ${c.cta?.voice || ''}\n[TEXT OVERLAY] ${c.cta?.textOverlay || c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
-    navigator.clipboard.writeText(copyText);
+    const finalCopyText = hookVariantsBlock
+      ? copyText.replace('â•â•â• VIDEO SCRIPT â•â•â•\n\n', `â•â•â• VIDEO SCRIPT â•â•â•\n${hookVariantsBlock}\n`)
+      : copyText;
+    navigator.clipboard.writeText(finalCopyText);
   };
 
+  */
+  const handleCopy = (idea: GeneratedIdea) => {
+    const content = idea.content as IdeaContent;
+    const framework = content.framework;
+    const meta = content.meta;
+    const hookVisual = content.hook?.visual || content.hook?.script || '';
+    const bodyVisual = content.body?.visual || content.body?.script || '';
+    const ctaVisual = content.cta?.visual || content.cta?.script || '';
+    const primaryHook = meta?.hookPrimary || '';
+    const sections = [
+      `TIÊU ĐỀ: ${idea.title} (${idea.duration})`,
+      '═══ FRAMEWORK ═══',
+      `Core User: ${framework?.coreUser || ''}`,
+      `Painpoint: ${framework?.painpoint || ''}`,
+      `Emotion: ${framework?.emotion || ''}`,
+      `PSP: ${framework?.psp || ''}`,
+      '',
+      `WHY IT WORKS: ${content.explanation || ''}`,
+      '',
+      '═══ VIDEO SCRIPT ═══',
+      ...(primaryHook
+        ? [
+            `HOOK: ${primaryHook}`,
+            '',
+          ]
+        : []),
+      'HOOK (3-5s)',
+      `[VISUAL] ${hookVisual}`,
+      `[VOICE] ${content.hook?.voice || ''}`,
+      `[TEXT OVERLAY] ${content.hook?.textOverlay || content.hook?.text || ''}`,
+      '',
+      'BODY (10-25s)',
+      `[VISUAL] ${bodyVisual}`,
+      `[VOICE] ${content.body?.voice || ''}`,
+      `[TEXT OVERLAY] ${content.body?.textOverlay || content.body?.text || ''}`,
+      '',
+      'CTA (3-5s)',
+      `[VISUAL] ${ctaVisual}`,
+      `[VOICE] ${content.cta?.voice || ''}`,
+      `[TEXT OVERLAY] ${content.cta?.textOverlay || content.cta?.text || ''}`,
+      `End Card: ${content.cta?.endCard || ''}`,
+    ];
+
+    navigator.clipboard.writeText(sections.join('\n'));
+  };
   const cleanPreviewText = (value: unknown) =>
     typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
@@ -1169,6 +1249,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <Plus size={14} /> THÊM
               </button>
               <button onClick={async () => {
+                for (const item of filterItems) { await dbService.deleteFilterOptionByValue(app.id, cat.id, item); }
+                setOptions(prev => ({ ...prev, [cat.id]: [] }));
+                setFilters(prev => ({ ...prev, [cat.id]: [] }));
+                return;
                 const seeds = CATEGORY_SEEDS[app.category] || CATEGORY_SEEDS['Tổng hợp'];
                 const seedValues = cat.id === 'visualType' ? GLOBAL_VISUAL_TYPES : (seeds[cat.id as keyof typeof seeds] || []);
                 for (const item of filterItems) { await dbService.deleteFilterOptionByValue(app.id, cat.id, item); }
@@ -1540,6 +1624,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const hookVisual = hookData?.visual || hookData?.script || '';
             const hookVoice = hookData?.voice || '';
             const hookText = hookData?.textOverlay || hookData?.text || '';
+            const primaryHook = c?.meta?.hookPrimary || '';
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
@@ -1586,79 +1671,45 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   </div>
 
-                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-3">
-                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2">Hook (3-5s)</span>
+                  <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-2">
+                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-3">Hook (3-5s)</span>
                     {isEditing ? (
                       <div className="space-y-3">
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
-                          <textarea value={hookData?.visual || hookData?.script || ''}
-                            onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, visual: e.target.value, script: e.target.value } })}
-                            className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-24 bg-white mt-1"
-                            placeholder="Mô tả cảnh quay / hành động / camera" />
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
-                          <textarea value={hookData?.voice || ''}
-                            onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, voice: e.target.value } })}
-                            className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-20 bg-white mt-1"
-                            placeholder="Lời nhân vật nói" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
-                          <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mt-1">{hookVisual || 'Hook visual will appear here.'}</p>
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
-                          <p className="text-sm text-gray-800 mt-1">{hookVoice || '—'}</p>
-                        </div>
-                      </div>
-                    )}
-                    <div className="mt-3">
-                      <span className="text-[10px] font-bold text-amber-600 uppercase">Text Overlay</span>
-                      {isEditing ? (
+                        <textarea value={hookData?.visual || hookData?.script || ''}
+                          onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, visual: e.target.value, script: e.target.value } })}
+                          className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-24 bg-white"
+                          placeholder="Mô tả cảnh quay / hành động / camera" />
+                        <textarea value={hookData?.voice || ''}
+                          onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, voice: e.target.value } })}
+                          className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-20 bg-white"
+                          placeholder="Lời nhân vật nói" />
                         <input value={hookData?.textOverlay || hookData?.text || ''}
                           onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, textOverlay: e.target.value, text: e.target.value } })}
-                          className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-red-200 bg-white mt-1" />
-                      ) : (
-                        <p className="text-sm text-gray-800 font-bold mt-0.5">{hookText || '-'}</p>
-                      )}
-                    </div>
+                          className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-red-200 bg-white" />
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
+                        <p className="whitespace-pre-line">{hookVisual || 'Hook visual will appear here.'}</p>
+                        <p className="mt-1 text-gray-800">[VOICE] {hookVoice || '—'}</p>
+                        <p className="text-gray-800">[TEXT OVERLAY] {hookText || '—'}</p>
+                        {primaryHook && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
+                      </div>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => toggleIdeaSet(setExpandedIdeas, ideaKey)}
-                    className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 mb-3 flex items-center gap-1"
-                  >
-                    {isExpanded ? 'Hide details' : 'More details'}
-                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  </button>
-
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+                  {!isEditing && (
                     <button
                       type="button"
-                      onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
-                      className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
-                      title="Favorite"
+                      onClick={() => toggleIdeaSet(setExpandedIdeas, ideaKey)}
+                      className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 mb-2 flex items-center gap-1"
                     >
-                      <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+                      {isExpanded ? 'Hide details' : 'More details'}
+                      {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(idea)}
-                      className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
-                      title="Copy"
-                    >
-                      <Copy size={14} />
-                    </button>
-                  </div>
+                  )}
 
                   {(isExpanded || isEditing || refiningIdea === idea.id) && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="mt-2">
                   {/* AI Refine Panel */}
                   {refiningIdea === idea.id && !isEditing && (
                     <div className="mb-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-200 animate-in slide-in-from-top duration-200">
@@ -1727,7 +1778,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   )}
 
-                  {/* Details: Body + CTA. Hook stays visible above. */}
+                  {/* Body + CTA shown only when the card is expanded, being edited, or refined. */}
                   {[{ key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
                   ].map(sec => {
@@ -1736,78 +1787,61 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     const voiceContent = secData?.voice || '';
                     const textOverlay = secData?.textOverlay || secData?.text || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
-                    const viTranslation = secData?.viTranslation || '';
                     return (
-                      <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
+                      <div key={sec.key} className={`mb-3 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                         <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
 
                         {isEditing ? (
-                          <div className="space-y-3 mb-3">
-                            <div>
-                              <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
-                              <textarea value={secData?.visual || secData?.script || ''}
-                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], visual: e.target.value, script: e.target.value } })}
-                                className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-28 bg-white mt-1"
-                                placeholder="Mô tả cảnh quay / thao tác / diễn biến" />
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
-                              <textarea value={secData?.voice || ''}
-                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], voice: e.target.value } })}
-                                className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white mt-1"
-                                placeholder="Lời nhân vật nói / CTA voice" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-3 mb-3">
-                            <div>
-                              <span className="text-[10px] font-bold text-gray-500 uppercase">Visual</span>
-                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mt-1">{visualContent || '—'}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-bold text-gray-500 uppercase">Voice</span>
-                              <p className="text-sm text-gray-800 mt-1 whitespace-pre-line">{voiceContent || '—'}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Vietnamese Translation */}
-                        {!isEditing && viTranslation && (
-                          <div className="mb-3 bg-white/60 rounded-lg px-3 py-2 border border-gray-200">
-                            <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
-                            <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{viTranslation}</p>
-                          </div>
-                        )}
-
-                        {/* Text Overlay + End Card */}
-                        <div className="flex gap-3">
-                          <div className="flex-1">
-                            <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
-                            {isEditing ? (
-                              <input value={secData?.textOverlay || secData?.text || ''}
-                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], textOverlay: e.target.value, text: e.target.value } })}
-                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
-                            ) : (
-                              <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
+                          <div className="space-y-3">
+                            <textarea value={secData?.visual || secData?.script || ''}
+                              onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], visual: e.target.value, script: e.target.value } })}
+                              className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-28 bg-white"
+                              placeholder="Mô tả cảnh quay / thao tác / diễn biến" />
+                            <textarea value={secData?.voice || ''}
+                              onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], voice: e.target.value } })}
+                              className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white"
+                              placeholder="Lời nhân vật nói / CTA voice" />
+                            <input value={secData?.textOverlay || secData?.text || ''}
+                              onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], textOverlay: e.target.value, text: e.target.value } })}
+                              className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white" />
+                            {sec.key === 'cta' && (
+                              <input value={secData?.endCard || ''}
+                                onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], endCard: e.target.value } })}
+                                className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white"
+                                placeholder="End card / tagline" />
                             )}
                           </div>
-                          {sec.key === 'cta' && (
-                            <div className="flex-1">
-                              <span className="text-[10px] font-bold text-emerald-600 uppercase">🏷️ End Card</span>
-                              {isEditing ? (
-                                <input value={secData?.endCard || ''}
-                                  onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], endCard: e.target.value } })}
-                                  className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white mt-1" />
-                              ) : (
-                                <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        ) : (
+                          <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
+                            <p className="whitespace-pre-line">{visualContent || '—'}</p>
+                            <p className="mt-1 text-gray-800 whitespace-pre-line">[VOICE] {voiceContent || '—'}</p>
+                            <p className="text-gray-800">[TEXT OVERLAY] {textOverlay || '—'}</p>
+                            {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
+                            {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
+                        className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                        title="Favorite"
+                      >
+                        <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(idea)}
+                        className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
+                        title="Copy"
+                      >
+                        <Copy size={14} />
+                      </button>
                     </div>
+                  </div>
                   )}
                 </div>
               </div>

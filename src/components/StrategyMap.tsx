@@ -81,21 +81,53 @@ const LEVEL_COLORS: Record<string, { bg: string; border: string; accent: string;
 };
 
 // ===== Week helpers =====
-function getWeekKey(dateStr: string): string {
-  const d = new Date(dateStr);
-  const onejan = new Date(d.getFullYear(), 0, 1);
-  const weekNum = Math.ceil(((d.getTime() - onejan.getTime()) / 86400000 + onejan.getDay() + 1) / 7);
-  return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+function toLocalNoonDate(input: string | Date): Date {
+  const source = input instanceof Date ? input : new Date(input);
+  return new Date(
+    source.getFullYear(),
+    source.getMonth(),
+    source.getDate(),
+    12, 0, 0, 0
+  );
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfIsoWeek(input: string | Date): Date {
+  const date = toLocalNoonDate(input);
+  const day = date.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diffToMonday);
+  return date;
+}
+
+function getWeekInfo(input: string | Date) {
+  const monday = startOfIsoWeek(input);
+  const thursday = addDays(monday, 3);
+  const weekYear = thursday.getFullYear();
+  const firstWeekMonday = startOfIsoWeek(new Date(weekYear, 0, 4));
+  const diffMs = monday.getTime() - firstWeekMonday.getTime();
+  const weekNumber = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+
+  return {
+    monday,
+    weekYear,
+    weekNumber,
+  };
+}
+
+function getWeekKey(dateInput: string | Date): string {
+  const { weekYear, weekNumber } = getWeekInfo(dateInput);
+  return `${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
 }
 
 function getMondayOfWeek(year: number, week: number): Date {
-  const jan1 = new Date(year, 0, 1);
-  const dayOfWeek = jan1.getDay() || 7;
-  const firstMonday = new Date(jan1);
-  firstMonday.setDate(jan1.getDate() + (1 - dayOfWeek));
-  const monday = new Date(firstMonday);
-  monday.setDate(firstMonday.getDate() + (week - 1) * 7);
-  return monday;
+  const firstWeekMonday = startOfIsoWeek(new Date(year, 0, 4));
+  return addDays(firstWeekMonday, (week - 1) * 7);
 }
 
 function getWeekRange(weekKey: string): string {
@@ -118,24 +150,22 @@ function getWeekNumber(weekKey: string): number {
   return parseInt(weekKey.split('-W')[1]);
 }
 
-// Generate all weeks from current week through end of 2026
+// Generate all weeks from current week through the end of the current year
 function generateWeekTimeline(): { key: string; label: string }[] {
   const now = new Date();
-  const currentWeekKey = getWeekKey(now.toISOString());
-  const endDate = new Date(2026, 11, 31);
+  const currentWeek = getWeekInfo(now);
+  const endDate = new Date(now.getFullYear(), 11, 31, 12, 0, 0, 0);
   const result: { key: string; label: string }[] = [];
 
   // Start from current week's Monday
-  const [cy, cw] = currentWeekKey.split('-W').map(Number);
-  let monday = getMondayOfWeek(cy, cw);
+  let monday = new Date(currentWeek.monday);
 
   while (monday <= endDate) {
-    const key = getWeekKey(monday.toISOString());
+    const key = getWeekKey(monday);
     if (!result.find(r => r.key === key)) {
       result.push({ key, label: getWeekRange(key) });
     }
-    monday = new Date(monday);
-    monday.setDate(monday.getDate() + 7);
+    monday = addDays(monday, 7);
   }
   return result;
 }
@@ -169,7 +199,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [activePath, setActivePath] = useState<string[]>([]);
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
   const [ideaResults, setIdeaResults] = useState<Record<string, ResultType>>({});
-  const [selectedWeek, setSelectedWeek] = useState<string>('all');
+  const [selectedWeek, setSelectedWeek] = useState<string>(() => getWeekKey(new Date()));
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [containerWidth, setContainerWidth] = useState(900);
   const treeContainerRef = useRef<HTMLDivElement>(null);
@@ -231,7 +261,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   }, [sessions]);
 
   // Current week key for highlighting
-  const currentWeekKey = useMemo(() => getWeekKey(new Date().toISOString()), []);
+  const currentWeekKey = useMemo(() => getWeekKey(new Date()), []);
 
   // Group weeks by month for dropdown
   const weeksGroupedByMonth = useMemo(() => {
@@ -251,13 +281,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     const w = allWeeks.find(w => w.key === selectedWeek);
     return w ? w.label : selectedWeek;
   }, [selectedWeek, currentWeekKey, allWeeks]);
-
-  // Auto-select current week on first load
-  useEffect(() => {
-    if (selectedWeek === 'all' && currentWeekKey) {
-      setSelectedWeek(currentWeekKey);
-    }
-  }, [currentWeekKey]);
 
   // ===== Filter sessions by selected week =====
   const filteredSessions = useMemo(() => {
