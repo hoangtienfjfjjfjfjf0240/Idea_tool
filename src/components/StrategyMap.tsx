@@ -1,8 +1,8 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar } from 'lucide-react';
-import type { AppProject, FilterState } from '@/types/database';
-import { getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2 } from 'lucide-react';
+import type { AppProject, FilterState, GeneratedIdea } from '@/types/database';
+import { addFilterOption, getFilterOptions, getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
 
@@ -12,7 +12,7 @@ interface TreeNode {
   level: 'root' | 'coreUser' | 'psp' | 'emotion' | 'visual' | 'painPoint' | 'angle';
   filters?: Partial<FilterState>;
   children: TreeNode[];
-  ideas: any[];
+  ideas: GeneratedIdea[];
   ideaCount: number;
   wins: number;
   fails: number;
@@ -20,54 +20,79 @@ interface TreeNode {
 }
 
 // ===== Layout constants =====
-const NODE_W = 176;
-const NODE_H = 76;
+const NODE_W = 220;
+const NODE_H = 74;
 const GAP_X = 28;
-const GAP_Y = 56;
+const ROW_GAP = 42;
+const LEVEL_LABEL_W = 170;
+const VIEWPORT_HEIGHT = 720;
+const FIT_PADDING = 48;
+const NODE_CLEARANCE = NODE_W + 24;
+const ZOOM_MIN = 0.35;
+const ZOOM_MAX = 1.8;
+const FIT_VIEW_EDIT_MAX = 1.35;
 
-interface LayoutNode {
-  treeNode: TreeNode;
+type WorkflowLevel = TreeNode['level'];
+
+interface CustomWorkflowNode {
+  id: string;
+  label: string;
+  level: WorkflowLevel;
+  preferredX?: number;
+  filters?: Partial<FilterState>;
+  ideaCount: number;
+  wins: number;
+  fails: number;
+  monitoring: number;
+  custom: true;
+}
+
+type WorkflowNode = TreeNode | CustomWorkflowNode;
+
+interface CustomWorkflowEdge {
+  fromId: string;
+  toId: string;
+}
+
+interface DragConnection {
+  fromId: string;
+  fromX: number;
+  fromY: number;
   x: number;
   y: number;
-  subtreeWidth: number;
-  children: LayoutNode[];
 }
 
-function computeLayout(node: TreeNode, depth: number): LayoutNode {
-  if (node.children.length === 0) {
-    return { treeNode: node, x: 0, y: depth * (NODE_H + GAP_Y), subtreeWidth: NODE_W, children: [] };
-  }
-  const childLayouts = node.children.map(c => computeLayout(c, depth + 1));
-  const totalChildrenWidth = childLayouts.reduce((s, c) => s + c.subtreeWidth, 0) + (childLayouts.length - 1) * GAP_X;
-  const subtreeWidth = Math.max(NODE_W, totalChildrenWidth);
-
-  let offsetX = -totalChildrenWidth / 2;
-  childLayouts.forEach(child => {
-    child.x = offsetX + child.subtreeWidth / 2;
-    offsetX += child.subtreeWidth + GAP_X;
-  });
-
-  return { treeNode: node, x: 0, y: depth * (NODE_H + GAP_Y), subtreeWidth, children: childLayouts };
+interface PendingNodePicker {
+  fromId: string;
+  level: WorkflowLevel;
+  x: number;
+  y: number;
 }
 
-interface FlatNode { node: TreeNode; absX: number; absY: number }
-interface FlatLine { x1: number; y1: number; x2: number; y2: number; parentLevel: string; childLevel: string }
+interface PendingCustomNodeEditor {
+  fromId: string;
+  level: WorkflowLevel;
+  x: number;
+  y: number;
+  draftLabel: string;
+}
 
-function flattenLayout(layout: LayoutNode, parentAbsX: number, nodes: FlatNode[], lines: FlatLine[]) {
-  const absX = parentAbsX + layout.x;
-  const absY = layout.y;
-  nodes.push({ node: layout.treeNode, absX, absY });
-  layout.children.forEach(child => {
-    const childAbsX = absX + child.x;
-    const childAbsY = child.y;
-    lines.push({
-      x1: absX, y1: absY + NODE_H,
-      x2: childAbsX, y2: childAbsY,
-      parentLevel: layout.treeNode.level,
-      childLevel: child.treeNode.level,
-    });
-    flattenLayout(child, absX, nodes, lines);
-  });
+interface ManualNodePosition {
+  x: number;
+  y: number;
+}
+
+interface FlatNode { node: WorkflowNode; absX: number; absY: number }
+interface FlatLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  parentLevel: WorkflowLevel;
+  childLevel: WorkflowLevel;
+  parentId: string;
+  childId: string;
+  custom?: boolean;
 }
 
 const LEVEL_COLORS: Record<string, { bg: string; border: string; accent: string; gradient: string; icon: string; label: string; textBg: string }> = {
@@ -79,6 +104,265 @@ const LEVEL_COLORS: Record<string, { bg: string; border: string; accent: string;
   painPoint: { bg: '#fff1f2', border: '#fda4af', accent: '#f43f5e', gradient: 'linear-gradient(135deg, #f43f5e, #e11d48)', icon: '🔥', label: 'Nỗi đau', textBg: '#ffe4e6' },
   angle: { bg: '#f0fdfa', border: '#5eead4', accent: '#14b8a6', gradient: 'linear-gradient(135deg, #14b8a6, #0d9488)', icon: '🧭', label: 'Angle', textBg: '#ccfbf1' },
 };
+
+const LEVEL_ORDER: WorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'];
+const LEVEL_AXIS_LABELS: Record<WorkflowLevel, string> = {
+  root: 'ROOT',
+  coreUser: 'CORE USER',
+  psp: 'PSP',
+  emotion: 'EMOTION',
+  visual: 'VISUAL',
+  painPoint: 'PAINPOINT',
+  angle: 'ANGLE',
+};
+
+const FALLBACK_OPTIONS: Record<WorkflowLevel, string[]> = {
+  root: [],
+  coreUser: ['User 35+ US', 'Caregiver 45+', 'Busy parent'],
+  psp: ['Blood Pressure Tracker', 'Track BP by camera', 'Family alerts'],
+  emotion: ['Fear / Urgency', 'Trust gap', 'Relief'],
+  visual: ['UGC at home', 'Doctor demo', 'Morning routine'],
+  painPoint: ['Có tiền sử BP cao nhưng không có máy ở nhà', 'Không biết số đo khi chóng mặt', 'Quên đo buổi sáng'],
+  angle: ['Tủ thuốc trống', 'Vợ hỏi máy đo đâu?', 'Chỉ cần mở app'],
+};
+
+const LEVEL_TO_FILTER_KEY: Partial<Record<WorkflowLevel, keyof FilterState>> = {
+  coreUser: 'coreUser',
+  psp: 'solution',
+  emotion: 'emotion',
+  visual: 'visualType',
+  painPoint: 'painPoint',
+  angle: 'angle',
+};
+
+const LEVEL_TO_OPTION_CATEGORY: Partial<Record<WorkflowLevel, string>> = {
+  coreUser: 'coreUser',
+  psp: 'solution',
+  emotion: 'emotion',
+  visual: 'visualType',
+  painPoint: 'painPoint',
+  angle: 'angle',
+};
+
+function createEmptyWorkflowOptionValues(): Record<WorkflowLevel, string[]> {
+  return {
+    root: [],
+    coreUser: [],
+    psp: [],
+    emotion: [],
+    visual: [],
+    painPoint: [],
+    angle: [],
+  };
+}
+
+function mergeUniqueLabels(...groups: Array<Array<string | null | undefined> | undefined>): string[] {
+  return Array.from(
+    new Set(
+      groups
+        .flatMap(group => group || [])
+        .map(value => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    )
+  );
+}
+
+function mapFilterOptionsToWorkflowLevels(optionMap: Record<string, string[]>): Record<WorkflowLevel, string[]> {
+  return {
+    root: [],
+    coreUser: optionMap.coreUser || [],
+    psp: optionMap.solution || [],
+    emotion: optionMap.emotion || [],
+    visual: optionMap.visualType || [],
+    painPoint: optionMap.painPoint || [],
+    angle: optionMap.angle || [],
+  };
+}
+
+function buildFallbackAnglesFromPainpoints(painpoints: string[]): string[] {
+  return mergeUniqueLabels(
+    ...painpoints.map(painpoint => ([
+      `${painpoint} nhung van chua biet bat dau tu dau`,
+      `${painpoint} va moi lan nhin vao lai thay roi hon`,
+      `${painpoint} du da xem rat nhieu idea tren mang`,
+    ]))
+  );
+}
+
+function getNextWorkflowLevel(level: WorkflowLevel): WorkflowLevel | null {
+  const currentIndex = LEVEL_ORDER.indexOf(level);
+  if (currentIndex < 0 || currentIndex >= LEVEL_ORDER.length - 1) return null;
+  return LEVEL_ORDER[currentIndex + 1];
+}
+
+function isTreeNode(node: WorkflowNode): node is TreeNode {
+  return !('custom' in node);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function cloneFilters(filters?: Partial<FilterState> | null): Partial<FilterState> {
+  if (!filters) return {};
+  return Object.fromEntries(
+    Object.entries(filters).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value])
+  ) as Partial<FilterState>;
+}
+
+function withLevelFilter(filters: Partial<FilterState> | null | undefined, level: WorkflowLevel, label: string): Partial<FilterState> {
+  const next = cloneFilters(filters);
+  const key = LEVEL_TO_FILTER_KEY[level];
+  if (key) {
+    next[key] = [label];
+  }
+  return next;
+}
+
+function buildVerticalWorkflowLayout(
+  tree: TreeNode,
+  customNodes: CustomWorkflowNode[],
+  customEdges: CustomWorkflowEdge[],
+  manualNodePositions: Record<string, ManualNodePosition>,
+  minWidth: number
+) {
+  const treeRows = new Map<WorkflowLevel, WorkflowNode[]>();
+  const customRows = new Map<WorkflowLevel, CustomWorkflowNode[]>();
+  const treeEdges: { fromId: string; toId: string }[] = [];
+  const nodeById = new Map<string, WorkflowNode>();
+
+  LEVEL_ORDER.forEach(level => {
+    treeRows.set(level, []);
+    customRows.set(level, []);
+  });
+
+  const addTreeNode = (node: WorkflowNode) => {
+    const row = treeRows.get(node.level);
+    if (!row || nodeById.has(node.id)) return;
+    row.push(node);
+    nodeById.set(node.id, node);
+  };
+
+  const walk = (node: TreeNode) => {
+    addTreeNode(node);
+    node.children.forEach(child => {
+      treeEdges.push({ fromId: node.id, toId: child.id });
+      walk(child);
+    });
+  };
+
+  walk(tree);
+  customNodes.forEach(node => {
+    customRows.get(node.level)?.push(node);
+    nodeById.set(node.id, node);
+  });
+
+  const baseMaxRowCount = Math.max(...LEVEL_ORDER.map(level => treeRows.get(level)?.length || 1), 1);
+  const baseContentWidth = baseMaxRowCount * NODE_W + Math.max(0, baseMaxRowCount - 1) * GAP_X;
+  const baseCanvasW = Math.max(minWidth, LEVEL_LABEL_W + baseContentWidth + 96);
+  const centerAreaX = LEVEL_LABEL_W + 48;
+  const baseAvailableW = baseCanvasW - centerAreaX - 48;
+  const flatNodes: FlatNode[] = [];
+  const posById = new Map<string, FlatNode>();
+  let maxRight = baseCanvasW - 32;
+  let minLeft = 0;
+
+  LEVEL_ORDER.forEach((level, levelIndex) => {
+    const row = treeRows.get(level) || [];
+    const rowW = row.length * NODE_W + Math.max(0, row.length - 1) * GAP_X;
+    const startX = centerAreaX + Math.max(0, (baseAvailableW - rowW) / 2);
+    const y = 24 + levelIndex * (NODE_H + ROW_GAP);
+    const rowCenters: number[] = [];
+
+    row.forEach((node, index) => {
+      const manualPosition = manualNodePositions[node.id];
+      const flat = {
+        node,
+        absX: manualPosition?.x ?? startX + index * (NODE_W + GAP_X) + NODE_W / 2,
+        absY: manualPosition?.y ?? y,
+      };
+      flatNodes.push(flat);
+      posById.set(node.id, flat);
+      rowCenters.push(flat.absX);
+      minLeft = Math.min(minLeft, flat.absX - NODE_W / 2);
+      maxRight = Math.max(maxRight, flat.absX + NODE_W / 2);
+    });
+
+    const customRow = [...(customRows.get(level) || [])].sort((a, b) => {
+      const ax = typeof a.preferredX === 'number' ? a.preferredX : Number.MAX_SAFE_INTEGER;
+      const bx = typeof b.preferredX === 'number' ? b.preferredX : Number.MAX_SAFE_INTEGER;
+      return ax - bx;
+    });
+
+    customRow.forEach((node, index) => {
+      const manualPosition = manualNodePositions[node.id];
+      const fallbackX = startX + rowW + (row.length > 0 ? GAP_X : 0) + index * (NODE_W + GAP_X) + NODE_W / 2;
+      const resolvedY = manualPosition?.y ?? y;
+      let resolvedX = manualPosition?.x;
+
+      if (typeof resolvedX !== 'number') {
+        const minCenter = centerAreaX + NODE_W / 2;
+        const maxCenter = Math.max(minCenter, baseCanvasW - NODE_W / 2 - 32 + customRow.length * NODE_CLEARANCE);
+        resolvedX = clamp(typeof node.preferredX === 'number' ? node.preferredX : fallbackX, minCenter, maxCenter);
+        if (rowCenters.some(center => Math.abs(center - resolvedX!) < NODE_CLEARANCE)) {
+          const step = NODE_CLEARANCE;
+          for (let attempt = 1; attempt < 24; attempt++) {
+            const direction = attempt % 2 === 1 ? 1 : -1;
+            const distance = Math.ceil(attempt / 2) * step;
+            const candidate = clamp(resolvedX + direction * distance, minCenter, maxCenter);
+            if (!rowCenters.some(center => Math.abs(center - candidate) < NODE_CLEARANCE)) {
+              resolvedX = candidate;
+              break;
+            }
+          }
+        }
+      }
+
+      const flat = {
+        node,
+        absX: resolvedX,
+        absY: resolvedY,
+      };
+      flatNodes.push(flat);
+      posById.set(node.id, flat);
+      rowCenters.push(flat.absX);
+      minLeft = Math.min(minLeft, flat.absX - NODE_W / 2);
+      maxRight = Math.max(maxRight, flat.absX + NODE_W / 2);
+    });
+  });
+
+  const canvasW = Math.max(baseCanvasW, maxRight + 48, LEVEL_LABEL_W + NODE_W + 96);
+
+  const makeLine = (edge: { fromId: string; toId: string }, custom = false): FlatLine | null => {
+    const from = posById.get(edge.fromId);
+    const to = posById.get(edge.toId);
+    if (!from || !to) return null;
+
+    return {
+      x1: from.absX,
+      y1: from.absY + NODE_H,
+      x2: to.absX,
+      y2: to.absY,
+      parentLevel: from.node.level,
+      childLevel: to.node.level,
+      parentId: from.node.id,
+      childId: to.node.id,
+      custom,
+    };
+  };
+
+  const flatLines = [
+    ...treeEdges.map(edge => makeLine(edge)).filter((line): line is FlatLine => !!line),
+    ...customEdges.map(edge => makeLine(edge, true)).filter((line): line is FlatLine => !!line),
+  ];
+
+  return {
+    flatNodes,
+    flatLines,
+    canvasW,
+    canvasH: 24 + LEVEL_ORDER.length * NODE_H + (LEVEL_ORDER.length - 1) * ROW_GAP + 32,
+  };
+}
 
 // ===== Week helpers =====
 function toLocalNoonDate(input: string | Date): Date {
@@ -193,6 +477,10 @@ function normalizeFilterSnapshot(value: unknown): Partial<FilterState> {
   ) as Partial<FilterState>;
 }
 
+function toResultType(value: unknown): ResultType {
+  return value === 'win' || value === 'failed' || value === 'monitoring' ? value : null;
+}
+
 export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = false, onCreateFromBranch }) => {
   const [sessions, setSessions] = useState<IdeaSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -202,20 +490,64 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [selectedWeek, setSelectedWeek] = useState<string>(() => getWeekKey(new Date()));
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [containerWidth, setContainerWidth] = useState(900);
+  const [storedOptionValues, setStoredOptionValues] = useState<Record<WorkflowLevel, string[]>>(() => createEmptyWorkflowOptionValues());
+  const [customNodes, setCustomNodes] = useState<CustomWorkflowNode[]>([]);
+  const [customEdges, setCustomEdges] = useState<CustomWorkflowEdge[]>([]);
+  const [manualNodePositions, setManualNodePositions] = useState<Record<string, ManualNodePosition>>({});
+  const [dragConnection, setDragConnection] = useState<DragConnection | null>(null);
+  const [pendingNodePicker, setPendingNodePicker] = useState<PendingNodePicker | null>(null);
+  const [pendingCustomNodeEditor, setPendingCustomNodeEditor] = useState<PendingCustomNodeEditor | null>(null);
+  const [generatedAngleOptions, setGeneratedAngleOptions] = useState<string[]>([]);
+  const [isGeneratingAngleOptions, setIsGeneratingAngleOptions] = useState(false);
+  const [selectedCustomNodeId, setSelectedCustomNodeId] = useState<string | null>(null);
+  const [viewScale, setViewScale] = useState(1);
+  const [viewPan, setViewPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [draggedCustomNodeId, setDraggedCustomNodeId] = useState<string | null>(null);
+  const [isFullView, setIsFullView] = useState(false);
+  const [windowHeight, setWindowHeight] = useState(900);
   const treeContainerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const customNodeSeqRef = useRef(0);
+  const droppedOnHandleRef = useRef(false);
+  const autoFitPendingRef = useRef(true);
+  const panSessionRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const customNodeDragRef = useRef<{ nodeId: string; pointerId: number; startClientX: number; startClientY: number; startNodeX: number; startNodeY: number; moved: boolean } | null>(null);
+  const suppressNodeClickRef = useRef(false);
+  const pendingFullViewFitRef = useRef(false);
+  const angleSuggestionSeqRef = useRef(0);
+
+  const cancelActiveDraft = useCallback(() => {
+    droppedOnHandleRef.current = false;
+    setDragConnection(null);
+    setPendingNodePicker(null);
+    setPendingCustomNodeEditor(null);
+  }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       setLoading(true);
-      const data = await getIdeaSessions(app.id);
+      const [data, savedOptionMap] = await Promise.all([
+        getIdeaSessions(app.id),
+        getFilterOptions(app),
+      ]);
+      if (cancelled) return;
+
       setSessions(data);
+      setStoredOptionValues(mapFilterOptionsToWorkflowLevels(savedOptionMap));
       const r: Record<string, ResultType> = {};
-      data.forEach(s => s.ideas.forEach((i: any) => { if (i.result) r[i.id] = i.result; }));
+      data.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
       setIdeaResults(r);
       setLoading(false);
     })();
-  }, [app.id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app, app.id]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -247,6 +579,58 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     return () => window.removeEventListener('resize', updateWidth);
   }, [loading]);
 
+  useEffect(() => {
+    const updateWindowHeight = () => setWindowHeight(window.innerHeight || 900);
+    updateWindowHeight();
+    window.addEventListener('resize', updateWindowHeight);
+    return () => window.removeEventListener('resize', updateWindowHeight);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (dragConnection || pendingNodePicker || pendingCustomNodeEditor) {
+        cancelActiveDraft();
+        return;
+      }
+      if (isFullView) {
+        setIsFullView(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancelActiveDraft, dragConnection, isFullView, pendingCustomNodeEditor, pendingNodePicker]);
+
+  useEffect(() => {
+    if (!isFullView) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFullView]);
+
+  useEffect(() => {
+    autoFitPendingRef.current = true;
+    const resetId = window.requestAnimationFrame(() => {
+      setCustomNodes([]);
+      setCustomEdges([]);
+      setManualNodePositions({});
+      setPendingNodePicker(null);
+      setPendingCustomNodeEditor(null);
+      setDragConnection(null);
+      customNodeDragRef.current = null;
+      setDraggedCustomNodeId(null);
+      setSelectedCustomNodeId(null);
+      setGeneratedAngleOptions([]);
+      setIsGeneratingAngleOptions(false);
+      angleSuggestionSeqRef.current += 1;
+    });
+    return () => window.cancelAnimationFrame(resetId);
+  }, [selectedWeek, app.id]);
+
   // ===== Full weekly timeline: current week → end of 2026 =====
   const allWeeks = useMemo(() => generateWeekTimeline(), []);
 
@@ -259,6 +643,37 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     });
     return counts;
   }, [sessions]);
+
+  const optionValuesByLevel = useMemo(() => {
+    const values: Record<WorkflowLevel, Set<string>> = {
+      root: new Set<string>(),
+      coreUser: new Set<string>(),
+      psp: new Set<string>(),
+      emotion: new Set<string>(),
+      visual: new Set<string>(),
+      painPoint: new Set<string>(),
+      angle: new Set<string>(),
+    };
+
+    sessions.forEach(session => {
+      session.ideas.forEach(idea => {
+        const filters = normalizeFilterSnapshot(idea.filters_snapshot || session.filters);
+        (filters.coreUser || []).forEach(value => values.coreUser.add(value));
+        (filters.solution || []).forEach(value => values.psp.add(value));
+        (filters.emotion || []).forEach(value => values.emotion.add(value));
+        (filters.visualType || []).forEach(value => values.visual.add(value));
+        (filters.painPoint || []).forEach(value => values.painPoint.add(value));
+        (filters.angle || []).forEach(value => values.angle.add(value));
+      });
+    });
+
+    return Object.fromEntries(
+      LEVEL_ORDER.map(level => {
+        const fromApp = Array.from(values[level]).filter(Boolean);
+        return [level, mergeUniqueLabels(storedOptionValues[level], fromApp, FALLBACK_OPTIONS[level])];
+      })
+    ) as Record<WorkflowLevel, string[]>;
+  }, [sessions, storedOptionValues]);
 
   // Current week key for highlighting
   const currentWeekKey = useMemo(() => getWeekKey(new Date()), []);
@@ -306,7 +721,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     });
 
     filteredSessions.forEach(session => {
-      session.ideas.forEach((idea: any) => {
+      session.ideas.forEach((idea) => {
         const f = normalizeFilterSnapshot(idea.filters_snapshot || session.filters);
         if (Object.keys(f).length === 0) return;
 
@@ -317,19 +732,34 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         const ppVals = (f.painPoint || []) as string[];
         const angleVals = (f.angle || []) as string[];
 
-        const levels: { label: string; level: TreeNode['level']; key: string }[] = [];
-        if (cuVals.length > 0) levels.push({ label: cuVals.join(', '), level: 'coreUser', key: cuVals.join(',') });
-        if (pspVals.length > 0) levels.push({ label: pspVals.join(', '), level: 'psp', key: pspVals.join(',') });
-        if (emVals.length > 0) levels.push({ label: emVals.join(', '), level: 'emotion', key: emVals.join(',') });
-        if (visVals.length > 0) levels.push({ label: visVals.join(', '), level: 'visual', key: visVals.join(',') });
-        if (ppVals.length > 0) levels.push({ label: ppVals.join(', '), level: 'painPoint', key: ppVals.join(',') });
-        if (angleVals.length > 0) {
-          angleVals.forEach(angle => levels.push({ label: angle, level: 'angle', key: angle }));
-        }
+        const result = ideaResults[idea.id] || toResultType(idea.result);
+        const findAncestors = (node: TreeNode, target: string, path: TreeNode[]): TreeNode[] | null => {
+          const np = [...path, node];
+          if (node.id === target) return np;
+          for (const c of node.children) { const r = findAncestors(c, target, np); if (r) return r; }
+          return null;
+        };
+        const addIdeaToNode = (target: TreeNode) => {
+          target.ideas.push(idea);
+          const ancestors = findAncestors(root, target.id, []) || [target];
+          ancestors.forEach(n => {
+            n.ideaCount++;
+            if (result === 'win') n.wins++;
+            if (result === 'failed') n.fails++;
+            if (result === 'monitoring') n.monitoring++;
+          });
+        };
+
+        const baseLevels: { label: string; level: TreeNode['level']; key: string }[] = [];
+        if (cuVals.length > 0) baseLevels.push({ label: cuVals.join(', '), level: 'coreUser', key: cuVals.join(',') });
+        if (pspVals.length > 0) baseLevels.push({ label: pspVals.join(', '), level: 'psp', key: pspVals.join(',') });
+        if (emVals.length > 0) baseLevels.push({ label: emVals.join(', '), level: 'emotion', key: emVals.join(',') });
+        if (visVals.length > 0) baseLevels.push({ label: visVals.join(', '), level: 'visual', key: visVals.join(',') });
+        if (ppVals.length > 0) baseLevels.push({ label: ppVals.join(', '), level: 'painPoint', key: ppVals.join(',') });
 
         let parent = root;
         let pathKey = '';
-        for (const lvl of levels) {
+        for (const lvl of baseLevels) {
           pathKey += `|${lvl.key}`;
           const nodeId = `${lvl.level}:${pathKey}`;
           let node = parent.children.find(c => c.id === nodeId);
@@ -342,23 +772,22 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           parent = node;
         }
 
-        parent.ideas.push(idea);
-
-        const result = ideaResults[idea.id] || idea.result;
-        // Bubble up counts to all ancestors
-        const findAncestors = (node: TreeNode, target: string, path: TreeNode[]): TreeNode[] | null => {
-          const np = [...path, node];
-          if (node.id === target) return np;
-          for (const c of node.children) { const r = findAncestors(c, target, np); if (r) return r; }
-          return null;
-        };
-        const ancestors = findAncestors(root, parent.id, []) || [parent];
-        ancestors.forEach(n => {
-          n.ideaCount++;
-          if (result === 'win') n.wins++;
-          if (result === 'failed') n.fails++;
-          if (result === 'monitoring') n.monitoring++;
-        });
+        if (angleVals.length > 0) {
+          angleVals.forEach(angle => {
+            const anglePath = `${pathKey}|${angle}`;
+            const nodeId = `angle:${anglePath}`;
+            let angleNode = parent.children.find(c => c.id === nodeId);
+            if (!angleNode) {
+              angleNode = mkNode(nodeId, angle, 'angle', f);
+              parent.children.push(angleNode);
+            } else if (!angleNode.filters || Object.keys(angleNode.filters).length === 0) {
+              angleNode.filters = f;
+            }
+            addIdeaToNode(angleNode);
+          });
+        } else {
+          addIdeaToNode(parent);
+        }
       });
     });
     return root;
@@ -378,24 +807,329 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     return { cu: cu.size, em: em.size, pp: pp.size, psp: psp.size, total: tree.ideaCount, wins: tree.wins, fails: tree.fails, monitoring: tree.monitoring };
   }, [tree]);
 
-  // Compute layout
+  // Compute vertical workflow layout: level labels are stacked on the Y axis.
   const { flatNodes, flatLines, canvasW, canvasH } = useMemo(() => {
-    if (tree.children.length === 0) return { flatNodes: [], flatLines: [], canvasW: 400, canvasH: 200 };
-    const layout = computeLayout(tree, 0);
-    const nodes: FlatNode[] = [];
-    const lines: FlatLine[] = [];
-    flattenLayout(layout, 0, nodes, lines);
+    const minCanvasWidth = Math.max(containerWidth - 32, 980);
+    return buildVerticalWorkflowLayout(tree, customNodes, customEdges, manualNodePositions, minCanvasWidth);
+  }, [tree, customNodes, customEdges, manualNodePositions, containerWidth]);
 
-    let minX = Infinity, maxX = -Infinity, maxY = 0;
-    nodes.forEach(n => { minX = Math.min(minX, n.absX - NODE_W / 2); maxX = Math.max(maxX, n.absX + NODE_W / 2); maxY = Math.max(maxY, n.absY + NODE_H); });
+  const viewportWidth = Math.max(containerWidth - 8, 640);
+  const viewportHeight = isFullView
+    ? Math.max(windowHeight - 104, 560)
+    : inline ? Math.min(620, VIEWPORT_HEIGHT - 80) : VIEWPORT_HEIGHT;
+  const workflowNodeById = useMemo(() => {
+    return new Map(flatNodes.map(item => [item.node.id, item.node] as const));
+  }, [flatNodes]);
 
-    const pad = 40;
-    const shiftX = -minX + pad;
-    nodes.forEach(n => n.absX += shiftX);
-    lines.forEach(l => { l.x1 += shiftX; l.x2 += shiftX; });
+  const workflowFlatNodeById = useMemo(() => {
+    return new Map(flatNodes.map(item => [item.node.id, item] as const));
+  }, [flatNodes]);
 
-    return { flatNodes: nodes, flatLines: lines, canvasW: maxX - minX + pad * 2, canvasH: maxY + pad };
-  }, [tree]);
+  const contentBounds = useMemo(() => {
+    if (flatNodes.length === 0) {
+      return {
+        minX: 0,
+        minY: 0,
+        maxX: canvasW,
+        maxY: canvasH,
+        width: canvasW,
+        height: canvasH,
+      };
+    }
+
+    const maxRight = Math.max(...flatNodes.map(({ absX }) => absX + NODE_W / 2), LEVEL_LABEL_W - 12) + 24;
+    const maxBottom = Math.max(...flatNodes.map(({ absY }) => absY + NODE_H)) + 24;
+    const minX = 12;
+    const minY = 16;
+
+    return {
+      minX,
+      minY,
+      maxX: maxRight,
+      maxY: maxBottom,
+      width: Math.max(1, maxRight - minX),
+      height: Math.max(1, maxBottom - minY),
+    };
+  }, [canvasH, canvasW, flatNodes]);
+
+  const draftPreviewConnection = useMemo(() => {
+    const draft = pendingCustomNodeEditor ?? pendingNodePicker;
+    if (!draft) return null;
+
+    const source = workflowFlatNodeById.get(draft.fromId);
+    if (!source) return null;
+
+    const panelMargin = pendingCustomNodeEditor ? 340 : 320;
+    const panelLeft = Math.min(Math.max(draft.x + 16, LEVEL_LABEL_W + 20), canvasW - panelMargin);
+
+    return {
+      fromX: source.absX,
+      fromY: source.absY + NODE_H,
+      toX: panelLeft,
+      toY: draft.y + 58,
+      level: source.node.level,
+    };
+  }, [canvasW, pendingCustomNodeEditor, pendingNodePicker, workflowFlatNodeById]);
+
+  const clampPanToViewport = useCallback((
+    nextPan: { x: number; y: number },
+    scale: number,
+    options?: { centerWhenSmaller?: boolean }
+  ) => {
+    const centerWhenSmaller = options?.centerWhenSmaller ?? true;
+    const topPadding = 18;
+    const visibleWidth = contentBounds.width * scale;
+    const visibleHeight = contentBounds.height * scale;
+    const rawPanX1 = viewportWidth - FIT_PADDING - contentBounds.maxX * scale;
+    const rawPanX2 = FIT_PADDING - contentBounds.minX * scale;
+    const minPanX = Math.min(rawPanX1, rawPanX2);
+    const maxPanX = Math.max(rawPanX1, rawPanX2);
+    const rawPanY1 = viewportHeight - FIT_PADDING - contentBounds.maxY * scale;
+    const rawPanY2 = topPadding - contentBounds.minY * scale;
+    const minPanY = Math.min(rawPanY1, rawPanY2);
+    const maxPanY = Math.max(rawPanY1, rawPanY2);
+
+    let x = nextPan.x;
+    if (centerWhenSmaller && visibleWidth <= viewportWidth - FIT_PADDING * 2) {
+      x = Math.round((viewportWidth - visibleWidth) / 2 - contentBounds.minX * scale);
+    } else {
+      x = clamp(nextPan.x, minPanX, maxPanX);
+    }
+
+    let y = nextPan.y;
+    if (centerWhenSmaller && visibleHeight <= viewportHeight - topPadding - FIT_PADDING) {
+      y = Math.round(topPadding - contentBounds.minY * scale);
+    } else {
+      y = clamp(nextPan.y, minPanY, maxPanY);
+    }
+
+    return { x, y };
+  }, [contentBounds.height, contentBounds.maxX, contentBounds.maxY, contentBounds.minX, contentBounds.minY, contentBounds.width, viewportHeight, viewportWidth]);
+
+  const getViewportZoomAnchor = useCallback(() => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + Math.min(rect.height * 0.34, 220),
+    };
+  }, []);
+
+  const fitView = useCallback((options?: { animate?: boolean; mode?: 'auto' | 'edit' }) => {
+    const animate = options?.animate ?? true;
+    const mode = options?.mode ?? 'edit';
+    const widthScale = (viewportWidth - FIT_PADDING * 2) / contentBounds.width;
+    const heightScale = (viewportHeight - FIT_PADDING - 18) / contentBounds.height;
+    const targetScale = mode === 'auto'
+      ? Math.min(widthScale, heightScale, 1)
+      : widthScale;
+    const nextScale = clamp(
+      targetScale,
+      ZOOM_MIN,
+      mode === 'auto' ? 1 : Math.min(ZOOM_MAX, FIT_VIEW_EDIT_MAX)
+    );
+    const nextPan = clampPanToViewport({
+      x: FIT_PADDING - contentBounds.minX * nextScale,
+      y: 18 - contentBounds.minY * nextScale,
+    }, nextScale);
+    setViewScale(nextScale);
+    setViewPan(nextPan);
+    if (!animate) {
+      setIsPanning(false);
+    }
+  }, [clampPanToViewport, contentBounds.height, contentBounds.minX, contentBounds.minY, contentBounds.width, viewportHeight, viewportWidth]);
+
+  const getCanvasPoint = useCallback((clientX: number, clientY: number) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: (clientX - rect.left - viewPan.x) / viewScale,
+      y: (clientY - rect.top - viewPan.y) / viewScale,
+    };
+  }, [viewPan.x, viewPan.y, viewScale]);
+
+  useEffect(() => {
+    if (!viewportWidth || !viewportHeight) return;
+    if (!autoFitPendingRef.current && (viewScale > 0 || viewPan.x !== 0 || viewPan.y !== 0)) return;
+    const fitId = window.requestAnimationFrame(() => {
+      fitView({ animate: false, mode: 'auto' });
+      autoFitPendingRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(fitId);
+  }, [canvasW, canvasH, fitView, viewportHeight, viewportWidth, viewPan.x, viewPan.y, viewScale]);
+
+  useEffect(() => {
+    if (!pendingFullViewFitRef.current || !isFullView) return;
+    const fitId = window.requestAnimationFrame(() => {
+      fitView({ mode: 'edit' });
+      pendingFullViewFitRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(fitId);
+  }, [fitView, isFullView, viewportHeight, viewportWidth]);
+
+  useEffect(() => {
+    if (!dragConnection) return;
+
+    const handleMove = (event: PointerEvent) => {
+      const point = getCanvasPoint(event.clientX, event.clientY);
+      setDragConnection(prev => prev ? { ...prev, x: point.x, y: point.y } : prev);
+    };
+
+    const handleUp = (event: PointerEvent) => {
+      if (droppedOnHandleRef.current) {
+        droppedOnHandleRef.current = false;
+        return;
+      }
+
+      const sourceNode = workflowNodeById.get(dragConnection.fromId);
+      const nextLevel = sourceNode ? getNextWorkflowLevel(sourceNode.level) : null;
+      const point = getCanvasPoint(event.clientX, event.clientY);
+
+      if (nextLevel) {
+        setPendingNodePicker({
+          fromId: dragConnection.fromId,
+          level: nextLevel,
+          x: Math.max(LEVEL_LABEL_W + NODE_W / 2, Math.min(point.x, canvasW - NODE_W / 2 - 32)),
+          y: Math.max(16, Math.min(point.y, canvasH - 220)),
+        });
+      }
+      setDragConnection(null);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [dragConnection, workflowNodeById, getCanvasPoint, canvasW, canvasH]);
+
+  useEffect(() => {
+    const session = panSessionRef.current;
+    if (!session) return;
+
+    const handleMove = (event: PointerEvent) => {
+      if (event.pointerId !== session.pointerId) return;
+      setViewPan(clampPanToViewport({
+        x: session.originX + (event.clientX - session.startX),
+        y: session.originY + (event.clientY - session.startY),
+      }, viewScale, { centerWhenSmaller: false }));
+    };
+
+    const handleUp = (event: PointerEvent) => {
+      if (event.pointerId !== session.pointerId) return;
+      panSessionRef.current = null;
+      setIsPanning(false);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [clampPanToViewport, isPanning, viewScale]);
+
+  const zoomAtPoint = useCallback((clientX: number, clientY: number, nextScale: number) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const clampedScale = clamp(nextScale, ZOOM_MIN, ZOOM_MAX);
+    const canvasPoint = {
+      x: (clientX - rect.left - viewPan.x) / viewScale,
+      y: (clientY - rect.top - viewPan.y) / viewScale,
+    };
+
+    setViewScale(clampedScale);
+    setViewPan(clampPanToViewport({
+      x: clientX - rect.left - canvasPoint.x * clampedScale,
+      y: clientY - rect.top - canvasPoint.y * clampedScale,
+    }, clampedScale));
+  }, [clampPanToViewport, viewPan.x, viewPan.y, viewScale]);
+
+  const zoomBy = useCallback((factor: number) => {
+    const anchor = getViewportZoomAnchor();
+    if (!anchor) return;
+    autoFitPendingRef.current = false;
+    zoomAtPoint(anchor.x, anchor.y, viewScale * factor);
+  }, [getViewportZoomAnchor, viewScale, zoomAtPoint]);
+
+  const handleViewportWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const anchor = getViewportZoomAnchor();
+    if (!anchor) return;
+    autoFitPendingRef.current = false;
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
+    zoomAtPoint(anchor.x, anchor.y, viewScale * factor);
+  };
+
+  const handleViewportPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if ((dragConnection || pendingNodePicker || pendingCustomNodeEditor) && !target.closest('[data-node-picker="true"]')) {
+      cancelActiveDraft();
+      return;
+    }
+    if (target.closest('[data-node-card="true"]') || target.closest('[data-node-handle="true"]') || target.closest('[data-node-picker="true"]')) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    autoFitPendingRef.current = false;
+    panSessionRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: viewPan.x,
+      originY: viewPan.y,
+    };
+    setIsPanning(true);
+  };
+
+  useEffect(() => {
+    const session = customNodeDragRef.current;
+    if (!session) return;
+
+    const handleMove = (event: PointerEvent) => {
+      if (event.pointerId !== session.pointerId) return;
+      const deltaX = (event.clientX - session.startClientX) / viewScale;
+      const deltaY = (event.clientY - session.startClientY) / viewScale;
+      if (Math.abs(deltaX) > 2) {
+        session.moved = true;
+        suppressNodeClickRef.current = true;
+      }
+      if (Math.abs(deltaY) > 2) {
+        session.moved = true;
+        suppressNodeClickRef.current = true;
+      }
+
+      setManualNodePositions(prev => ({
+        ...prev,
+        [session.nodeId]: {
+          x: Math.max(LEVEL_LABEL_W + NODE_W / 2, session.startNodeX + deltaX),
+          y: Math.max(16, session.startNodeY + deltaY),
+        },
+      }));
+    };
+
+    const handleUp = (event: PointerEvent) => {
+      if (event.pointerId !== session.pointerId) return;
+      customNodeDragRef.current = null;
+      setDraggedCustomNodeId(null);
+      window.setTimeout(() => {
+        suppressNodeClickRef.current = false;
+      }, 0);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [draggedCustomNodeId, viewScale]);
 
   // Click node → highlight path + show ideas for painpoint
   const handleNodeClick = (node: TreeNode) => {
@@ -414,6 +1148,255 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     if (node.ideas.length > 0) setSelectedNode(node); else setSelectedNode(null);
   };
 
+  const getWorkflowNodeFilters = useCallback((nodeId: string | null | undefined) => {
+    if (!nodeId) return {};
+    const node = workflowNodeById.get(nodeId);
+    if (!node) return {};
+    return cloneFilters(node.filters);
+  }, [workflowNodeById]);
+
+  const buildConnectedNodeFilters = useCallback((fromId: string, level: WorkflowLevel, label: string) => {
+    return withLevelFilter(getWorkflowNodeFilters(fromId), level, label.trim());
+  }, [getWorkflowNodeFilters]);
+
+  const persistWorkflowOptionValue = useCallback(async (level: WorkflowLevel, label: string) => {
+    const category = LEVEL_TO_OPTION_CATEGORY[level];
+    const normalizedLabel = label.trim();
+    if (!category || !normalizedLabel) return false;
+    if ((storedOptionValues[level] || []).includes(normalizedLabel)) return true;
+
+    const saved = await addFilterOption(app.id, category, normalizedLabel);
+    if (!saved) return false;
+
+    setStoredOptionValues(prev => ({
+      ...prev,
+      [level]: mergeUniqueLabels(prev[level], [normalizedLabel]),
+    }));
+    return true;
+  }, [app.id, storedOptionValues]);
+
+  const activeAngleDraftSource = useMemo(() => {
+    if (pendingCustomNodeEditor?.level === 'angle') {
+      return { fromId: pendingCustomNodeEditor.fromId };
+    }
+    if (pendingNodePicker?.level === 'angle') {
+      return { fromId: pendingNodePicker.fromId };
+    }
+    return null;
+  }, [pendingCustomNodeEditor?.fromId, pendingCustomNodeEditor?.level, pendingNodePicker?.fromId, pendingNodePicker?.level]);
+
+  const requestAngleSuggestions = useCallback(async (fromId: string) => {
+    const parentFilters = getWorkflowNodeFilters(fromId);
+    const painpoints = parentFilters.painPoint || [];
+    if (painpoints.length === 0) {
+      setGeneratedAngleOptions([]);
+      setIsGeneratingAngleOptions(false);
+      return;
+    }
+
+    const requestId = ++angleSuggestionSeqRef.current;
+    setIsGeneratingAngleOptions(true);
+
+    try {
+      const res = await fetch('/api/generate-ideas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'generate-angles',
+          appName: app.name,
+          appCategory: app.category,
+          painpoints,
+          coreUsers: parentFilters.coreUser || [],
+          emotions: parentFilters.emotion || [],
+        }),
+      });
+
+      const result = await res.json();
+      if (requestId !== angleSuggestionSeqRef.current) return;
+
+      if (res.ok && result.success && Array.isArray(result.angles) && result.angles.length > 0) {
+        setGeneratedAngleOptions(mergeUniqueLabels(result.angles));
+        return;
+      }
+
+      setGeneratedAngleOptions(buildFallbackAnglesFromPainpoints(painpoints));
+    } catch {
+      if (requestId !== angleSuggestionSeqRef.current) return;
+      setGeneratedAngleOptions(buildFallbackAnglesFromPainpoints(painpoints));
+    } finally {
+      if (requestId === angleSuggestionSeqRef.current) {
+        setIsGeneratingAngleOptions(false);
+      }
+    }
+  }, [app.category, app.name, getWorkflowNodeFilters]);
+
+  useEffect(() => {
+    if (!activeAngleDraftSource) {
+      angleSuggestionSeqRef.current += 1;
+      setGeneratedAngleOptions([]);
+      setIsGeneratingAngleOptions(false);
+      return;
+    }
+
+    void requestAngleSuggestions(activeAngleDraftSource.fromId);
+  }, [activeAngleDraftSource, requestAngleSuggestions]);
+
+  const pickerOptionValues = useMemo(() => {
+    if (!pendingNodePicker) return [];
+    if (pendingNodePicker.level === 'angle') {
+      return mergeUniqueLabels(generatedAngleOptions, optionValuesByLevel.angle);
+    }
+    return optionValuesByLevel[pendingNodePicker.level] || [];
+  }, [generatedAngleOptions, optionValuesByLevel, pendingNodePicker]);
+
+  const handleRefreshAngleSuggestions = useCallback(() => {
+    if (!activeAngleDraftSource) return;
+    void requestAngleSuggestions(activeAngleDraftSource.fromId);
+  }, [activeAngleDraftSource, requestAngleSuggestions]);
+
+  const handleAddCustomNode = (level: WorkflowLevel, label?: string, preferredX?: number, filters?: Partial<FilterState>) => {
+    const sameLevelCount = customNodes.filter(node => node.level === level).length + 1;
+    const baseLabel = LEVEL_AXIS_LABELS[level] || LEVEL_COLORS[level]?.label || level;
+    customNodeSeqRef.current += 1;
+    const customNode: CustomWorkflowNode = {
+      id: `custom:${level}:${customNodeSeqRef.current}`,
+      label: label || `${baseLabel} custom ${sameLevelCount}`,
+      level,
+      preferredX,
+      filters: cloneFilters(filters),
+      ideaCount: 0,
+      wins: 0,
+      fails: 0,
+      monitoring: 0,
+      custom: true,
+    };
+    autoFitPendingRef.current = true;
+    setCustomNodes(prev => [...prev, customNode]);
+    setSelectedCustomNodeId(customNode.id);
+    setSelectedNode(null);
+    return customNode.id;
+  };
+
+  const handleStartDragConnection = (nodeId: string, fromX: number, fromY: number, event: React.PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPendingCustomNodeEditor(null);
+    setPendingNodePicker(null);
+    setDragConnection({ fromId: nodeId, fromX, fromY, x: fromX, y: fromY });
+  };
+
+  const handleStartCustomNodeDrag = (nodeId: string, absX: number, absY: number, event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (target.closest('[data-node-handle="true"]') || target.closest('[data-node-action="true"]')) {
+      return;
+    }
+    event.stopPropagation();
+    autoFitPendingRef.current = false;
+    customNodeDragRef.current = {
+      nodeId,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startNodeX: absX,
+      startNodeY: absY,
+      moved: false,
+    };
+    setDraggedCustomNodeId(nodeId);
+    setSelectedCustomNodeId(nodeId);
+    setSelectedNode(null);
+  };
+
+  const handleDropOnNode = (nodeId: string, event: React.PointerEvent) => {
+    if (!dragConnection || dragConnection.fromId === nodeId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    droppedOnHandleRef.current = true;
+    setCustomEdges(prev => {
+      if (prev.some(edge => edge.fromId === dragConnection.fromId && edge.toId === nodeId)) return prev;
+      return [...prev, { fromId: dragConnection.fromId, toId: nodeId }];
+    });
+    setDragConnection(null);
+    setPendingCustomNodeEditor(null);
+    setPendingNodePicker(null);
+  };
+
+  const handlePickNextNode = async (label: string) => {
+    if (!pendingNodePicker) return;
+    const draft = pendingNodePicker;
+    autoFitPendingRef.current = true;
+    const nextFilters = buildConnectedNodeFilters(draft.fromId, draft.level, label);
+    const nodeId = handleAddCustomNode(draft.level, label, draft.x, nextFilters);
+    setCustomEdges(prev => [...prev, { fromId: draft.fromId, toId: nodeId }]);
+    setPendingCustomNodeEditor(null);
+    setPendingNodePicker(null);
+    await persistWorkflowOptionValue(draft.level, label);
+  };
+
+  const handleOpenCustomNodeEditor = () => {
+    if (!pendingNodePicker) return;
+    setPendingCustomNodeEditor({
+      fromId: pendingNodePicker.fromId,
+      level: pendingNodePicker.level,
+      x: pendingNodePicker.x,
+      y: pendingNodePicker.y,
+      draftLabel: '',
+    });
+    setPendingNodePicker(null);
+  };
+
+  const handleSubmitCustomNodeEditor = async () => {
+    if (!pendingCustomNodeEditor) return;
+    const draft = pendingCustomNodeEditor;
+    const label = draft.draftLabel.trim();
+    if (!label) return;
+
+    const nextFilters = buildConnectedNodeFilters(draft.fromId, draft.level, label);
+    const nodeId = handleAddCustomNode(draft.level, label, draft.x, nextFilters);
+    setCustomEdges(prev => [...prev, { fromId: draft.fromId, toId: nodeId }]);
+    setPendingCustomNodeEditor(null);
+    await persistWorkflowOptionValue(draft.level, label);
+
+    if (draft.level === 'angle' && onCreateFromBranch) {
+      onCreateFromBranch(nextFilters);
+    }
+  };
+
+  const handleToggleFullView = () => {
+    if (isFullView) {
+      pendingFullViewFitRef.current = false;
+      setIsFullView(false);
+      return;
+    }
+    autoFitPendingRef.current = false;
+    pendingFullViewFitRef.current = true;
+    setIsFullView(true);
+  };
+
+  const handleRemoveCustomNode = (nodeId: string) => {
+    setCustomNodes(prev => prev.filter(node => node.id !== nodeId));
+    setCustomEdges(prev => prev.filter(edge => edge.fromId !== nodeId && edge.toId !== nodeId));
+    setManualNodePositions(prev => {
+      if (!(nodeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[nodeId];
+      return next;
+    });
+    if (dragConnection?.fromId === nodeId) setDragConnection(null);
+    if (pendingNodePicker?.fromId === nodeId) setPendingNodePicker(null);
+    if (pendingCustomNodeEditor?.fromId === nodeId) setPendingCustomNodeEditor(null);
+    if (customNodeDragRef.current?.nodeId === nodeId) {
+      customNodeDragRef.current = null;
+      setDraggedCustomNodeId(null);
+    }
+    if (selectedCustomNodeId === nodeId) setSelectedCustomNodeId(null);
+  };
+
   const handleSetResult = async (ideaId: string, result: ResultType) => {
     setIdeaResults(prev => ({ ...prev, [ideaId]: result }));
     await updateIdeaResult(ideaId, result);
@@ -421,15 +1404,13 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
   const isHigh = (nodeId: string) => activePath.length === 0 || activePath.includes(nodeId);
 
-  // Auto-scale: keep the map readable and centered; allow horizontal scroll instead of shrinking too hard.
-  const fitScale = canvasW > containerWidth ? containerWidth / canvasW : 1;
-  const autoScale = Math.min(1, Math.max(inline ? 0.9 : 0.94, fitScale));
-  const renderedWidth = Math.max(canvasW * autoScale + 48, containerWidth);
-  const renderedHeight = canvasH * autoScale + 48;
+  const selectedCustomNode = selectedCustomNodeId
+    ? customNodes.find(node => node.id === selectedCustomNodeId) || null
+    : null;
   const selectedTreeFilters = selectedNode
     ? selectedNode.filters || normalizeFilterSnapshot(selectedNode.ideas[0]?.filters_snapshot)
     : null;
-  const activeCreateFilters = selectedTreeFilters;
+  const activeCreateFilters = selectedTreeFilters || selectedCustomNode?.filters || null;
   const canCreateFromBranch = !!activeCreateFilters && Object.keys(activeCreateFilters).length > 0;
   const detailIdeas = selectedNode?.ideas || [];
   const detailLabel = selectedNode?.label || '';
@@ -586,7 +1567,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mb-3 px-1 flex-wrap">
+      <div className="hidden">
         {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as const).map(key => {
           const s = LEVEL_COLORS[key];
           return (
@@ -597,115 +1578,265 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         })}
       </div>
 
-      {/* ===== TREE DIAGRAM — simple auto-fit ===== */}
-      <div ref={treeContainerRef} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        {tree.children.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-3">🗺️</p>
-            <p className="text-lg font-bold text-gray-400 mb-2">Chưa có dữ liệu chiến lược</p>
-            <p className="text-sm text-gray-400">Tạo ý tưởng với bộ lọc để bắt đầu xây dựng Strategy Map</p>
+      {/* Vertical connectable workflow */}
+      <div className="flex items-center justify-between gap-3 mb-3 px-1 flex-wrap">
+        <div>
+          <p className="text-xs font-bold text-gray-700">Vertical Strategy Map</p>
+          <p className="text-[11px] text-gray-400">Level chạy theo trục Y. Kéo từ chấm dưới ra canvas để mở picker node kế tiếp.</p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as WorkflowLevel[]).map(level => {
+            const style = LEVEL_COLORS[level];
+            return (
+              <button
+                key={level}
+                onClick={() => handleAddCustomNode(level)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all hover:shadow-sm"
+                style={{ background: style.bg, borderColor: style.border, color: style.accent }}
+              >
+                <Plus size={12} /> {LEVEL_AXIS_LABELS[level]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div
+        ref={treeContainerRef}
+        className={`bg-white shadow-sm overflow-hidden ${isFullView ? 'fixed inset-0 z-[70] rounded-none border-0' : 'rounded-2xl border border-gray-200'}`}
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
+          <div className="text-[11px] font-medium text-gray-400">Pan nền để di chuyển, lăn chuột để zoom, bấm fit để tự căn chỉnh.</div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => zoomBy(0.9)}
+              className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+              title="Zoom out"
+            >
+              <ZoomOut size={14} />
+            </button>
+            <button
+              onClick={() => zoomBy(1.1)}
+              className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+              title="Zoom in"
+            >
+              <ZoomIn size={14} />
+            </button>
+            <button
+              onClick={handleToggleFullView}
+              className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+              title={isFullView ? 'Thu nhỏ view' : 'Mở full view'}
+            >
+              {isFullView ? <Minimize2 size={14} /> : <Scan size={14} />}
+            </button>
+            <div className="ml-2 min-w-[52px] rounded-lg bg-gray-50 px-2 py-1 text-center text-[11px] font-bold text-gray-500">
+              {Math.round(viewScale * 100)}%
+            </div>
           </div>
-        ) : (
-          <div className="overflow-x-auto overflow-y-hidden px-4 py-5">
+        </div>
+
+        <div
+          ref={viewportRef}
+          className={`relative overflow-hidden touch-none bg-[radial-gradient(circle_at_center,_rgba(148,163,184,0.08)_1px,_transparent_1px)] [background-size:18px_18px] ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+          style={{ height: viewportHeight }}
+          onWheel={handleViewportWheel}
+          onPointerDown={handleViewportPointerDown}
+        >
+            {(dragConnection || pendingNodePicker || pendingCustomNodeEditor) && (
+              <button
+                onClick={cancelActiveDraft}
+                className="absolute right-3 top-3 z-50 flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-2 text-[11px] font-bold text-white shadow-lg"
+              >
+                <X size={12} /> Hủy kéo
+              </button>
+            )}
             <div
-              className="relative mx-auto"
+              className="absolute top-0 left-0"
               style={{
-                width: renderedWidth,
-                minWidth: renderedWidth,
-                height: renderedHeight,
+                width: canvasW,
+                height: canvasH + 24,
+                transform: `translate(${viewPan.x}px, ${viewPan.y}px) scale(${viewScale})`,
+                transformOrigin: 'top left',
+                transition: isPanning || !!dragConnection || !!draggedCustomNodeId ? 'none' : 'transform 180ms ease-out',
               }}
             >
-              <div
-                className="absolute top-0 left-1/2"
-                style={{
-                  width: canvasW,
-                  height: canvasH + 24,
-                  transform: `translateX(-50%) scale(${autoScale})`,
-                  transformOrigin: 'top center',
-                }}
-              >
-              {/* SVG Lines */}
+              <div className="absolute left-0 top-0 bottom-0 w-[160px] border-r border-gray-100">
+                {LEVEL_ORDER.map((level, levelIndex) => {
+                  const style = LEVEL_COLORS[level];
+                  return (
+                    <div
+                      key={level}
+                      className="absolute left-3 w-[130px] rounded-lg border px-3 py-2 text-center"
+                      style={{
+                        top: 24 + levelIndex * (NODE_H + ROW_GAP) + 16,
+                        background: style.bg,
+                        borderColor: style.border,
+                      }}
+                    >
+                      <p className="text-[10px] font-black tracking-[0.12em]" style={{ color: style.accent }}>
+                        {LEVEL_AXIS_LABELS[level]}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
               <svg className="absolute inset-0" width={canvasW} height={canvasH} style={{ pointerEvents: 'none', zIndex: 0 }}>
                 <defs>
                   {flatLines.map((line, i) => {
                     const parentColor = LEVEL_COLORS[line.parentLevel]?.accent || '#94a3b8';
                     const childColor = LEVEL_COLORS[line.childLevel]?.accent || '#94a3b8';
                     return (
-                      <linearGradient key={`lg-${i}`} id={`lg-${i}`} gradientUnits="userSpaceOnUse"
+                      <linearGradient key={`v-lg-${i}`} id={`v-lg-${i}`} gradientUnits="userSpaceOnUse"
                         x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}>
-                        <stop offset="0%" stopColor={parentColor} stopOpacity={0.7} />
-                        <stop offset="100%" stopColor={childColor} stopOpacity={0.45} />
+                        <stop offset="0%" stopColor={parentColor} stopOpacity={line.custom ? 0.9 : 0.75} />
+                        <stop offset="100%" stopColor={childColor} stopOpacity={line.custom ? 0.9 : 0.5} />
                       </linearGradient>
                     );
                   })}
                 </defs>
                 {flatLines.map((line, i) => {
-                  const midY = line.y1 + (line.y2 - line.y1) * 0.5;
-                  const isActive = activePath.length === 0 ||
-                    (flatNodes.some(n => n.absX === line.x1 && n.absY === line.y1 - NODE_H && activePath.includes(n.node.id)) &&
-                    flatNodes.some(n => n.absX === line.x2 && n.absY === line.y2 && activePath.includes(n.node.id)));
+                  const midY = line.y1 + (line.y2 - line.y1) * 0.52;
+                  const isActive = line.custom
+                    ? selectedCustomNodeId === line.parentId || selectedCustomNodeId === line.childId || dragConnection?.fromId === line.parentId
+                    : activePath.length === 0 || (activePath.includes(line.parentId) && activePath.includes(line.childId));
                   return (
-                    <g key={i}>
+                    <g key={`${line.parentId}-${line.childId}-${i}`}>
                       <path
                         d={`M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`}
                         fill="none"
-                        stroke={`url(#lg-${i})`}
-                        strokeWidth={isActive ? 2.5 : 1}
+                        stroke="#cbd5e1"
+                        strokeWidth={isActive ? (line.custom ? 5.8 : 5) : 2.6}
+                        strokeDasharray={line.custom ? '7 6' : undefined}
                         strokeLinecap="round"
-                        className="transition-all duration-400"
-                        style={{ opacity: isActive ? 1 : 0.15 }}
+                        style={{ opacity: isActive ? 0.5 : 0.22 }}
+                      />
+                      <path
+                        d={`M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`}
+                        fill="none"
+                        stroke={`url(#v-lg-${i})`}
+                        strokeWidth={isActive ? (line.custom ? 3.4 : 3) : 1.7}
+                        strokeDasharray={line.custom ? '7 6' : undefined}
+                        strokeLinecap="round"
+                        className="transition-all duration-300"
+                        style={{ opacity: isActive ? 1 : 0.34 }}
                       />
                       {isActive && (
                         <>
                           <circle cx={line.x1} cy={line.y1} r={3}
-                            fill={LEVEL_COLORS[line.parentLevel]?.accent || '#94a3b8'} opacity={0.5} />
+                            fill={LEVEL_COLORS[line.parentLevel]?.accent || '#94a3b8'} opacity={0.65} />
                           <circle cx={line.x2} cy={line.y2} r={3}
-                            fill={LEVEL_COLORS[line.childLevel]?.accent || '#94a3b8'} opacity={0.7} />
+                            fill={LEVEL_COLORS[line.childLevel]?.accent || '#94a3b8'} opacity={0.8} />
                         </>
                       )}
                     </g>
                   );
                 })}
+                {dragConnection && (
+                  <>
+                    <path
+                      d={`M ${dragConnection.fromX} ${dragConnection.fromY} C ${dragConnection.fromX} ${dragConnection.fromY + 70}, ${dragConnection.x} ${dragConnection.y - 70}, ${dragConnection.x} ${dragConnection.y}`}
+                      fill="none"
+                      stroke="#cbd5e1"
+                      strokeWidth={6}
+                      strokeLinecap="round"
+                      strokeDasharray="7 7"
+                      opacity={0.55}
+                    />
+                    <path
+                      d={`M ${dragConnection.fromX} ${dragConnection.fromY} C ${dragConnection.fromX} ${dragConnection.fromY + 70}, ${dragConnection.x} ${dragConnection.y - 70}, ${dragConnection.x} ${dragConnection.y}`}
+                      fill="none"
+                      stroke="#4f46e5"
+                      strokeWidth={3.2}
+                      strokeLinecap="round"
+                      strokeDasharray="7 7"
+                      opacity={0.92}
+                    />
+                  </>
+                )}
+                {draftPreviewConnection && (
+                  <>
+                    <path
+                      d={`M ${draftPreviewConnection.fromX} ${draftPreviewConnection.fromY} C ${draftPreviewConnection.fromX} ${draftPreviewConnection.fromY + 70}, ${draftPreviewConnection.toX} ${draftPreviewConnection.toY - 70}, ${draftPreviewConnection.toX} ${draftPreviewConnection.toY}`}
+                      fill="none"
+                      stroke="#cbd5e1"
+                      strokeWidth={6}
+                      strokeLinecap="round"
+                      strokeDasharray="8 7"
+                      opacity={0.55}
+                    />
+                    <path
+                      d={`M ${draftPreviewConnection.fromX} ${draftPreviewConnection.fromY} C ${draftPreviewConnection.fromX} ${draftPreviewConnection.fromY + 70}, ${draftPreviewConnection.toX} ${draftPreviewConnection.toY - 70}, ${draftPreviewConnection.toX} ${draftPreviewConnection.toY}`}
+                      fill="none"
+                      stroke={LEVEL_COLORS[draftPreviewConnection.level]?.accent || '#475569'}
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeDasharray="8 7"
+                      opacity={0.88}
+                    />
+                  </>
+                )}
               </svg>
 
-              {/* Nodes */}
               {flatNodes.map(({ node, absX, absY }) => {
                 const style = LEVEL_COLORS[node.level];
-                const highlighted = isHigh(node.id);
-                const isSelected = selectedNode?.id === node.id;
-                const isLeaf = node.level === 'angle';
-                const displayLabel = node.label.length > 22 ? node.label.substring(0, 22) + '…' : node.label;
+                const treeNode = isTreeNode(node) ? node : null;
+                const highlighted = treeNode ? isHigh(node.id) : selectedCustomNodeId === node.id || activePath.length === 0;
+                const isSelected = selectedNode?.id === node.id || selectedCustomNodeId === node.id;
+                const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
 
                 return (
                   <div
                     key={node.id}
                     role="button"
+                    data-node-card="true"
                     tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); handleNodeClick(node); }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleNodeClick(node);
+                    onClick={(e) => {
+                      if (suppressNodeClickRef.current) {
+                        suppressNodeClickRef.current = false;
+                        return;
+                      }
+                      e.stopPropagation();
+                      if (treeNode) {
+                        setSelectedCustomNodeId(null);
+                        handleNodeClick(treeNode);
+                      } else {
+                        setSelectedCustomNodeId(node.id);
+                        setSelectedNode(null);
                       }
                     }}
-                    className={`absolute cursor-pointer select-none transition-all duration-300 ${isLeaf ? 'hover:scale-105' : ''}`}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && treeNode) {
+                        e.preventDefault();
+                        handleNodeClick(treeNode);
+                      }
+                    }}
+                    onPointerDown={(e) => handleStartCustomNodeDrag(node.id, absX, absY, e)}
+                    className="absolute select-none transition-all duration-300"
                     style={{
                       left: absX - NODE_W / 2,
                       top: absY,
                       width: NODE_W,
                       height: NODE_H,
                       zIndex: isSelected ? 20 : highlighted ? 10 : 1,
-                      opacity: highlighted ? 1 : 0.15,
-                      transform: highlighted ? 'scale(1)' : 'scale(0.92)',
+                      opacity: highlighted ? 1 : 0.17,
+                      transform: draggedCustomNodeId === node.id ? 'scale(1.02)' : highlighted ? 'scale(1)' : 'scale(0.94)',
                     }}
                   >
+                    <button
+                      title="Thả dây vào đây để nối với node này"
+                      onPointerUp={(e) => handleDropOnNode(node.id, e)}
+                      data-node-handle="true"
+                      className={`absolute left-1/2 -top-2 z-30 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-white transition-all ${dragConnection ? 'scale-125 ring-2 ring-gray-300' : ''}`}
+                      style={{ background: style.accent }}
+                    />
                     <div
-                      className="w-full h-full rounded-2xl overflow-hidden transition-all duration-300"
+                      className="w-full h-full rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer"
                       style={{
                         background: style.bg,
                         border: `2px solid ${isSelected ? style.accent : style.border}`,
                         boxShadow: isSelected
-                          ? `0 0 0 3px ${style.accent}20, 0 8px 24px ${style.accent}18`
+                          ? `0 0 0 3px ${style.accent}22, 0 8px 24px ${style.accent}20`
                           : highlighted ? `0 2px 8px rgba(0,0,0,0.06)` : 'none',
                       }}
                     >
@@ -713,10 +1844,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                       <div className="flex flex-col items-center justify-center px-3 pt-2 pb-1.5">
                         <div className="flex items-center gap-1.5 w-full justify-center mb-1">
                           <span className="text-[11px] flex-shrink-0">{style.icon}</span>
-                          <span
-                            className="text-[11px] font-bold text-gray-800 truncate leading-tight"
-                            title={node.label}
-                          >
+                          <span className="text-[11px] font-bold text-gray-800 truncate leading-tight" title={node.label}>
                             {displayLabel}
                           </span>
                         </div>
@@ -729,28 +1857,192 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                           </span>
                           {node.wins > 0 && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 border border-emerald-200">
-                              🏆{node.wins}
+                              win {node.wins}
                             </span>
                           )}
                           {node.fails > 0 && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-500 border border-red-200">
-                              ❌{node.fails}
+                              fail {node.fails}
                             </span>
                           )}
                         </div>
-                        {isLeaf && (
-                          <p className="text-[8px] text-gray-400 mt-1">Click để xem →</p>
+                        {!treeNode && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveCustomNode(node.id); }}
+                            data-node-action="true"
+                            className="absolute right-1.5 top-1.5 rounded-full bg-white/80 p-1 text-gray-400 hover:text-red-500"
+                            title="Xóa node custom"
+                          >
+                            <X size={10} />
+                          </button>
                         )}
                       </div>
                     </div>
+                    <button
+                      title="Kéo để tạo node kế tiếp"
+                      onPointerDown={(e) => handleStartDragConnection(node.id, absX, absY + NODE_H, e)}
+                      data-node-handle="true"
+                      className={`absolute left-1/2 -bottom-2 z-30 flex h-4 w-4 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white transition-all active:cursor-grabbing ${dragConnection?.fromId === node.id ? 'scale-150 ring-2 ring-gray-900' : ''}`}
+                      style={{ background: style.accent }}
+                    >
+                      {dragConnection?.fromId === node.id && <Link2 size={8} className="text-white" />}
+                    </button>
                   </div>
                 );
               })}
-              </div>
+              {pendingNodePicker && (
+                <div
+                  data-node-picker="true"
+                  className="absolute z-40 w-[300px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                  style={{
+                    left: Math.min(Math.max(pendingNodePicker.x + 16, LEVEL_LABEL_W + 20), canvasW - 320),
+                    top: pendingNodePicker.y,
+                  }}
+                >
+                  <div className="border-b border-gray-100 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
+                      Chọn {LEVEL_AXIS_LABELS[pendingNodePicker.level]}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-gray-700">Option của app hiện tại</p>
+                    {pendingNodePicker.level === 'angle' && (
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-teal-600">AI goi y tu painpoint dang chon</p>
+                        <button
+                          onClick={handleRefreshAngleSuggestions}
+                          disabled={isGeneratingAngleOptions}
+                          className="inline-flex items-center gap-1 rounded-lg border border-teal-200 px-2 py-1 text-[10px] font-bold text-teal-700 transition-colors hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isGeneratingAngleOptions ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+                          Gen lai
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="max-h-[260px] overflow-y-auto p-2">
+                    {isGeneratingAngleOptions && pickerOptionValues.length === 0 && (
+                      <div className="flex items-center gap-2 rounded-xl bg-gray-50 px-3 py-3 text-sm font-semibold text-gray-500">
+                        <Loader2 size={14} className="animate-spin" />
+                        Dang tao angle tu painpoint...
+                      </div>
+                    )}
+                    {pickerOptionValues.slice(0, 12).map(option => (
+                      <button
+                        key={option}
+                        onClick={() => handlePickNextNode(option)}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                      >
+                        <span
+                          className="h-7 w-7 rounded-lg border"
+                          style={{
+                            background: LEVEL_COLORS[pendingNodePicker.level].bg,
+                            borderColor: LEVEL_COLORS[pendingNodePicker.level].border,
+                          }}
+                        />
+                        <span className="truncate">{option}</span>
+                      </button>
+                    ))}
+                    {!isGeneratingAngleOptions && pickerOptionValues.length === 0 && (
+                      <div className="rounded-xl border border-dashed border-gray-200 px-3 py-3 text-sm text-gray-400">
+                        Chua co option phu hop. Ban co the tao custom ngay ben duoi.
+                      </div>
+                    )}
+                    <button
+                      onClick={handleOpenCustomNodeEditor}
+                      className="mt-1 flex w-full items-center gap-3 rounded-xl border border-dashed border-gray-200 px-3 py-2 text-left text-sm font-bold text-gray-500 transition-colors hover:bg-gray-50"
+                    >
+                      <Plus size={16} />
+                      Tạo custom {LEVEL_AXIS_LABELS[pendingNodePicker.level]}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {pendingCustomNodeEditor && (
+                <div
+                  data-node-picker="true"
+                  className="absolute z-40 w-[320px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                  style={{
+                    left: Math.min(Math.max(pendingCustomNodeEditor.x + 16, LEVEL_LABEL_W + 20), canvasW - 340),
+                    top: pendingCustomNodeEditor.y,
+                  }}
+                >
+                  <div className="border-b border-gray-100 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">
+                      Custom {LEVEL_AXIS_LABELS[pendingCustomNodeEditor.level]}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-gray-700">
+                      {pendingCustomNodeEditor.level === 'angle' ? 'Nhập tên angle rồi generate từ branch này.' : 'Nhập tên node để nối tiếp branch hiện tại.'}
+                    </p>
+                  </div>
+                  <div className="space-y-3 p-3">
+                    {pendingCustomNodeEditor.level === 'angle' && (
+                      <div className="rounded-xl border border-teal-100 bg-teal-50/70 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-bold text-teal-700">Goi y AI tu painpoint</p>
+                          <button
+                            onClick={handleRefreshAngleSuggestions}
+                            disabled={isGeneratingAngleOptions}
+                            className="inline-flex items-center gap-1 rounded-lg border border-teal-200 px-2 py-1 text-[10px] font-bold text-teal-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isGeneratingAngleOptions ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+                            Gen lai
+                          </button>
+                        </div>
+                        {isGeneratingAngleOptions && generatedAngleOptions.length === 0 ? (
+                          <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-teal-700">
+                            <Loader2 size={12} className="animate-spin" />
+                            Dang tao goi y angle...
+                          </div>
+                        ) : generatedAngleOptions.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {generatedAngleOptions.slice(0, 6).map(option => (
+                              <button
+                                key={option}
+                                onClick={() => setPendingCustomNodeEditor(prev => prev ? { ...prev, draftLabel: option } : prev)}
+                                className="rounded-full border border-teal-200 bg-white px-3 py-1.5 text-left text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+                              >
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-teal-700/80">Chua tao duoc goi y. Ban van co the nhap angle thu cong.</p>
+                        )}
+                      </div>
+                    )}
+                    <input
+                      autoFocus
+                      value={pendingCustomNodeEditor.draftLabel}
+                      onChange={(e) => setPendingCustomNodeEditor(prev => prev ? { ...prev, draftLabel: e.target.value } : prev)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSubmitCustomNodeEditor();
+                        }
+                      }}
+                      placeholder={`Nhập ${LEVEL_AXIS_LABELS[pendingCustomNodeEditor.level]}`}
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 outline-none transition-colors focus:border-indigo-300"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setPendingCustomNodeEditor(null)}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-500 transition-colors hover:bg-gray-50"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        onClick={handleSubmitCustomNodeEditor}
+                        disabled={!pendingCustomNodeEditor.draftLabel.trim()}
+                        className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {pendingCustomNodeEditor.level === 'angle' ? 'Tạo + Generate' : 'Tạo node'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
       {/* ===== SELECTED ANGLE → Ideas Detail ===== */}
       {detailIdeas.length > 0 && (
@@ -767,9 +2059,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {detailIdeas.map((idea: any) => {
-              const c = idea.content as any;
-              const result = ideaResults[idea.id] || idea.result;
+            {detailIdeas.map((idea) => {
+              const c = idea.content;
+              const result = ideaResults[idea.id] || toResultType(idea.result);
               return (
                 <div key={idea.id} className="border border-gray-100 rounded-xl bg-gradient-to-br from-white to-gray-50/50 overflow-hidden hover:shadow-md transition-shadow">
                   <div className="p-4">
