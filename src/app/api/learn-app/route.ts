@@ -307,7 +307,12 @@ QUY TẮC:
 - Nếu nhiều idea giống nhau, gọi thẳng đó là duplication risk.
 - Viết tiếng Việt, bullet rõ, tối đa 1000 từ. OUTPUT: text thuần, không JSON.`;
 
-    const knowledge = await askAI(prompt, { temperature: 0.25, max_tokens: 12000 });
+    const knowledge = await askAI(prompt, {
+      temperature: 0.25,
+      max_tokens: 12000,
+      priority: sessionId ? 'low' : 'normal',
+      timeoutMs: 240000,
+    });
 
     if (!knowledge) {
       return NextResponse.json({ error: 'AI learning failed' }, { status: 500 });

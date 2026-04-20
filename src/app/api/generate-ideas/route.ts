@@ -21,6 +21,13 @@ const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|neve
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
 const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
+const MAX_IDEAS_PER_AI_BATCH = 5;
+const MAX_IDEAS_PER_REQUEST = 20;
+
+type IdeaBatchPlan = {
+  batchQuantity: number;
+  batchStartIndex: number;
+};
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -437,6 +444,60 @@ function hasNearDuplicateIdeas(ideas: any[]): boolean {
   return false;
 }
 
+function toPositiveInt(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+}
+
+function buildIdeaBatchPlans(totalRequestedQuantity: number): IdeaBatchPlan[] {
+  const plans: IdeaBatchPlan[] = [];
+  for (let batchStartIndex = 0; batchStartIndex < totalRequestedQuantity; batchStartIndex += MAX_IDEAS_PER_AI_BATCH) {
+    plans.push({
+      batchQuantity: Math.min(MAX_IDEAS_PER_AI_BATCH, totalRequestedQuantity - batchStartIndex),
+      batchStartIndex,
+    });
+  }
+  return plans;
+}
+
+function trimPromptText(text: string, maxLength = 160) {
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function buildInRequestIdeaHistory(ideas: Record<string, unknown>[]) {
+  if (ideas.length === 0) return '';
+
+  return ideas
+    .slice(-8)
+    .map((idea, index) => {
+      const hook = asRecord(idea.hook);
+      const body = asRecord(idea.body);
+
+      return `${index + 1}. "${trimPromptText(asText(idea.title), 90)}" | type="${trimPromptText(asText(idea.creativeType), 40)}"
+   hookVisual="${trimPromptText(asText(hook.visual) || asText(hook.script), 140)}"
+   hookVoice="${trimPromptText(asText(hook.voice), 110)}"
+   bodyVisual="${trimPromptText(asText(body.visual) || asText(body.script), 140)}"`;
+    })
+    .join('\n');
+}
+
+function buildVariationWindowBlock(batchStartIndex: number, batchQuantity: number, totalRequestedQuantity: number) {
+  if (totalRequestedQuantity <= 1) return '';
+
+  const rangeStart = batchStartIndex + 1;
+  const rangeEnd = batchStartIndex + batchQuantity;
+  const rangeLabel = rangeStart === rangeEnd
+    ? `${rangeStart}/${totalRequestedQuantity}`
+    : `${rangeStart}-${rangeEnd}/${totalRequestedQuantity}`;
+
+  return `\n[VARIATION WINDOW TRONG LAN GEN HIEN TAI]
+Batch nay phai tao dung cac idea trong cua so ${rangeLabel}.
+- Khong duoc lap lai scene family da xuat hien o cac cua so truoc.
+- Moi idea moi van phai giu dung core user, painpoint, emotion, PSP, target market va angle dang chon.
+- Neu da co idea truoc do rat giong ve opening action, location, camera reveal, props hoac cau noi mo dau thi phai doi sang huong khac.\n`;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -493,6 +554,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         temperature: 0.7,
         max_tokens: 8192,
         useCreativePersona: false,
+        priority: 'high',
       });
       if (!text) return NextResponse.json({ error: 'AI không phản hồi' }, { status: 500 });
       const parsed = parseJson(text);
@@ -571,6 +633,280 @@ Trả JSON array of strings. KHÔNG markdown.`;
         `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
       ]);
       return NextResponse.json({ success: true, angles: fallback });
+    }
+
+    if (body.mode !== 'refine' && body.mode !== 'generate-angles') {
+      const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics, trendingStructures } = body;
+      const featureContext = filters?.solution?.length ? filters.solution.join(', ') : 'General App Features';
+      const requestedQuantity = Math.min(toPositiveInt(config?.quantity, 3), MAX_IDEAS_PER_REQUEST);
+      const duration = config?.duration || '30s';
+      const visualType = config?.visualType || 'UGC (Người thật)';
+      const targetLang = detectLang(filters?.coreUser);
+      const marketContext = buildMarketContext(filters?.targetMarket);
+      const angleContext = filters?.angle?.length ? filters.angle.join(', ') : '';
+      const primaryPillar = filters?.painPoint?.[0] || 'General user friction';
+      const angleIndex = Number(config?.angleIndex || 1);
+      const totalAngles = Number(config?.totalAngles || 1);
+      const resolvedModel = resolveModel(selectedModel);
+      const batchPlans = buildIdeaBatchPlans(requestedQuantity);
+
+      const rawKnowledge = appKnowledge || '';
+      const truncatedKnowledge = rawKnowledge.length > 3000 ? `${rawKnowledge.substring(0, 3000)}\n[...truncated]` : rawKnowledge;
+      const knowledgeBlock = truncatedKnowledge
+        ? `\n[APP BRAIN - learned context for "${appName}"]\n${truncatedKnowledge}\n`
+        : '';
+      const recentIdeasBlock = previousIdeas
+        ? `\n[RECENT SAVED IDEAS - learn style, do not repeat]\n${previousIdeas}\n`
+        : '';
+      const trendingBlock = trendingTopics?.length
+        ? `\n[TRENDING CONTEXT]\n${trendingTopics.join(', ')}\nUse trends only when they naturally fit the selected pain point and emotion.\n`
+        : '';
+      const structuredTrendNotes = Array.isArray(trendingStructures)
+        ? trendingStructures
+            .map(item => String(item || '').trim())
+            .filter(Boolean)
+            .slice(0, 6)
+        : [];
+      const importedTrendBlock = structuredTrendNotes.length
+        ? `\n[IMPORTED VIDEO STRUCTURE]\n${structuredTrendNotes.join('\n')}\nLearn pacing and treatment, but do not copy the source structure verbatim.\n`
+        : '';
+      const seasonalVisualBlock = buildSeasonalVisualBlock(config?.seasonalVisualContext);
+
+      const runGenerationBatch = async (
+        plan: IdeaBatchPlan,
+        priorGeneratedIdeas: Record<string, unknown>[]
+      ) => {
+        const inRequestHistory = buildInRequestIdeaHistory(priorGeneratedIdeas);
+        const inRequestHistoryBlock = inRequestHistory
+          ? `\n[IDEAS ALREADY GENERATED IN THIS SAME REQUEST]\n${inRequestHistory}\nAvoid repeating these scene families, hook reveals, and voice openings.\n`
+          : '';
+        const variationBlock = buildVariationWindowBlock(
+          plan.batchStartIndex,
+          plan.batchQuantity,
+          requestedQuantity
+        );
+        const diversityBlock = buildBatchDiversityBlock(
+          plan.batchQuantity,
+          angleContext,
+          angleIndex,
+          totalAngles
+        );
+
+        const frameworkInjection = buildFrameworkInjection({
+          appName,
+          category: appCategory || 'General',
+          coreUsers: filters?.coreUser || [],
+          primaryEmotion: filters?.emotion?.[0] || 'Curiosity',
+          visualTheme: `${visualType}. Keep the scenes native to ${filters?.targetMarket?.join(', ') || 'the selected market'}.`,
+          psp: featureContext,
+          pillars: filters?.painPoint?.length ? filters.painPoint : ['General user friction'],
+          trendingHooks: trendingTopics || [],
+          performanceData: [
+            rawKnowledge ? `AI Brain memory: ${truncatedKnowledge}` : 'No AI Brain memory yet',
+            previousIdeas ? `Recent idea history for anti-repeat:\n${previousIdeas}` : 'No recent saved ideas',
+            inRequestHistory ? `Ideas already generated in this request:\n${inRequestHistory}` : 'No earlier ideas inside this request',
+            structuredTrendNotes.length ? `Imported video structure:\n${structuredTrendNotes.join('\n')}` : 'No imported video structure',
+            angleContext ? `Angle focus: ${angleContext}` : 'No locked angle',
+          ],
+          doList: [
+            'Keep every idea production-ready and executable today',
+            'Stay social-first, UGC-friendly, and market-native',
+            'Differentiate opening action, blocker, reveal, and voice opening across ideas',
+          ],
+          dontList: [
+            'Do not drift away from the selected pain point',
+            'Do not output cinematic brand-film copy',
+            'Do not repeat the same scene family with new wording',
+          ],
+          anglesPerPillar: 1,
+          ideasPerAngle: plan.batchQuantity,
+          trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
+          language: `Vietnamese strategy notes, ${targetLang} voice/text overlay`,
+          priority: 'A',
+          extraContext: [
+            `Selected angle: ${angleContext || 'Creative freedom'}`,
+            `Idea description: ${config?.ideaDescription || 'Creative freedom'}`,
+            `Target market: ${filters?.targetMarket?.join(', ') || 'Default market'}`,
+            `Batch window: ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`,
+          ],
+        });
+
+        const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
+
+${frameworkInjection}
+
+## SUPPORTING CONTEXT
+${knowledgeBlock || '- No AI Brain memory yet.'}
+${recentIdeasBlock || '- No recent saved ideas.'}
+${inRequestHistoryBlock || '- No earlier ideas in this request.'}
+${trendingBlock || '- No trending hooks injected.'}
+${importedTrendBlock || ''}
+${marketContext}
+${seasonalVisualBlock || ''}
+${variationBlock || ''}
+${diversityBlock || ''}
+
+## TASK
+Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
+- Duration: ${duration}
+- The final target for this request is ${requestedQuantity} ideas. This batch only covers items ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}.
+- Each idea must stay inside the selected pillar and selected angle focus.
+- Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
+- If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
+- Hook, body, and CTA must follow one continuous problem-solution chain.
+- If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
+
+${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang })}
+
+${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
+
+        console.log(
+          '[generate-ideas] Batch prompt:',
+          `${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`,
+          'chars:',
+          prompt.length,
+          'model:',
+          selectedModel || 'gemini-2.5-pro'
+        );
+
+        let text = await askAI(prompt, {
+          model: resolvedModel,
+          temperature: plan.batchQuantity > 1 ? 0.9 : 0.8,
+          max_tokens: 16384,
+          useCreativePersona: false,
+          priority: 'high',
+        });
+
+        if (!text) {
+          throw new Error('AI không phản hồi');
+        }
+
+        let parsed = parseJson(text);
+        if (!parsed) {
+          console.error('[generate-ideas] Failed to parse:', text.substring(0, 300));
+          throw new Error('Không parse được response. Thử lại.');
+        }
+
+        let arr = Array.isArray(parsed) ? parsed : [parsed];
+        let validation = normalizeAndValidateIdeas(arr, {
+          duration,
+          appName,
+          pillar: primaryPillar,
+          angleIndex: Math.max(angleIndex - 1, 0),
+        });
+        let valid = validation.valid.slice(0, plan.batchQuantity);
+        const duplicateDetected = valid.length > 1 && hasNearDuplicateIdeas(valid);
+        const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < plan.batchQuantity;
+
+        if (needsValidationRetry || duplicateDetected) {
+          if (validation.invalidReasons.length > 0) {
+            console.warn('[generate-ideas] Invalid ideas detected:', validation.invalidReasons);
+          }
+          if (duplicateDetected) {
+            console.warn('[generate-ideas] Near-duplicate batch detected; retrying with stricter diversity prompt');
+          }
+
+          const retryNotes: string[] = [];
+          if (validation.invalidReasons.length > 0) {
+            retryNotes.push(`Fix these rule violations:\n- ${validation.invalidReasons.slice(0, 5).join('\n- ')}`);
+          }
+          if (duplicateDetected) {
+            retryNotes.push(`The previous batch contains ideas that are too similar. Regenerate all ${plan.batchQuantity} ideas with clearly different scene families, opening actions, props, camera reveals, voice openings, and creative types.`);
+          }
+
+          const retryText = await askAI(`${prompt}
+
+[RETRY - INVALID OR TOO WEAK]
+Regenerate all ${plan.batchQuantity} ideas and obey the hard rules strictly.
+${retryNotes.join('\n\n')}`, {
+            model: resolvedModel,
+            temperature: 0.95,
+            max_tokens: 16384,
+            useCreativePersona: false,
+            priority: 'high',
+          });
+
+          if (retryText) {
+            const retryParsed = parseJson(retryText);
+            const retryArr = Array.isArray(retryParsed) ? retryParsed : retryParsed ? [retryParsed] : [];
+            const retryValidation = normalizeAndValidateIdeas(retryArr, {
+              duration,
+              appName,
+              pillar: primaryPillar,
+              angleIndex: Math.max(angleIndex - 1, 0),
+            });
+            const retryValid = retryValidation.valid.slice(0, plan.batchQuantity);
+            const retryHasDuplicates = retryValid.length > 1 && hasNearDuplicateIdeas(retryValid);
+
+            const shouldUseRetry = retryValid.length > valid.length
+              || (valid.length === 0 && retryValid.length > 0)
+              || (duplicateDetected && retryValid.length > 0 && !retryHasDuplicates);
+
+            if (shouldUseRetry && (retryValid.length > 0 || retryValidation.invalidReasons.length === 0)) {
+              arr = retryArr;
+              validation = retryValidation;
+              valid = retryValid;
+            }
+          }
+        }
+
+        if (valid.length === 0) {
+          console.error('[generate-ideas] No valid ideas:', JSON.stringify(arr[0]).substring(0, 200));
+          if (validation.invalidReasons.length > 0) {
+            console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
+          }
+          throw new Error('AI trả về format sai. Thử lại.');
+        }
+
+        return valid.slice(0, plan.batchQuantity);
+      };
+
+      const aggregatedIdeas: Record<string, unknown>[] = [];
+      const batchErrors: string[] = [];
+
+      for (const plan of batchPlans) {
+        try {
+          const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
+          aggregatedIdeas.push(...batchIdeas);
+          if (batchIdeas.length < plan.batchQuantity) {
+            batchErrors.push(
+              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} only returned ${batchIdeas.length}/${plan.batchQuantity} ideas`
+            );
+          }
+        } catch (batchError) {
+          const rangeLabel = `${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`;
+          console.error(`[generate-ideas] Batch ${rangeLabel} failed:`, batchError);
+          batchErrors.push(
+            batchError instanceof Error
+              ? `${rangeLabel}: ${batchError.message}`
+              : `${rangeLabel}: Unknown batch error`
+          );
+
+          if (aggregatedIdeas.length === 0) {
+            return NextResponse.json({ error: 'AI không phản hồi. Thử lại.' }, { status: 500 });
+          }
+
+          break;
+        }
+      }
+
+      if (aggregatedIdeas.length === 0) {
+        return NextResponse.json({ error: 'Không có kết quả hơp lệ.' }, { status: 500 });
+      }
+
+      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity);
+      return NextResponse.json({
+        success: true,
+        data: finalIdeas,
+        meta: {
+          requestedQuantity,
+          generatedQuantity: finalIdeas.length,
+          batchCount: batchPlans.length,
+          partial: finalIdeas.length < requestedQuantity,
+          warnings: batchErrors.length > 0 ? batchErrors : undefined,
+        },
+      });
     }
 
     // === MODE: GENERATE (tạo idea mới) ===

@@ -4,7 +4,11 @@ import { parseJsonLoose } from '@/lib/creativePromptSystem';
 
 export const maxDuration = 300;
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+const AI_BASE_URL = process.env.AI_BASE_URL || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.AI_API_KEY || '';
+const GEMINI_API_VERSION = process.env.GEMINI_API_VERSION || 'v1beta';
+const GEMINI_BASE_URL =
+  process.env.GEMINI_BASE_URL || (AI_BASE_URL ? `${AI_BASE_URL.replace(/\/+$/, '')}/gemini` : '');
 const MAX_DOWNLOAD_BYTES = 120 * 1024 * 1024;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
@@ -28,6 +32,20 @@ type ImportedTrendAnalysis = {
     visualType: string[];
   };
 };
+
+function createGeminiClient() {
+  return new GoogleGenAI({
+    apiKey: GEMINI_API_KEY,
+    apiVersion: GEMINI_API_VERSION,
+    ...(GEMINI_BASE_URL
+      ? {
+          httpOptions: {
+            baseUrl: GEMINI_BASE_URL,
+          },
+        }
+      : {}),
+  });
+}
 
 function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -337,7 +355,7 @@ export async function POST(request: NextRequest) {
     }
 
     const resolved = await resolveVideoSource(inputUrl);
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const ai = createGeminiClient();
     const prompt = buildAnalysisPrompt();
 
     const candidateModels = [...new Set([process.env.GEMINI_VIDEO_MODEL || 'gemini-3.1-pro-preview', 'gemini-2.5-pro'])];
@@ -423,7 +441,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
     if (GEMINI_API_KEY && aiFileName) {
-      const cleanupClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const cleanupClient = createGeminiClient();
       cleanupClient.files.delete({ name: aiFileName }).catch(() => {});
     }
   }

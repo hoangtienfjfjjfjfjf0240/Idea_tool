@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2, Brain, ChevronDown, ChevronUp, Clock, Heart } from 'lucide-react';
-import type { ScreenType, Hook, AppProject } from '@/types/database';
+import type { ScreenType, Hook, AppProject, FilterState, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 
@@ -16,8 +16,43 @@ interface HookIdea {
   id: string;
   title: string;
   explanation: string;
-  hook: { script?: string; textOverlay?: string; visual: string; text: string; voice: string; imageUrl?: string };
+  hook: {
+    script?: string;
+    textOverlay?: string;
+    visual: string;
+    text: string;
+    voice: string;
+    imageUrl?: string;
+    viTranslation?: string;
+    viewerEmotion?: string;
+    painpointImpact?: string;
+    whyTheyStopScrolling?: string;
+  };
+  savedHookId?: string;
 }
+
+interface FullIdea {
+  id?: string | number;
+  title?: string;
+  duration?: string;
+  creativeType?: string;
+  explanation?: string;
+  framework?: Partial<IdeaContent['framework']>;
+  hook?: Partial<IdeaContent['hook']>;
+  body?: Partial<IdeaContent['body']>;
+  cta?: Partial<IdeaContent['cta']>;
+  savedIdeaId?: string;
+}
+
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+const FULL_IDEA_SECTIONS = [
+  { key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
+  { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
+  { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
+] as const;
+
+const MODIFY_HOOK_REQUEST_TIMEOUT_MS = 70000;
 
 export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app, selectedModel }) => {
   const [hooks, setHooks] = useState<Hook[]>([]);
@@ -27,12 +62,16 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [isLoading, setIsLoading] = useState(false);
   const [quantity, setQuantity] = useState(3);
   // Hook-to-Ideas state
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [fullIdeas, setFullIdeas] = useState<any[]>([]);
+  const [fullIdeas, setFullIdeas] = useState<FullIdea[]>([]);
   const [fullIdeasLoading, setFullIdeasLoading] = useState(false);
+  const [fullIdeasSaveStatus, setFullIdeasSaveStatus] = useState<SaveStatus>('idle');
+  const [savedFullIdeasCount, setSavedFullIdeasCount] = useState(0);
+  const [savedFullIdeasSessionId, setSavedFullIdeasSessionId] = useState<string | null>(null);
   const [fullIdeasDuration, setFullIdeasDuration] = useState('30s');
   const [fullIdeasQty, setFullIdeasQty] = useState(3);
   const [ideaDirection, setIdeaDirection] = useState('');
+  const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
+  const [savedModifiedHookCount, setSavedModifiedHookCount] = useState(0);
   const [expandedIdea, setExpandedIdea] = useState<number | null>(null);
   const [favoriteModifiedHooks, setFavoriteModifiedHooks] = useState<Set<number>>(new Set());
   const [approvedModifiedHooks, setApprovedModifiedHooks] = useState<Set<number>>(new Set());
@@ -47,6 +86,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [progressLabel, setProgressLabel] = useState('');
   const progressRef = useRef<NodeJS.Timeout | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const cancelRequestedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const pendingThumbRef = useRef<string | null>(null);
@@ -94,21 +134,39 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     }, 500);
   };
 
-  const stopProgress = () => {
+  const clearProgressInterval = () => {
     if (progressRef.current) clearInterval(progressRef.current);
     progressRef.current = null;
+  };
+
+  const stopProgress = () => {
+    clearProgressInterval();
     setProgress(100);
     setProgressLabel('Hoàn thành! ✨');
     setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1500);
   };
 
+  const buildLocalModifiedHooks = (sourceHook: Hook, instruction: string, count: number): HookIdea[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: crypto.randomUUID(),
+      title: `${sourceHook.title} - Biến thể ${i + 1}`,
+      explanation: `Áp dụng "${sourceHook.hook_concept || sourceHook.title}" kết hợp "${instruction}"`,
+      hook: {
+        visual: `${sourceHook.visual_detail || 'Cận cảnh'} + ${instruction}`,
+        text: `${sourceHook.title} (v${i + 1})`,
+        voice: `"${instruction} — ${sourceHook.description || ''}"`,
+      },
+    }));
+
   const handleCancel = () => {
+    cancelRequestedRef.current = true;
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
     }
-    stopProgress();
+    clearProgressInterval();
     setIsLoading(false);
+    setFullIdeasLoading(false);
     setProgress(0);
     setProgressLabel('Đã hủy');
     setTimeout(() => setProgressLabel(''), 1500);
@@ -117,7 +175,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const handleGenerate = async () => {
     if (!selectedHook || !modifyPrompt) return;
     setIsLoading(true);
+    setModifiedHooksSaveStatus('idle');
+    setSavedModifiedHookCount(0);
     const controller = new AbortController();
+    let requestTimedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      requestTimedOut = true;
+      controller.abort();
+    }, MODIFY_HOOK_REQUEST_TIMEOUT_MS);
+    cancelRequestedRef.current = false;
     abortRef.current = controller;
     startProgress();
     try {
@@ -136,27 +202,36 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       });
       const result = await res.json();
       if (res.ok && result.success && result.data?.length > 0) {
-        setGeneratedIdeas(result.data);
+        const generated = result.data as HookIdea[];
+        setGeneratedIdeas(generated);
+        await saveModifiedHooksToDatabase(generated);
       } else {
-        // Fallback mock
-        const mockIdeas: HookIdea[] = Array.from({ length: quantity }, (_, i) => ({
-          id: crypto.randomUUID(),
-          title: `${selectedHook.title} - Biến thể ${i + 1}`,
-          explanation: `Áp dụng "${selectedHook.hook_concept || selectedHook.title}" kết hợp "${modifyPrompt}"`,
-          hook: {
-            visual: `${selectedHook.visual_detail || 'Cận cảnh'} + ${modifyPrompt}`,
-            text: `${selectedHook.title} (v${i + 1})`,
-            voice: `"${modifyPrompt} — ${selectedHook.description || ''}"`
-          }
-        }));
+        const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
+        await saveModifiedHooksToDatabase(mockIdeas);
       }
     } catch (err) {
+      if (requestTimedOut && selectedHook) {
+        const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
+        setGeneratedIdeas(mockIdeas);
+        await saveModifiedHooksToDatabase(mockIdeas);
+        return;
+      }
+
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+
       console.error('Generate hooks failed:', err);
       alert('Có lỗi khi tạo hook. Vui lòng thử lại.');
     } finally {
-      stopProgress();
+      window.clearTimeout(timeoutId);
+      abortRef.current = null;
+      if (!cancelRequestedRef.current) {
+        stopProgress();
+      }
       setIsLoading(false);
+      cancelRequestedRef.current = false;
     }
   };
 
@@ -173,6 +248,152 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const text = cleanPreviewText(value);
     if (text.length <= limit) return text;
     return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const readText = (value: unknown, fallback = '') =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+
+  const buildHookFilterSnapshot = (hook: Hook): FilterState => ({
+    coreUser: hook.core_user ? [hook.core_user] : [],
+    painPoint: hook.painpoint ? [hook.painpoint] : [],
+    solution: hook.hook_concept ? [hook.hook_concept] : [],
+    emotion: hook.emotion ? [hook.emotion] : [],
+    videoStructure: ['Hook Library'],
+    visualType: hook.creative_type || hook.subtitle ? [hook.creative_type || hook.subtitle || ''] : [],
+    targetMarket: [],
+    angle: [`Winning Hook: ${hook.title}`],
+  });
+
+  const normalizeFullIdeaContent = (idea: FullIdea, sourceHook: Hook): IdeaContent => {
+    const framework = idea.framework || {};
+    const hook = idea.hook || {};
+    const body = idea.body || {};
+    const cta = idea.cta || {};
+
+    return {
+      creativeType: readText(idea.creativeType, sourceHook.creative_type || sourceHook.subtitle || 'UGC'),
+      meta: {
+        builderVersion: 'hook_library_full_idea_v1',
+        pillar: readText(framework.painpoint, sourceHook.painpoint || 'Hook Library'),
+        angleName: `Winning Hook: ${sourceHook.title}`,
+        visualRefNotes: sourceHook.visual_detail || undefined,
+      },
+      framework: {
+        coreUser: readText(framework.coreUser, sourceHook.core_user || 'General viewer'),
+        painpoint: readText(framework.painpoint, sourceHook.painpoint || 'General user friction'),
+        emotion: readText(framework.emotion, sourceHook.emotion || 'Curiosity'),
+        psp: readText(framework.psp, sourceHook.hook_concept || app?.name || 'Product solution'),
+      },
+      explanation: readText(idea.explanation),
+      hook: {
+        script: readText(hook.script, readText(hook.visual)),
+        textOverlay: readText(hook.textOverlay, readText(hook.text)),
+        visual: readText(hook.visual, readText(hook.script)),
+        text: readText(hook.text, readText(hook.textOverlay)),
+        voice: readText(hook.voice),
+        viTranslation: readText(hook.viTranslation),
+        viewerProfile: readText(hook.viewerProfile),
+        viewerEmotion: readText(hook.viewerEmotion),
+        painpointImpact: readText(hook.painpointImpact),
+        whyTheyStopScrolling: readText(hook.whyTheyStopScrolling),
+      },
+      body: {
+        script: readText(body.script, readText(body.visual)),
+        textOverlay: readText(body.textOverlay, readText(body.text)),
+        visual: readText(body.visual, readText(body.script)),
+        text: readText(body.text, readText(body.textOverlay)),
+        voice: readText(body.voice),
+        viTranslation: readText(body.viTranslation),
+      },
+      cta: {
+        script: readText(cta.script, readText(cta.visual)),
+        visual: readText(cta.visual, readText(cta.script)),
+        voice: readText(cta.voice),
+        text: readText(cta.text, readText(cta.textOverlay)),
+        textOverlay: readText(cta.textOverlay, readText(cta.text)),
+        endCard: readText(cta.endCard),
+        viTranslation: readText(cta.viTranslation),
+      },
+    };
+  };
+
+  const saveModifiedHooksToDatabase = async (ideas: HookIdea[]) => {
+    if (!app?.id || !selectedHook || ideas.length === 0) return;
+
+    setModifiedHooksSaveStatus('saving');
+    setSavedModifiedHookCount(0);
+
+    try {
+      const savedHooks = await Promise.all(
+        ideas.map(idea =>
+          dbService.addHook({
+            app_id: app.id,
+            title: idea.title || `Biến thể từ ${selectedHook.title}`,
+            subtitle: 'Modified Hook',
+            thumb: selectedHook.thumb || '✨',
+            description: idea.explanation || `Biến thể từ hook "${selectedHook.title}"`,
+            hook_concept: idea.hook.script || idea.hook.visual || idea.explanation || null,
+            visual_detail: idea.hook.visual || idea.hook.script || null,
+            core_user: selectedHook.core_user || null,
+            painpoint: selectedHook.painpoint || null,
+            emotion: selectedHook.emotion || null,
+            creative_type: selectedHook.creative_type || selectedHook.subtitle || null,
+            image_url: idea.hook.imageUrl || selectedHook.image_url || null,
+            video_url: null,
+          })
+        )
+      );
+      const savedCount = savedHooks.filter(Boolean).length;
+      setSavedModifiedHookCount(savedCount);
+      setGeneratedIdeas(prev => prev.map((idea, index) => ({
+        ...idea,
+        savedHookId: savedHooks[index]?.id,
+      })));
+      setModifiedHooksSaveStatus(savedCount > 0 ? 'saved' : 'error');
+      await loadHooks();
+    } catch (err) {
+      console.error('Save modified hooks failed:', err);
+      setModifiedHooksSaveStatus('error');
+    }
+  };
+
+  const saveFullIdeasToDatabase = async (ideas: FullIdea[]) => {
+    if (!app?.id || !selectedHook || ideas.length === 0) return ideas;
+
+    setFullIdeasSaveStatus('saving');
+    setSavedFullIdeasCount(0);
+    setSavedFullIdeasSessionId(null);
+
+    const filtersSnapshot = buildHookFilterSnapshot(selectedHook);
+    const sessionId = crypto.randomUUID();
+
+    try {
+      const savedIdeas = await dbService.saveIdeas(
+        app.id,
+        ideas.map((idea, index) => ({
+          title: readText(idea.title, `${selectedHook.title} - Full Idea ${index + 1}`),
+          duration: readText(idea.duration, fullIdeasDuration),
+          content: normalizeFullIdeaContent(idea, selectedHook),
+          filtersSnapshot,
+        })),
+        sessionId,
+        filtersSnapshot
+      );
+
+      const savedCount = savedIdeas.length;
+      setSavedFullIdeasCount(savedCount);
+      setSavedFullIdeasSessionId(savedCount > 0 ? sessionId : null);
+      setFullIdeasSaveStatus(savedCount > 0 ? 'saved' : 'error');
+
+      return ideas.map((idea, index) => ({
+        ...idea,
+        savedIdeaId: savedIdeas[index]?.id,
+      }));
+    } catch (err) {
+      console.error('Save full ideas failed:', err);
+      setFullIdeasSaveStatus('error');
+      return ideas;
+    }
   };
 
   const toggleIndexSet = (
@@ -441,11 +662,26 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 )}
 
                 <div className="flex gap-2">
-                  <button onClick={() => { setSelectedHook(hook); setScreen('f2.2.1'); }}
+                  <button onClick={() => {
+                    setSelectedHook(hook);
+                    setGeneratedIdeas([]);
+                    setModifyPrompt('');
+                    setModifiedHooksSaveStatus('idle');
+                    setSavedModifiedHookCount(0);
+                    setScreen('f2.2.1');
+                  }}
                     className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
                     <Sparkles size={12} /> Modify
                   </button>
-                  <button onClick={() => { setSelectedHook(hook); setFullIdeas([]); setScreen('f2.2.2'); }}
+                  <button onClick={() => {
+                    setSelectedHook(hook);
+                    setFullIdeas([]);
+                    setFullIdeasSaveStatus('idle');
+                    setSavedFullIdeasCount(0);
+                    setSavedFullIdeasSessionId(null);
+                    setIdeaDirection('');
+                    setScreen('f2.2.2');
+                  }}
                     className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
                     <Brain size={12} /> Full Ideas
                   </button>
@@ -503,7 +739,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   )}
                 </div>
 
-                <button onClick={() => { setPreviewHook(null); setSelectedHook(previewHook); setScreen('f2.2.1'); }}
+                <button onClick={() => {
+                  setPreviewHook(null);
+                  setSelectedHook(previewHook);
+                  setGeneratedIdeas([]);
+                  setModifyPrompt('');
+                  setModifiedHooksSaveStatus('idle');
+                  setSavedModifiedHookCount(0);
+                  setScreen('f2.2.1');
+                }}
                   className="w-full mt-5 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:shadow-lg transition-all">
                   <Sparkles size={16} /> Tạo biến thể với AI
                 </button>
@@ -660,6 +904,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const handleGenerateFullIdeas = async () => {
       setFullIdeasLoading(true);
       setFullIdeas([]);
+      setFullIdeasSaveStatus('idle');
+      setSavedFullIdeasCount(0);
+      setSavedFullIdeasSessionId(null);
       const controller = new AbortController();
       abortRef.current = controller;
       startProgress();
@@ -680,7 +927,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         });
         const result = await res.json();
         if (res.ok && result.success && result.data?.length > 0) {
-          setFullIdeas(result.data);
+          const generated = result.data as FullIdea[];
+          const saved = await saveFullIdeasToDatabase(generated);
+          setFullIdeas(saved);
         } else {
           alert(result.error || 'Có lỗi khi tạo ideas.');
         }
@@ -714,7 +963,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               )}
               <div className="p-5">
                 <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">🏆 Winning Hook — Framework Analysis</span>
-                <h2 className="text-xl font-bold text-gray-800 mt-1">"{selectedHook.title}"</h2>
+                <h2 className="text-xl font-bold text-gray-800 mt-1">&quot;{selectedHook.title}&quot;</h2>
                 {selectedHook.hook_concept && (
                   <p className="text-sm text-gray-500 mt-2 italic border-l-2 border-amber-200 pl-3">{selectedHook.hook_concept}</p>
                 )}
@@ -832,12 +1081,36 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           <div className="lg:col-span-8">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-amber-500" size={20} /> Full Ideas ({fullIdeas.length})</h3>
+              <div className="flex items-center gap-2">
+                {fullIdeasSaveStatus !== 'idle' && (
+                  <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${
+                    fullIdeasSaveStatus === 'saved'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : fullIdeasSaveStatus === 'saving'
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : 'border-red-200 bg-red-50 text-red-600'
+                  }`}>
+                    {fullIdeasSaveStatus === 'saved'
+                      ? `Đã lưu DB (${savedFullIdeasCount})`
+                      : fullIdeasSaveStatus === 'saving'
+                        ? 'Đang lưu DB...'
+                        : 'Lưu DB thất bại'}
+                  </span>
+                )}
+                {savedFullIdeasSessionId && (
+                  <button
+                    onClick={() => setScreen('f2.3')}
+                    className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50"
+                  >
+                    Xem trong History
+                  </button>
+                )}
+              </div>
             </div>
 
             {fullIdeas.length > 0 ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {fullIdeas.map((idea: any, idx: number) => (
+                {fullIdeas.map((idea, idx) => (
                   <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                     <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500 w-full" />
                     <div className="p-6">
@@ -848,6 +1121,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                           <div className="flex gap-2 flex-wrap">
                             <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
                             <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{idea.creativeType || 'Creative'}</span>
+                            {idea.savedIdeaId && (
+                              <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium">Đã lưu DB</span>
+                            )}
                           </div>
                         </div>
                         <button onClick={() => {
@@ -860,14 +1136,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{idea.explanation}</p>
 
                       {/* Sections: HOOK, BODY, CTA */}
-                      {[{ key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
-                      { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
-                      { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
-                      ].map(sec => {
-                        const secData = idea?.[sec.key] || {};
+                      {FULL_IDEA_SECTIONS.map(sec => {
+                        const secData = idea[sec.key] || {};
                         const scriptContent = secData?.script || '';
                         const textOverlay = secData?.textOverlay || '';
-                        const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
+                        const endCard = sec.key === 'cta' ? (idea.cta?.endCard || '') : '';
                         return (
                           <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                             <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
@@ -929,7 +1202,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             )}
             <div className="p-5">
               <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Hook Gốc (Winning)</span>
-              <h2 className="text-xl font-bold text-gray-800 mt-1">"{selectedHook?.title}"</h2>
+              <h2 className="text-xl font-bold text-gray-800 mt-1">&quot;{selectedHook?.title}&quot;</h2>
               {selectedHook?.hook_concept && (
                 <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 text-sm">
                   <p className="text-gray-500"><span className="font-bold text-gray-700">Concept:</span> {selectedHook.hook_concept}</p>
@@ -1058,7 +1331,38 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         <div className="lg:col-span-8 bg-white rounded-2xl p-6 border border-gray-200 min-h-[500px] overflow-y-auto shadow-sm">
           <div className="flex justify-between items-center mb-5">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-indigo-500" size={20} /> Kết Quả ({generatedIdeas.length})</h3>
+            <div className="flex items-center gap-2">
+              {modifiedHooksSaveStatus !== 'idle' && (
+                <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${
+                  modifiedHooksSaveStatus === 'saved'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : modifiedHooksSaveStatus === 'saving'
+                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border-red-200 bg-red-50 text-red-600'
+                }`}>
+                  {modifiedHooksSaveStatus === 'saved'
+                    ? `Đã lưu Hook Library (${savedModifiedHookCount})`
+                    : modifiedHooksSaveStatus === 'saving'
+                      ? 'Đang lưu DB...'
+                      : 'Lưu DB thất bại'}
+                </span>
+              )}
+              {savedModifiedHookCount > 0 && (
+                <button
+                  onClick={() => setScreen('f2.2')}
+                  className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"
+                >
+                  Xem Hook Library
+                </button>
+              )}
+            </div>
           </div>
+
+          {(generatedIdeas.length > 0 || modifiedHooksSaveStatus !== 'idle') && (
+            <p className="mb-4 text-xs leading-relaxed text-gray-500">
+              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook chỉ lưu vào Hook Library (bảng hooks), không ghi Vertical Strategy Map. Dùng Full Ideas để tạo Hook + Body + CTA và lưu vào map.
+            </p>
+          )}
 
           {generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -1067,7 +1371,6 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 const isFavorite = favoriteModifiedHooks.has(idx);
                 const isApproved = approvedModifiedHooks.has(idx);
                 const scriptContent = idea.hook.script || idea.hook.visual || '';
-                const textOverlay = idea.hook.textOverlay || idea.hook.text || '';
                 return (
                 <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group">
                   <div className="relative aspect-[16/9] bg-gray-100 overflow-hidden">
@@ -1083,6 +1386,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     <div className="absolute left-3 top-3 flex gap-1.5 flex-wrap">
                       <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">Modified Hook</span>
                       <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">English</span>
+                      {idea.savedHookId && (
+                        <span className="text-[11px] px-2 py-1 bg-emerald-50/95 border border-emerald-100 rounded-md text-emerald-700 shadow-sm">Đã lưu</span>
+                      )}
                     </div>
                   </div>
                   <div className="p-4">
@@ -1144,10 +1450,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     </div>
 
                     {/* Vietnamese Translation */}
-                    {(idea.hook as any)?.viTranslation && (
+                    {idea.hook.viTranslation && (
                       <div className="mt-3 bg-white/60 rounded-lg px-4 py-2.5 border border-gray-200">
                         <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
-                        <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{(idea.hook as any).viTranslation}</p>
+                        <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{idea.hook.viTranslation}</p>
                       </div>
                     )}
 
@@ -1160,24 +1466,24 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     )}
 
                     {/* Hook Analysis */}
-                    {((idea.hook as any)?.viewerEmotion || (idea.hook as any)?.painpointImpact) && (
+                    {(idea.hook.viewerEmotion || idea.hook.painpointImpact) && (
                       <div className="mt-3 space-y-2">
-                        {(idea.hook as any)?.viewerEmotion && (
+                        {idea.hook.viewerEmotion && (
                           <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
                             <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{(idea.hook as any).viewerEmotion}</p>
+                            <p className="text-xs text-gray-700 mt-0.5">{idea.hook.viewerEmotion}</p>
                           </div>
                         )}
-                        {(idea.hook as any)?.painpointImpact && (
+                        {idea.hook.painpointImpact && (
                           <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
                             <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{(idea.hook as any).painpointImpact}</p>
+                            <p className="text-xs text-gray-700 mt-0.5">{idea.hook.painpointImpact}</p>
                           </div>
                         )}
-                        {(idea.hook as any)?.whyTheyStopScrolling && (
+                        {idea.hook.whyTheyStopScrolling && (
                           <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
                             <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
-                            <p className="text-xs text-gray-700 font-semibold mt-0.5">{(idea.hook as any).whyTheyStopScrolling}</p>
+                            <p className="text-xs text-gray-700 font-semibold mt-0.5">{idea.hook.whyTheyStopScrolling}</p>
                           </div>
                         )}
                       </div>

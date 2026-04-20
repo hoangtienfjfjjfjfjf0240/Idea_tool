@@ -67,11 +67,88 @@ interface ChatMessage {
   content: string | { type: string; text?: string; image_url?: { url: string } }[];
 }
 
+type AIPriority = 'high' | 'normal' | 'low';
+
 interface AICallOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
   useCreativePersona?: boolean;
+  priority?: AIPriority;
+  timeoutMs?: number;
+}
+
+const parsePositiveInt = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+};
+
+const AI_MAX_CONCURRENT_REQUESTS = parsePositiveInt(process.env.AI_MAX_CONCURRENT_REQUESTS, 12);
+const AI_RESERVED_INTERACTIVE_SLOTS = Math.min(
+  AI_MAX_CONCURRENT_REQUESTS - 1,
+  parsePositiveInt(process.env.AI_RESERVED_INTERACTIVE_SLOTS, 3)
+);
+
+type QueueEntry = {
+  priority: AIPriority;
+  resolve: (release: () => void) => void;
+};
+
+const PRIORITY_ORDER: Record<AIPriority, number> = {
+  high: 0,
+  normal: 1,
+  low: 2,
+};
+
+let activeAICallCount = 0;
+const pendingAICallQueue: QueueEntry[] = [];
+
+function canStartAICall(priority: AIPriority) {
+  if (activeAICallCount >= AI_MAX_CONCURRENT_REQUESTS) return false;
+  if (priority === 'low') {
+    return activeAICallCount < AI_MAX_CONCURRENT_REQUESTS - AI_RESERVED_INTERACTIVE_SLOTS;
+  }
+  return true;
+}
+
+function sortPendingAICalls() {
+  pendingAICallQueue.sort((left, right) => PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority]);
+}
+
+function drainAICallQueue() {
+  let started = true;
+  while (started) {
+    started = false;
+    for (let index = 0; index < pendingAICallQueue.length; index++) {
+      const entry = pendingAICallQueue[index];
+      if (!canStartAICall(entry.priority)) continue;
+
+      pendingAICallQueue.splice(index, 1);
+      activeAICallCount += 1;
+      entry.resolve(() => {
+        activeAICallCount = Math.max(0, activeAICallCount - 1);
+        drainAICallQueue();
+      });
+      started = true;
+      break;
+    }
+  }
+}
+
+function acquireAICallSlot(priority: AIPriority): Promise<() => void> {
+  if (canStartAICall(priority)) {
+    activeAICallCount += 1;
+    return Promise.resolve(() => {
+      activeAICallCount = Math.max(0, activeAICallCount - 1);
+      drainAICallQueue();
+    });
+  }
+
+  return new Promise(resolve => {
+    pendingAICallQueue.push({ priority, resolve });
+    sortPendingAICalls();
+    drainAICallQueue();
+  });
 }
 
 export async function callAI(
@@ -88,6 +165,8 @@ export async function callAI(
     temperature = 0.7,
     max_tokens = 8192,
     useCreativePersona = true,
+    priority = 'normal',
+    timeoutMs = 180000,
   } = options;
 
   // Prepend system prompt if using creative persona
@@ -95,9 +174,11 @@ export async function callAI(
     ? [{ role: 'system', content: CREATIVE_SYSTEM_PROMPT }, ...messages]
     : messages;
 
+  const releaseSlot = await acquireAICallSlot(priority);
+
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 180000); // 3 min timeout
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     const res = await fetch(`${AI_BASE_URL}/v1/chat/completions`, {
       method: 'POST',
@@ -127,11 +208,13 @@ export async function callAI(
     return data?.choices?.[0]?.message?.content || null;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      console.error('[AI] Request timed out after 3 minutes');
+      console.error(`[AI] Request timed out after ${Math.round(timeoutMs / 1000)} seconds`);
     } else {
       console.error('[AI] Fetch error:', err);
     }
     return null;
+  } finally {
+    releaseSlot();
   }
 }
 

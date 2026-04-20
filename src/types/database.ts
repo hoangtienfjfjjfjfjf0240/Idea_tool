@@ -141,6 +141,43 @@ export interface FilterState {
   [key: string]: string[];
 }
 
+export type StrategyWorkflowLevel =
+  | 'root'
+  | 'coreUser'
+  | 'psp'
+  | 'emotion'
+  | 'visual'
+  | 'painPoint'
+  | 'angle';
+
+export interface StrategyMapCustomNodeState {
+  id: string;
+  label: string;
+  level: StrategyWorkflowLevel;
+  preferredX?: number;
+  filters?: Partial<FilterState>;
+}
+
+export interface StrategyMapEdgeState {
+  fromId: string;
+  toId: string;
+}
+
+export interface StrategyMapLayoutPosition {
+  x: number;
+  y: number;
+}
+
+export interface StrategyMapState {
+  version: number;
+  weekKey: string;
+  savedAt?: number;
+  customNodes: StrategyMapCustomNodeState[];
+  customEdges: StrategyMapEdgeState[];
+  manualNodePositions: Record<string, StrategyMapLayoutPosition>;
+  hiddenNodeIds: string[];
+}
+
 export type ScreenType =
   | 'f1'
   | 'f2'

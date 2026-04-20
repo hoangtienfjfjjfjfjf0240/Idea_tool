@@ -376,18 +376,69 @@ Return ${quantityLabel} objects in this exact schema:
 - The variation must be visually distinct, not just paraphrased text.`;
 }
 
+function extractBalancedJsonBlock(text: string): string | null {
+  const starts = ['[', '{'];
+
+  for (const startToken of starts) {
+    const startIndex = text.indexOf(startToken);
+    if (startIndex === -1) continue;
+
+    const stack: string[] = [startToken];
+    let inString = false;
+    let escaped = false;
+
+    for (let index = startIndex + 1; index < text.length; index++) {
+      const char = text[index];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (char === '[' || char === '{') {
+        stack.push(char);
+        continue;
+      }
+
+      if (char === ']' || char === '}') {
+        const expected = char === ']' ? '[' : '{';
+        if (stack[stack.length - 1] !== expected) {
+          break;
+        }
+
+        stack.pop();
+        if (stack.length === 0) {
+          return text.substring(startIndex, index + 1);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 export function parseJsonLoose(text: string) {
   try {
     let clean = text.replace(/```json\s*|```/g, '').trim();
     clean = clean.replace(/[\uFEFF\u200B\u200C\u200D\u2060]/g, '');
 
-    const s = clean.indexOf('[');
-    const e = clean.lastIndexOf(']');
-    const s2 = clean.indexOf('{');
-    const e2 = clean.lastIndexOf('}');
-
-    if (s !== -1 && e !== -1 && (s2 === -1 || s < s2)) clean = clean.substring(s, e + 1);
-    else if (s2 !== -1 && e2 !== -1) clean = clean.substring(s2, e2 + 1);
+    const extracted = extractBalancedJsonBlock(clean);
+    if (extracted) clean = extracted;
 
     try {
       return JSON.parse(clean);
@@ -411,6 +462,18 @@ export function parseJsonLoose(text: string) {
     try {
       return JSON.parse(fixed);
     } catch {}
+
+    if (clean.startsWith('[') || clean.startsWith('{')) {
+      try {
+        return Function(`"use strict"; return (${clean});`)();
+      } catch {}
+    }
+
+    if (fixed.startsWith('[') || fixed.startsWith('{')) {
+      try {
+        return Function(`"use strict"; return (${fixed});`)();
+      } catch {}
+    }
 
     return null;
   } catch {

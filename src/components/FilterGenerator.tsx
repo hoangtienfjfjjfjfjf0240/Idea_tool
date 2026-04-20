@@ -661,7 +661,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       }));
       const totalRequestedIdeas = generationTasks.length * quantity;
       let allData: Array<{ item: any; filtersSnapshot: FilterState }> = [];
-      const maxConcurrent = 2;
+      const maxConcurrent = Math.min(3, Math.max(1, generationTasks.length));
 
       const requestAngleBatch = async (task: { selectedAngle: string | null; angleIndex: number; filtersSnapshot: FilterState }) => {
         const res = await fetch('/api/generate-ideas', {
@@ -698,6 +698,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           throw new Error(result.error || `AI không phản hồi ở angle ${task.angleIndex + 1}`);
         }
 
+        if (result.meta?.warnings?.length) {
+          console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} warnings:`, result.meta.warnings);
+        }
         return (result.data as any[]).map(item => ({
           item,
           filtersSnapshot: task.filtersSnapshot,
@@ -888,11 +891,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const bodyVisual = c.body?.visual || c.body?.script || '';
     const ctaVisual = c.cta?.visual || c.cta?.script || '';
     const hookVariantsBlock = [meta?.hookPrimary, meta?.hookAlt1, meta?.hookAlt2].some(Boolean)
-      ? `\nðŸ§  HOOK VARIATIONS\n[PRIMARY] ${meta?.hookPrimary || ''}\n[ALT 1] ${meta?.hookAlt1 || ''}\n[ALT 2] ${meta?.hookAlt2 || ''}\n`
+      ? `\n🧠 HOOK VARIATIONS\n[PRIMARY] ${meta?.hookPrimary || ''}\n[ALT 1] ${meta?.hookAlt1 || ''}\n[ALT 2] ${meta?.hookAlt2 || ''}\n`
       : '';
     const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n[VISUAL] ${hookVisual}\n[VOICE] ${c.hook?.voice || ''}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY (10-25s)\n[VISUAL] ${bodyVisual}\n[VOICE] ${c.body?.voice || ''}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA (3-5s)\n[VISUAL] ${ctaVisual}\n[VOICE] ${c.cta?.voice || ''}\n[TEXT OVERLAY] ${c.cta?.textOverlay || c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
     const finalCopyText = hookVariantsBlock
-      ? copyText.replace('â•â•â• VIDEO SCRIPT â•â•â•\n\n', `â•â•â• VIDEO SCRIPT â•â•â•\n${hookVariantsBlock}\n`)
+      ? copyText.replace('═══ VIDEO SCRIPT ═══\n\n', `═══ VIDEO SCRIPT ═══\n${hookVariantsBlock}\n`)
       : copyText;
     navigator.clipboard.writeText(finalCopyText);
   };

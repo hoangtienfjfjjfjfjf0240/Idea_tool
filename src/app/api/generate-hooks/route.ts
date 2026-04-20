@@ -1,23 +1,79 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
 import {
-  buildFrameworkInjection,
   buildHookOutputSpec,
-  CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
-  CREATIVE_PROMPT_RULES,
   normalizeHookOutput,
   parseJsonLoose,
-  TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 
-export const maxDuration = 120;
+export const maxDuration = 60;
+
+const MAX_HOOK_VARIATIONS = 5;
+const HOOK_MODEL_TIMEOUT_MS = 30000;
+const HOOK_FALLBACK_TIMEOUT_MS = 20000;
+const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
+
+function toPositiveInt(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
 
 function parseJson(text: string) {
   return parseJsonLoose(text);
 }
 
-function resolveModel(selected?: string): string {
+function readText(value: unknown, fallback = '') {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function buildFallbackHookVariations(hook: Record<string, unknown>, instruction: string, quantity: number) {
+  const title = readText(hook.title, 'Winning Hook');
+  const concept = readText(hook.hook_concept, title);
+  const visualDetail = readText(hook.visual_detail, 'A tight handheld close-up that reveals the pain point immediately');
+  const painpoint = readText(hook.painpoint, 'the viewer pain point');
+  const emotion = readText(hook.emotion, 'curiosity');
+  const coreUser = readText(hook.core_user, 'target viewer');
+  const bases = [
+    'Change the setting and make the first frame more unexpected',
+    'Keep the same object but reveal the blocker through a different action',
+    'Turn the same hook into a direct POV moment with a clearer visual contrast',
+    'Use a social proof or comparison frame without changing the pain point',
+    'Make the first second feel more urgent through prop, framing, and text',
+  ];
+
+  return Array.from({ length: quantity }, (_, index) => {
+    const angle = bases[index % bases.length];
+    const displayIndex = index + 1;
+
+    return {
+      id: `hook-fallback-${Date.now()}-${index}`,
+      title: `${title} - Biến thể ${displayIndex}`,
+      explanation: `Fallback nhanh vì AI gateway đang lỗi. Giữ concept "${concept}", đổi execution theo hướng: ${angle}.`,
+      meta: {
+        builderVersion: 'hook_library_fast_fallback_v1',
+        hookPrimary: `Try this before morning`,
+        hookAlt1: `Most people skip this`,
+        hookAlt2: `This looks small but matters`,
+        visualRefNotes: visualDetail,
+        talentProfile: coreUser,
+        dontDo: 'Do not turn this into a full Body or CTA script',
+      },
+      hook: {
+        visual: `${angle}. Start from: ${visualDetail}. Make "${instruction}" visible in the first 1 second.`,
+        voice: `If you care about this, try this tiny check first.`,
+        textOverlay: `Try this first`,
+        viTranslation: `Nếu bạn quan tâm chuyện này, hãy thử kiểm tra nhỏ này trước.`,
+        viewerEmotion: emotion,
+        painpointImpact: painpoint,
+        whyTheyStopScrolling: `Visual đổi bối cảnh nhưng vẫn bám đúng nỗi đau "${painpoint}", nên người xem nhận ra vấn đề ngay.`,
+      },
+    };
+  });
+}
+
+function resolveHookModels(selected?: string): string[] {
   const map: Record<string, string> = {
+    'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
     'gemini-3-pro': 'gemini/gemini-3-pro-preview',
     'gpt-5.4': 'openai/gpt-5.4',
@@ -26,37 +82,26 @@ function resolveModel(selected?: string): string {
     'gpt-4.1': 'openai/gpt-4.1',
     'o4-mini': 'openai/o4-mini',
   };
-  return map[selected || ''] || 'gemini/gemini-3-pro-preview';
+  const resolved = map[selected || ''];
+
+  // Modify Hook is hook-only and interactive. Gemini Pro is too slow here, so
+  // Gemini selections use Flash while OpenAI selections are respected.
+  const primary = resolved?.startsWith('openai/') ? resolved : FAST_HOOK_MODELS[0];
+  return Array.from(new Set([primary, ...FAST_HOOK_MODELS]));
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { hook, instruction, quantity = 3, appName, appCategory, selectedModel } = await request.json();
+    const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
     const targetLanguage = 'English';
 
-    const frameworkInjection = buildFrameworkInjection({
-      appName,
-      category: appCategory || 'General',
-      coreUsers: [hook.core_user || ''].filter(Boolean),
-      primaryEmotion: hook.emotion || 'Curiosity',
-      visualTheme: `${hook.creative_type || hook.subtitle || 'UGC'}; keep the winning hook DNA but change the visual execution.`,
-      psp: `Reuse the same product promise that made the winning hook work for ${appName}.`,
-      pillars: [hook.painpoint || 'General user friction'].filter(Boolean),
-      anglesPerPillar: 1,
-      ideasPerAngle: quantity,
-      language: `Vietnamese strategy notes + ${targetLanguage} copy`,
-      priority: 'A',
-      extraContext: [
-        'Task type: modify a winning hook, not a full-video brief.',
-        'Keep the same painpoint, core user, and viewer emotion unless the user explicitly changes them.',
-      ],
-    });
-
-    const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
-
-${frameworkInjection}
+    const prompt = `You are a senior performance creative strategist for mobile app ads.
+Create hook-only variations for a winning hook. This is not a full idea and must stay fast.
 
 ## WINNING HOOK DNA
+- App: ${appName || 'N/A'}
+- Category: ${appCategory || 'N/A'}
 - Title: "${hook.title}"
 - Description: ${hook.description || 'N/A'}
 - Hook concept: ${hook.hook_concept || 'N/A'}
@@ -70,30 +115,57 @@ ${frameworkInjection}
 "${instruction}"
 
 ## TASK
-Create ${quantity} hook-only variations.
+Create exactly ${requestedQuantity} hook-only variations.
 - Keep the winning DNA and same problem/emotion target.
 - Change the visual execution enough that each variation is distinct.
 - Preserve the interaction pattern and number of people when possible.
 - Each variation should differ from the original on at least 3 of these axes: situation, character, setting, blocker, mood.
+- Strategy/explanation fields can be Vietnamese; hook voice/textOverlay must be ${targetLanguage}.
+- Output compact JSON only. No markdown fences. No full Body or CTA.
 
-${buildHookOutputSpec({ quantity, language: targetLanguage })}
+${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })}`;
 
-${CREATIVE_PROMPT_RULES}
-${TOOL_COMPATIBILITY_GUARDRAILS}`;
+    let text: string | null = null;
+    let modelUsed = '';
+    const candidateModels = resolveHookModels(selectedModel);
+    for (const [index, model] of candidateModels.entries()) {
+      text = await askAI(prompt, {
+        model,
+        temperature: 0.75,
+        max_tokens: Math.max(2400, requestedQuantity * 900),
+        useCreativePersona: false,
+        priority: 'high',
+        timeoutMs: index === 0 ? HOOK_MODEL_TIMEOUT_MS : HOOK_FALLBACK_TIMEOUT_MS,
+      });
+      if (text) {
+        modelUsed = model;
+        break;
+      }
+    }
 
-    const text = await askAI(prompt, {
-      model: resolveModel(selectedModel),
-      temperature: 0.8,
-      max_tokens: 16384,
-      useCreativePersona: false,
-    });
-    if (!text) return NextResponse.json({ error: 'No AI response' }, { status: 500 });
+    if (!text) {
+      console.warn('[generate-hooks] AI unavailable; returning structured fallback hooks.');
+      return NextResponse.json({
+        success: true,
+        data: buildFallbackHookVariations(hook, instruction, requestedQuantity),
+        fallback: true,
+        error: 'AI hook generation timed out or gateway returned an error.',
+      });
+    }
 
     const parsed = parseJson(text);
-    if (!parsed) return NextResponse.json({ error: 'Failed to parse' }, { status: 500 });
+    if (!parsed) {
+      console.warn('[generate-hooks] Failed to parse AI output; returning structured fallback hooks.');
+      return NextResponse.json({
+        success: true,
+        data: buildFallbackHookVariations(hook, instruction, requestedQuantity),
+        fallback: true,
+        error: 'Failed to parse AI hook response.',
+      });
+    }
 
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    const data = arr.slice(0, quantity).map((item: unknown, i: number) => {
+    const data = arr.slice(0, requestedQuantity).map((item: unknown, i: number) => {
       const normalized = normalizeHookOutput(item);
       const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
       return {
@@ -115,7 +187,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       };
     });
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data, modelUsed });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

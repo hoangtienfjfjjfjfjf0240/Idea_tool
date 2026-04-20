@@ -1,5 +1,18 @@
 import { supabase } from './supabase';
-import type { AppProject, Feature, Hook, GeneratedIdea, FilterOption, SyncLog, FilterState } from '@/types/database';
+import type {
+  AppProject,
+  Feature,
+  Hook,
+  GeneratedIdea,
+  FilterOption,
+  SyncLog,
+  FilterState,
+  StrategyMapState,
+  StrategyMapCustomNodeState,
+  StrategyMapEdgeState,
+  StrategyMapLayoutPosition,
+  StrategyWorkflowLevel,
+} from '@/types/database';
 
 // ============================================
 // CATEGORY SPECIFIC SEEDS (Kept from original)
@@ -62,6 +75,108 @@ const GLOBAL_VISUAL_TYPES = [
   'ASMR',
   'Trend Format',
 ];
+
+const STRATEGY_MAP_STATE_CATEGORY_PREFIX = '__strategy_map_state__:';
+const STRATEGY_MAP_STATE_VERSION = 1;
+const STRATEGY_WORKFLOW_LEVELS: StrategyWorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'];
+
+function getStrategyMapStateCategory(weekKey: string) {
+  return `${STRATEGY_MAP_STATE_CATEGORY_PREFIX}${weekKey}`;
+}
+
+function isInternalFilterCategory(category: string) {
+  return category.startsWith(STRATEGY_MAP_STATE_CATEGORY_PREFIX);
+}
+
+function isStrategyWorkflowLevel(value: unknown): value is StrategyWorkflowLevel {
+  return typeof value === 'string' && STRATEGY_WORKFLOW_LEVELS.includes(value as StrategyWorkflowLevel);
+}
+
+function normalizeStrategyMapCustomNode(value: unknown): StrategyMapCustomNodeState | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  const label = typeof raw.label === 'string' ? raw.label.trim() : '';
+  const level = raw.level;
+  if (!id || !label || !isStrategyWorkflowLevel(level)) return null;
+
+  const filters =
+    raw.filters && typeof raw.filters === 'object'
+      ? Object.fromEntries(
+          Object.entries(raw.filters as Record<string, unknown>)
+            .map(([key, items]) => [
+              key,
+              Array.isArray(items)
+                ? items
+                    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+                    .map(item => item.trim())
+                : [],
+            ])
+            .filter(([, items]) => items.length > 0)
+        ) as Partial<FilterState>
+      : undefined;
+
+  return {
+    id,
+    label,
+    level,
+    preferredX: typeof raw.preferredX === 'number' && Number.isFinite(raw.preferredX) ? raw.preferredX : undefined,
+    filters,
+  };
+}
+
+function normalizeStrategyMapEdge(value: unknown): StrategyMapEdgeState | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const fromId = typeof raw.fromId === 'string' ? raw.fromId.trim() : '';
+  const toId = typeof raw.toId === 'string' ? raw.toId.trim() : '';
+  if (!fromId || !toId) return null;
+  return { fromId, toId };
+}
+
+function normalizeStrategyMapPositionMap(value: unknown): Record<string, StrategyMapLayoutPosition> {
+  if (!value || typeof value !== 'object') return {};
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([nodeId, position]) => {
+        if (!position || typeof position !== 'object') return [nodeId, null] as const;
+        const raw = position as Record<string, unknown>;
+        const x = typeof raw.x === 'number' && Number.isFinite(raw.x) ? raw.x : null;
+        const y = typeof raw.y === 'number' && Number.isFinite(raw.y) ? raw.y : null;
+        if (!nodeId.trim() || x === null || y === null) return [nodeId, null] as const;
+        return [nodeId, { x, y }] as const;
+      })
+      .filter((entry): entry is [string, StrategyMapLayoutPosition] => !!entry[1])
+  );
+}
+
+function normalizeStrategyMapState(value: unknown, weekKey: string): StrategyMapState | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+
+  return {
+    version: STRATEGY_MAP_STATE_VERSION,
+    weekKey,
+    savedAt: typeof raw.savedAt === 'number' && Number.isFinite(raw.savedAt) ? raw.savedAt : undefined,
+    customNodes: Array.isArray(raw.customNodes)
+      ? raw.customNodes
+          .map(normalizeStrategyMapCustomNode)
+          .filter((node): node is StrategyMapCustomNodeState => !!node)
+      : [],
+    customEdges: Array.isArray(raw.customEdges)
+      ? raw.customEdges
+          .map(normalizeStrategyMapEdge)
+          .filter((edge): edge is StrategyMapEdgeState => !!edge)
+      : [],
+    manualNodePositions: normalizeStrategyMapPositionMap(raw.manualNodePositions),
+    hiddenNodeIds: Array.isArray(raw.hiddenNodeIds)
+      ? raw.hiddenNodeIds
+          .filter((nodeId): nodeId is string => typeof nodeId === 'string' && nodeId.trim().length > 0)
+          .map(nodeId => nodeId.trim())
+      : [],
+  };
+}
 
 // ============================================
 //  APPS
@@ -325,6 +440,7 @@ export async function getFilterOptions(app: AppProject): Promise<Record<string, 
 
   const customOptions: Record<string, string[]> = {};
   (customRows || []).forEach((row: FilterOption) => {
+    if (isInternalFilterCategory(row.category)) return;
     const cat = row.category;
     if (!customOptions[cat]) customOptions[cat] = [];
     customOptions[cat]!.push(row.value);
@@ -393,6 +509,96 @@ export async function deleteFilterOption(id: string): Promise<boolean> {
     .delete()
     .eq('id', id);
   if (error) { console.error('deleteFilterOption error:', error); return false; }
+  return true;
+}
+
+export async function getStrategyMapState(appId: string, weekKey: string): Promise<StrategyMapState | null> {
+  const category = getStrategyMapStateCategory(weekKey);
+  const { data, error } = await supabase
+    .from('filter_options')
+    .select('value')
+    .eq('app_id', appId)
+    .eq('category', category)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getStrategyMapState error:', error);
+    return null;
+  }
+
+  if (!data?.value) return null;
+
+  try {
+    return normalizeStrategyMapState(JSON.parse(data.value), weekKey);
+  } catch (parseError) {
+    console.error('getStrategyMapState parse error:', parseError);
+    return null;
+  }
+}
+
+export async function saveStrategyMapState(appId: string, weekKey: string, state: StrategyMapState): Promise<boolean> {
+  const normalized = normalizeStrategyMapState(state, weekKey);
+  if (!normalized) return false;
+  const savedAt = typeof state.savedAt === 'number' && Number.isFinite(state.savedAt) ? state.savedAt : Date.now();
+
+  const category = getStrategyMapStateCategory(weekKey);
+  const value = JSON.stringify({
+    ...normalized,
+    version: STRATEGY_MAP_STATE_VERSION,
+    weekKey,
+    savedAt,
+  });
+
+  const { data: existingRows, error: selectError } = await supabase
+    .from('filter_options')
+    .select('id')
+    .eq('app_id', appId)
+    .eq('category', category)
+    .order('created_at', { ascending: false });
+
+  if (selectError) {
+    console.error('saveStrategyMapState select error:', selectError);
+    return false;
+  }
+
+  const [currentRow, ...duplicateRows] = existingRows || [];
+
+  if (currentRow?.id) {
+    const { error: updateError } = await supabase
+      .from('filter_options')
+      .update({ value, is_custom: true })
+      .eq('id', currentRow.id);
+
+    if (updateError) {
+      console.error('saveStrategyMapState update error:', updateError);
+      return false;
+    }
+  } else {
+    const { error: insertError } = await supabase
+      .from('filter_options')
+      .insert({ app_id: appId, category, value, is_custom: true });
+
+    if (insertError) {
+      console.error('saveStrategyMapState insert error:', insertError);
+      return false;
+    }
+  }
+
+  if (duplicateRows.length > 0) {
+    const duplicateIds = duplicateRows.map(row => row.id).filter(Boolean);
+    if (duplicateIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('filter_options')
+        .delete()
+        .in('id', duplicateIds);
+      if (deleteError) {
+        console.error('saveStrategyMapState cleanup error:', deleteError);
+      }
+    }
+  }
+
   return true;
 }
 
