@@ -90,6 +90,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const pendingThumbRef = useRef<string | null>(null);
+  const modifyResultsRef = useRef<HTMLDivElement>(null);
+  const fullIdeasResultsRef = useRef<HTMLDivElement>(null);
 
   const loadHooks = useCallback(async () => {
     const data = await dbService.getHooks(app?.id);
@@ -296,6 +298,48 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setFullIdeasSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
   }, [mapHistoryIdeaToFullIdea]);
 
+  const loadModifyHistoryForSelectedHook = useCallback(async () => {
+    if (!app?.id || !selectedHook) return;
+    setLoadingModifyHistory(true);
+    try {
+      const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'modify');
+      applyModifyHistoryIdeas(ideas);
+    } catch (err) {
+      console.error('Load modified hook history failed:', err);
+      applyModifyHistoryIdeas([]);
+    } finally {
+      setLoadingModifyHistory(false);
+    }
+  }, [app?.id, selectedHook, applyModifyHistoryIdeas]);
+
+  const loadFullIdeasHistoryForSelectedHook = useCallback(async () => {
+    if (!app?.id || !selectedHook) return;
+    setLoadingFullIdeasHistory(true);
+    try {
+      const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'full');
+      applyFullIdeaHistoryIdeas(ideas);
+    } catch (err) {
+      console.error('Load full ideas history failed:', err);
+      applyFullIdeaHistoryIdeas([]);
+    } finally {
+      setLoadingFullIdeasHistory(false);
+    }
+  }, [app?.id, selectedHook, applyFullIdeaHistoryIdeas]);
+
+  const handleOpenModifyHistory = useCallback(async () => {
+    await loadModifyHistoryForSelectedHook();
+    window.requestAnimationFrame(() => {
+      modifyResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [loadModifyHistoryForSelectedHook]);
+
+  const handleOpenFullIdeasHistory = useCallback(async () => {
+    await loadFullIdeasHistoryForSelectedHook();
+    window.requestAnimationFrame(() => {
+      fullIdeasResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [loadFullIdeasHistoryForSelectedHook]);
+
   useEffect(() => {
     if (!app?.id || !selectedHook) return;
 
@@ -303,39 +347,23 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
     const loadSavedIdeasForHook = async () => {
       if (currentScreen === 'f2.2.1') {
-        setLoadingModifyHistory(true);
-        try {
-          const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'modify');
-          if (!cancelled) applyModifyHistoryIdeas(ideas);
-        } catch (err) {
-          console.error('Load modified hook history failed:', err);
-          if (!cancelled) applyModifyHistoryIdeas([]);
-        } finally {
-          if (!cancelled) setLoadingModifyHistory(false);
-        }
+        await loadModifyHistoryForSelectedHook();
         return;
       }
 
       if (currentScreen === 'f2.2.2') {
-        setLoadingFullIdeasHistory(true);
-        try {
-          const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'full');
-          if (!cancelled) applyFullIdeaHistoryIdeas(ideas);
-        } catch (err) {
-          console.error('Load full ideas history failed:', err);
-          if (!cancelled) applyFullIdeaHistoryIdeas([]);
-        } finally {
-          if (!cancelled) setLoadingFullIdeasHistory(false);
-        }
+        await loadFullIdeasHistoryForSelectedHook();
       }
     };
 
-    loadSavedIdeasForHook();
+    loadSavedIdeasForHook().catch(err => {
+      if (!cancelled) console.error('Load hook library history failed:', err);
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [app?.id, currentScreen, selectedHook, applyModifyHistoryIdeas, applyFullIdeaHistoryIdeas]);
+  }, [app?.id, currentScreen, selectedHook, loadModifyHistoryForSelectedHook, loadFullIdeasHistoryForSelectedHook]);
 
   const buildHookFilterSnapshot = (hook: Hook): FilterState => ({
     coreUser: hook.core_user ? [hook.core_user] : [],
@@ -1212,7 +1240,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           </div>
 
           {/* Right: Full Ideas Results */}
-          <div className="lg:col-span-8">
+          <div ref={fullIdeasResultsRef} className="lg:col-span-8">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-amber-500" size={20} /> Full Ideas ({fullIdeas.length})</h3>
               <div className="flex items-center gap-2">
@@ -1233,10 +1261,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 )}
                 {savedFullIdeasSessionId && (
                   <button
-                    onClick={() => setScreen('f2.3')}
+                    onClick={handleOpenFullIdeasHistory}
                     className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50"
                   >
-                    Xem trong History
+                    Xem History hook này
                   </button>
                 )}
               </div>
@@ -1476,7 +1504,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         </div>
 
         {/* Right: Results */}
-        <div className="lg:col-span-8 bg-white rounded-2xl p-6 border border-gray-200 min-h-[500px] overflow-y-auto shadow-sm">
+        <div ref={modifyResultsRef} className="lg:col-span-8 bg-white rounded-2xl p-6 border border-gray-200 min-h-[500px] overflow-y-auto shadow-sm">
           <div className="flex justify-between items-center mb-5">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Wand2 className="text-indigo-500" size={20} /> Kết Quả ({generatedIdeas.length})</h3>
             <div className="flex items-center gap-2">
@@ -1497,10 +1525,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               )}
               {savedModifiedHookSessionId && (
                 <button
-                  onClick={() => setScreen('f2.3')}
+                  onClick={handleOpenModifyHistory}
                   className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"
                 >
-                  Xem History
+                  Xem History hook này
                 </button>
               )}
             </div>
