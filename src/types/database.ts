@@ -65,6 +65,9 @@ export interface IdeaMeta {
   track?: string;
   trackReason?: string;
   priority?: string;
+  sourceHookId?: string;
+  sourceHookTitle?: string;
+  sessionType?: string;
 }
 
 export interface IdeaContent {

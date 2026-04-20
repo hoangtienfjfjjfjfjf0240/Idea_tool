@@ -347,6 +347,76 @@ export async function getIdeas(appId: string): Promise<GeneratedIdea[]> {
   return data || [];
 }
 
+function hasMeaningfulText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function toFilterValues(value: string[] | string | null | undefined): string[] {
+  if (Array.isArray(value)) return value.filter(item => typeof item === 'string' && item.trim().length > 0);
+  if (typeof value === 'string' && value.trim().length > 0) return [value];
+  return [];
+}
+
+function isHookOnlyIdea(idea: GeneratedIdea): boolean {
+  const body = idea.content?.body;
+  const cta = idea.content?.cta;
+  return ![
+    body?.script,
+    body?.textOverlay,
+    body?.visual,
+    body?.text,
+    body?.voice,
+    body?.viTranslation,
+    cta?.script,
+    cta?.textOverlay,
+    cta?.visual,
+    cta?.text,
+    cta?.voice,
+    cta?.endCard,
+    cta?.viTranslation,
+  ].some(hasMeaningfulText);
+}
+
+function isFullIdeaRecord(idea: GeneratedIdea): boolean {
+  const meta = idea.content?.meta;
+  if (meta?.builderVersion === 'hook_library_full_idea_v1') return true;
+  if (meta?.track === 'hook-full-idea' || meta?.sessionType === 'full-idea') return true;
+  return !isHookOnlyIdea(idea);
+}
+
+function matchesHookHistoryIdea(
+  idea: GeneratedIdea,
+  hook: Pick<Hook, 'id' | 'title'>,
+  track: 'modify' | 'full'
+): boolean {
+  const meta = idea.content?.meta;
+  const expectedAngle = `${track === 'modify' ? 'Modified Hook' : 'Winning Hook'}: ${hook.title}`;
+  const filterAngles = toFilterValues(idea.filters_snapshot?.angle);
+  const matchesSourceHook =
+    meta?.sourceHookId === hook.id ||
+    meta?.sourceHookTitle === hook.title;
+  const matchesAngle =
+    meta?.angleName === expectedAngle ||
+    filterAngles.includes(expectedAngle);
+
+  if (!matchesSourceHook && !matchesAngle) return false;
+
+  if (track === 'modify') {
+    return meta?.track === 'hook-modify' || meta?.sessionType === 'modify-hook' || idea.content?.creativeType === 'Modified Hook' || isHookOnlyIdea(idea);
+  }
+
+  return isFullIdeaRecord(idea);
+}
+
+export async function getIdeasForHook(
+  appId: string,
+  hook: Pick<Hook, 'id' | 'title'>,
+  track: 'modify' | 'full'
+): Promise<GeneratedIdea[]> {
+  const ideas = await getIdeas(appId);
+  return ideas.filter(idea => matchesHookHistoryIdea(idea, hook, track));
+}
+
 export async function saveIdeas(
   appId: string, 
   ideas: { title: string; duration: string; content: object; filtersSnapshot?: object }[],
@@ -419,7 +489,7 @@ export async function updateIdeaResult(ideaId: string, result: string | null): P
   return true;
 }
 
-export async function updateIdeaContent(ideaId: string, title: string, content: any): Promise<boolean> {
+export async function updateIdeaContent(ideaId: string, title: string, content: GeneratedIdea['content']): Promise<boolean> {
   const { error } = await supabase
     .from('generated_ideas')
     .update({ title, content })

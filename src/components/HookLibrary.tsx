@@ -1,7 +1,7 @@
 'use client';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Check, RefreshCw, Eye, Trash2, Brain, Clock } from 'lucide-react';
-import type { ScreenType, Hook, AppProject, FilterState, IdeaContent } from '@/types/database';
+import type { ScreenType, Hook, AppProject, FilterState, IdeaContent, GeneratedIdea } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 
@@ -73,6 +73,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
   const [savedModifiedHookCount, setSavedModifiedHookCount] = useState(0);
   const [savedModifiedHookSessionId, setSavedModifiedHookSessionId] = useState<string | null>(null);
+  const [loadingModifyHistory, setLoadingModifyHistory] = useState(false);
+  const [loadingFullIdeasHistory, setLoadingFullIdeasHistory] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -89,12 +91,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const pendingFileRef = useRef<File | null>(null);
   const pendingThumbRef = useRef<string | null>(null);
 
-  useEffect(() => { loadHooks(); }, [app?.id]);
-
-  const loadHooks = async () => {
+  const loadHooks = useCallback(async () => {
     const data = await dbService.getHooks(app?.id);
     setHooks(data);
-  };
+  }, [app?.id]);
+
+  useEffect(() => { loadHooks(); }, [loadHooks]);
 
   const handleDeleteHook = async (id: string) => {
     if (deletingHookId) return;
@@ -243,6 +245,98 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const readText = (value: unknown, fallback = '') =>
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 
+  const mapHistoryIdeaToModifiedHook = useCallback((idea: GeneratedIdea): HookIdea => {
+    const content = idea.content;
+    return {
+      id: idea.id,
+      title: readText(idea.title, readText(content.meta?.hookPrimary, 'Modified Hook')),
+      explanation: readText(content.explanation, 'Modified hook from history'),
+      hook: {
+        script: readText(content.hook?.script, readText(content.hook?.voice, readText(content.hook?.visual))),
+        textOverlay: readText(content.hook?.textOverlay, readText(content.hook?.text)),
+        visual: readText(content.hook?.visual),
+        text: readText(content.hook?.text),
+        voice: readText(content.hook?.voice),
+        viTranslation: readText(content.hook?.viTranslation),
+        viewerEmotion: readText(content.hook?.viewerEmotion),
+        painpointImpact: readText(content.hook?.painpointImpact),
+        whyTheyStopScrolling: readText(content.hook?.whyTheyStopScrolling),
+      },
+      savedIdeaId: idea.id,
+    };
+  }, []);
+
+  const mapHistoryIdeaToFullIdea = useCallback((idea: GeneratedIdea): FullIdea => {
+    const content = idea.content;
+    return {
+      id: idea.id,
+      title: readText(idea.title, 'Full Idea'),
+      duration: readText(idea.duration, '30s'),
+      creativeType: readText(content.creativeType, 'Creative'),
+      explanation: readText(content.explanation),
+      framework: content.framework,
+      hook: content.hook,
+      body: content.body,
+      cta: content.cta,
+      savedIdeaId: idea.id,
+    };
+  }, []);
+
+  const applyModifyHistoryIdeas = useCallback((ideas: GeneratedIdea[]) => {
+    setGeneratedIdeas(ideas.map(mapHistoryIdeaToModifiedHook));
+    setSavedModifiedHookCount(ideas.length);
+    setSavedModifiedHookSessionId(ideas[0]?.session_id || null);
+    setModifiedHooksSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
+  }, [mapHistoryIdeaToModifiedHook]);
+
+  const applyFullIdeaHistoryIdeas = useCallback((ideas: GeneratedIdea[]) => {
+    setFullIdeas(ideas.map(mapHistoryIdeaToFullIdea));
+    setSavedFullIdeasCount(ideas.length);
+    setSavedFullIdeasSessionId(ideas[0]?.session_id || null);
+    setFullIdeasSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
+  }, [mapHistoryIdeaToFullIdea]);
+
+  useEffect(() => {
+    if (!app?.id || !selectedHook) return;
+
+    let cancelled = false;
+
+    const loadSavedIdeasForHook = async () => {
+      if (currentScreen === 'f2.2.1') {
+        setLoadingModifyHistory(true);
+        try {
+          const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'modify');
+          if (!cancelled) applyModifyHistoryIdeas(ideas);
+        } catch (err) {
+          console.error('Load modified hook history failed:', err);
+          if (!cancelled) applyModifyHistoryIdeas([]);
+        } finally {
+          if (!cancelled) setLoadingModifyHistory(false);
+        }
+        return;
+      }
+
+      if (currentScreen === 'f2.2.2') {
+        setLoadingFullIdeasHistory(true);
+        try {
+          const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'full');
+          if (!cancelled) applyFullIdeaHistoryIdeas(ideas);
+        } catch (err) {
+          console.error('Load full ideas history failed:', err);
+          if (!cancelled) applyFullIdeaHistoryIdeas([]);
+        } finally {
+          if (!cancelled) setLoadingFullIdeasHistory(false);
+        }
+      }
+    };
+
+    loadSavedIdeasForHook();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app?.id, currentScreen, selectedHook, applyModifyHistoryIdeas, applyFullIdeaHistoryIdeas]);
+
   const buildHookFilterSnapshot = (hook: Hook): FilterState => ({
     coreUser: hook.core_user ? [hook.core_user] : [],
     painPoint: hook.painpoint ? [hook.painpoint] : [],
@@ -267,6 +361,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         pillar: readText(framework.painpoint, sourceHook.painpoint || 'Hook Library'),
         angleName: `Winning Hook: ${sourceHook.title}`,
         visualRefNotes: sourceHook.visual_detail || undefined,
+        sourceHookId: sourceHook.id,
+        sourceHookTitle: sourceHook.title,
+        sessionType: 'full-idea',
+        track: 'hook-full-idea',
       },
       framework: {
         coreUser: readText(framework.coreUser, sourceHook.core_user || 'General viewer'),
@@ -320,6 +418,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         talentProfile: sourceHook.core_user || undefined,
         track: 'hook-modify',
         trackReason: readText(modifyPrompt, 'Generated from Hook Library Modify'),
+        sourceHookId: sourceHook.id,
+        sourceHookTitle: sourceHook.title,
+        sessionType: 'modify-hook',
       },
       framework: {
         coreUser: readText(sourceHook.core_user, 'General viewer'),
@@ -1141,7 +1242,21 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               </div>
             </div>
 
-            {fullIdeas.length > 0 ? (
+            {(fullIdeas.length > 0 || loadingFullIdeasHistory || fullIdeasSaveStatus !== 'idle') && (
+              <p className="mb-4 text-xs leading-relaxed text-gray-500">
+                Full Ideas được lưu vào History theo Winning Hook này. Khi mở lại màn hình, app sẽ tự tải các idea đã tạo trước đó.
+              </p>
+            )}
+
+            {loadingFullIdeasHistory ? (
+              <div className="bg-white rounded-2xl border border-gray-200 p-20 text-center">
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+                </div>
+                <p className="font-bold text-gray-500 mb-1">Đang tải Full Ideas đã tạo</p>
+                <p className="text-sm text-gray-400 max-w-md mx-auto">History của hook này đang được đọc lại từ database.</p>
+              </div>
+            ) : fullIdeas.length > 0 ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {fullIdeas.map((idea, idx) => (
                   <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
@@ -1397,7 +1512,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             </p>
           )}
 
-          {generatedIdeas.length > 0 ? (
+          {loadingModifyHistory ? (
+            <div className="text-center py-20">
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+              </div>
+              <p className="font-bold text-gray-500 mb-1">Đang tải Hook history</p>
+              <p className="text-sm text-gray-400">Các biến thể đã tạo trước đó của hook này đang được đọc lại từ database.</p>
+            </div>
+          ) : generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {generatedIdeas.map((idea, idx) => {
                 const hookContent = idea.hook.script || idea.hook.voice || idea.hook.visual || idea.explanation || '';
