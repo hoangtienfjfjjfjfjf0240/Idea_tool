@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Image as ImageIcon, Video as VideoIcon, Check, RefreshCw, Eye, Trash2, Brain, ChevronDown, ChevronUp, Clock, Heart } from 'lucide-react';
+import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Check, RefreshCw, Eye, Trash2, Brain, Clock } from 'lucide-react';
 import type { ScreenType, Hook, AppProject, FilterState, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -73,9 +73,6 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
   const [savedModifiedHookCount, setSavedModifiedHookCount] = useState(0);
   const [savedModifiedHookSessionId, setSavedModifiedHookSessionId] = useState<string | null>(null);
-  const [expandedIdea, setExpandedIdea] = useState<number | null>(null);
-  const [favoriteModifiedHooks, setFavoriteModifiedHooks] = useState<Set<number>>(new Set());
-  const [approvedModifiedHooks, setApprovedModifiedHooks] = useState<Set<number>>(new Set());
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -241,15 +238,6 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const scriptContent = idea.hook.script || `VISUAL: ${idea.hook.visual}\n[VOICE] ${idea.hook.voice}`;
     const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\n\n${scriptContent}\n\n[TEXT OVERLAY] ${idea.hook.textOverlay || idea.hook.text}`;
     navigator.clipboard.writeText(text);
-  };
-
-  const cleanPreviewText = (value: unknown) =>
-    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-
-  const truncatePreviewText = (value: unknown, limit = 150) => {
-    const text = cleanPreviewText(value);
-    if (text.length <= limit) return text;
-    return `${text.slice(0, limit).trim()}...`;
   };
 
   const readText = (value: unknown, fallback = '') =>
@@ -449,18 +437,6 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       setFullIdeasSaveStatus('error');
       return ideas;
     }
-  };
-
-  const toggleIndexSet = (
-    setter: React.Dispatch<React.SetStateAction<Set<number>>>,
-    index: number
-  ) => {
-    setter(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
   };
 
   const openEditModal = (hook?: Hook) => {
@@ -1424,129 +1400,45 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           {generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {generatedIdeas.map((idea, idx) => {
-                const isExpanded = expandedIdea === idx;
-                const isFavorite = favoriteModifiedHooks.has(idx);
-                const isApproved = approvedModifiedHooks.has(idx);
-                const scriptContent = idea.hook.script || idea.hook.visual || '';
+                const hookContent = idea.hook.script || idea.hook.voice || idea.hook.visual || idea.explanation || '';
+                const textOverlay = idea.hook.textOverlay || idea.hook.text;
                 return (
-                <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group">
-                  <div className="relative aspect-[16/9] bg-gray-100 overflow-hidden">
-                    {idea.hook.imageUrl ? (
-                      <img src={idea.hook.imageUrl} alt={idea.title || 'Hook thumbnail'} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="h-full w-full bg-gradient-to-br from-gray-50 via-rose-50 to-orange-100 flex flex-col items-center justify-center text-gray-400">
-                        <ImageIcon size={26} className="mb-2 text-pink-300" />
-                        <span className="text-xs font-bold text-gray-500">Visual Hook</span>
-                        <span className="text-[11px] text-gray-400 mt-1">Thumbnail slot</span>
-                      </div>
-                    )}
-                    <div className="absolute left-3 top-3 flex gap-1.5 flex-wrap">
-                      <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">Modified Hook</span>
-                      <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">English</span>
+                <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-sm transition-all group">
+                  <div className="p-4">
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Modified Hook</span>
+                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">English</span>
                       {idea.savedIdeaId && (
-                        <span className="text-[11px] px-2 py-1 bg-emerald-50/95 border border-emerald-100 rounded-md text-emerald-700 shadow-sm">Đã lưu History</span>
+                        <span className="text-[11px] px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-md text-emerald-700">Đã lưu History</span>
                       )}
                     </div>
-                  </div>
-                  <div className="p-4">
                     <div className="flex justify-between items-start gap-3 mb-2">
                       <div className="min-w-0">
                         <h4 className="font-bold text-sm text-gray-800">{idea.title || `Biến thể ${idx + 1}`}</h4>
-                        <p className="text-[11px] text-gray-400 mt-1 italic">{idea.explanation}</p>
                       </div>
                       <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><Copy size={14} /></button>
                     </div>
-
-                    {/* Script Block — unified storyboard */}
-                    <p className="text-sm text-gray-700 leading-relaxed min-h-[44px] mb-2">
-                      {truncatePreviewText(scriptContent || idea.explanation, 180) || 'Hook script will appear here.'}
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => setExpandedIdea(isExpanded ? null : idx)}
-                      className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 mb-3 flex items-center gap-1"
-                    >
-                      {isExpanded ? 'Hide details' : 'More details'}
-                      {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-
-                    <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                      <button
-                        type="button"
-                        onClick={() => toggleIndexSet(setApprovedModifiedHooks, idx)}
-                        className={`flex-1 h-8 rounded-md border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${isApproved ? 'border-emerald-200 bg-emerald-50 text-emerald-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                      >
-                        <VideoIcon size={13} /> {isApproved ? 'Approved' : 'Approve for Video'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleIndexSet(setFavoriteModifiedHooks, idx)}
-                        className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
-                        title="Favorite"
-                      >
-                        <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(idea)}
-                        className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
-                        title="Copy"
-                      >
-                        <Copy size={14} />
-                      </button>
+                    <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3">
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Hook</span>
+                      <p className="mt-1 text-sm text-gray-900 font-semibold leading-relaxed whitespace-pre-line">
+                        {hookContent || 'Hook sẽ hiển thị tại đây.'}
+                      </p>
                     </div>
 
-                    {isExpanded && (
-                      <div className="mt-4 pt-4 border-t border-gray-100">
-                        <p className="text-xs text-gray-400 italic mb-3">{idea.explanation}</p>
-
-                    <div className="bg-red-50 rounded-xl p-4 border border-red-100">
-                      <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-2"><Target size={10} /> 🎬 KỊCH BẢN HOOK</span>
-                      <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{idea.hook.script || idea.hook.visual}</p>
-                    </div>
-
-                    {/* Vietnamese Translation */}
                     {idea.hook.viTranslation && (
-                      <div className="mt-3 bg-white/60 rounded-lg px-4 py-2.5 border border-gray-200">
-                        <span className="text-[10px] font-bold text-violet-500 uppercase">🇻🇳 Bản dịch Tiếng Việt</span>
-                        <p className="text-sm text-gray-600 italic mt-0.5 whitespace-pre-line">{idea.hook.viTranslation}</p>
+                      <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Bản dịch</span>
+                        <p className="mt-1 text-xs text-gray-700 leading-relaxed whitespace-pre-line">{idea.hook.viTranslation}</p>
                       </div>
                     )}
 
-                    {/* Text Overlay — single */}
-                    {(idea.hook.textOverlay || idea.hook.text) && (
-                      <div className="mt-3 bg-amber-50 rounded-lg px-4 py-2.5 border border-amber-200">
-                        <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
-                        <p className="text-sm text-gray-800 font-bold mt-0.5">{idea.hook.textOverlay || idea.hook.text}</p>
+                    {textOverlay && (
+                      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                        <span className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Text overlay</span>
+                        <p className="mt-1 text-xs text-gray-900 font-semibold leading-relaxed">{textOverlay}</p>
                       </div>
                     )}
 
-                    {/* Hook Analysis */}
-                    {(idea.hook.viewerEmotion || idea.hook.painpointImpact) && (
-                      <div className="mt-3 space-y-2">
-                        {idea.hook.viewerEmotion && (
-                          <div className="bg-orange-50 rounded-lg px-3 py-2 border border-orange-200">
-                            <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Người xem cảm nhận gì?</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{idea.hook.viewerEmotion}</p>
-                          </div>
-                        )}
-                        {idea.hook.painpointImpact && (
-                          <div className="bg-rose-50 rounded-lg px-3 py-2 border border-rose-200">
-                            <span className="text-[10px] font-bold text-rose-500 uppercase">💔 Painpoint đánh vào tâm lý</span>
-                            <p className="text-xs text-gray-700 mt-0.5">{idea.hook.painpointImpact}</p>
-                          </div>
-                        )}
-                        {idea.hook.whyTheyStopScrolling && (
-                          <div className="bg-indigo-50 rounded-lg px-3 py-2 border border-indigo-200">
-                            <span className="text-[10px] font-bold text-indigo-500 uppercase">🛑 Dừng scroll vì?</span>
-                            <p className="text-xs text-gray-700 font-semibold mt-0.5">{idea.hook.whyTheyStopScrolling}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                      </div>
-                    )}
                   </div>
                 </div>
                 );
