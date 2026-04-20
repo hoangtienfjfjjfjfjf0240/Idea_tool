@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, StrategyMapState, StrategyMapCustomNodeState, StrategyWorkflowLevel } from '@/types/database';
-import { addFilterOption, getFilterOptions, getIdeaSessions, getStrategyMapState, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { addFilterOption, getFilterOptions, getIdeaSessions, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
 
@@ -107,6 +107,21 @@ interface FlatLine {
 }
 
 type BranchGenerationStatus = 'generated' | 'ungenerated' | 'partial';
+
+function removeHookLibrarySessions(sessions: IdeaSession[]): IdeaSession[] {
+  return sessions
+    .map(session => {
+      const ideas = session.ideas.filter(idea => !isHookLibraryIdea(idea));
+      if (ideas.length === 0) return null;
+      return {
+        ...session,
+        ideas,
+        ideaCount: ideas.length,
+        createdAt: ideas[0]?.created_at || session.createdAt,
+      };
+    })
+    .filter((session): session is IdeaSession => Boolean(session));
+}
 
 const BRANCH_STATUS_THEME: Record<BranchGenerationStatus, {
   label: string;
@@ -661,10 +676,11 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       ]);
       if (cancelled) return;
 
-      setSessions(data);
+      const visibleSessions = removeHookLibrarySessions(data);
+      setSessions(visibleSessions);
       setStoredOptionValues(mapFilterOptionsToWorkflowLevels(savedOptionMap));
       const r: Record<string, ResultType> = {};
-      data.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
+      visibleSessions.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
       setIdeaResults(r);
       setLoading(false);
     })();

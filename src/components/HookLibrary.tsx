@@ -73,7 +73,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
   const [savedModifiedHookCount, setSavedModifiedHookCount] = useState(0);
   const [savedModifiedHookSessionId, setSavedModifiedHookSessionId] = useState<string | null>(null);
+  const [availableModifyHistoryCount, setAvailableModifyHistoryCount] = useState(0);
   const [loadingModifyHistory, setLoadingModifyHistory] = useState(false);
+  const [availableFullIdeasHistoryCount, setAvailableFullIdeasHistoryCount] = useState(0);
   const [loadingFullIdeasHistory, setLoadingFullIdeasHistory] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHookData, setEditingHookData] = useState<Partial<Hook> & { localVideoUrl?: string; localImageUrl?: string }>({});
@@ -286,6 +288,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const applyModifyHistoryIdeas = useCallback((ideas: GeneratedIdea[]) => {
     setGeneratedIdeas(ideas.map(mapHistoryIdeaToModifiedHook));
+    setAvailableModifyHistoryCount(ideas.length);
     setSavedModifiedHookCount(ideas.length);
     setSavedModifiedHookSessionId(ideas[0]?.session_id || null);
     setModifiedHooksSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
@@ -293,10 +296,37 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const applyFullIdeaHistoryIdeas = useCallback((ideas: GeneratedIdea[]) => {
     setFullIdeas(ideas.map(mapHistoryIdeaToFullIdea));
+    setAvailableFullIdeasHistoryCount(ideas.length);
     setSavedFullIdeasCount(ideas.length);
     setSavedFullIdeasSessionId(ideas[0]?.session_id || null);
     setFullIdeasSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
   }, [mapHistoryIdeaToFullIdea]);
+
+  const checkModifyHistoryAvailability = useCallback(async () => {
+    if (!app?.id || !selectedHook) return;
+    try {
+      const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'modify');
+      setAvailableModifyHistoryCount(ideas.length);
+      setSavedModifiedHookSessionId(ideas[0]?.session_id || null);
+    } catch (err) {
+      console.error('Check modified hook history failed:', err);
+      setAvailableModifyHistoryCount(0);
+      setSavedModifiedHookSessionId(null);
+    }
+  }, [app?.id, selectedHook]);
+
+  const checkFullIdeasHistoryAvailability = useCallback(async () => {
+    if (!app?.id || !selectedHook) return;
+    try {
+      const ideas = await dbService.getIdeasForHook(app.id, selectedHook, 'full');
+      setAvailableFullIdeasHistoryCount(ideas.length);
+      setSavedFullIdeasSessionId(ideas[0]?.session_id || null);
+    } catch (err) {
+      console.error('Check full ideas history failed:', err);
+      setAvailableFullIdeasHistoryCount(0);
+      setSavedFullIdeasSessionId(null);
+    }
+  }, [app?.id, selectedHook]);
 
   const loadModifyHistoryForSelectedHook = useCallback(async () => {
     if (!app?.id || !selectedHook) return;
@@ -343,27 +373,19 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   useEffect(() => {
     if (!app?.id || !selectedHook) return;
 
-    let cancelled = false;
+    if (currentScreen === 'f2.2.1') {
+      checkModifyHistoryAvailability().catch(err => {
+        console.error('Check hook modify history availability failed:', err);
+      });
+      return;
+    }
 
-    const loadSavedIdeasForHook = async () => {
-      if (currentScreen === 'f2.2.1') {
-        await loadModifyHistoryForSelectedHook();
-        return;
-      }
-
-      if (currentScreen === 'f2.2.2') {
-        await loadFullIdeasHistoryForSelectedHook();
-      }
-    };
-
-    loadSavedIdeasForHook().catch(err => {
-      if (!cancelled) console.error('Load hook library history failed:', err);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [app?.id, currentScreen, selectedHook, loadModifyHistoryForSelectedHook, loadFullIdeasHistoryForSelectedHook]);
+    if (currentScreen === 'f2.2.2') {
+      checkFullIdeasHistoryAvailability().catch(err => {
+        console.error('Check full ideas history availability failed:', err);
+      });
+    }
+  }, [app?.id, currentScreen, selectedHook, checkModifyHistoryAvailability, checkFullIdeasHistoryAvailability]);
 
   const buildHookFilterSnapshot = (hook: Hook): FilterState => ({
     coreUser: hook.core_user ? [hook.core_user] : [],
@@ -516,6 +538,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       );
 
       const savedCount = savedIdeas.length;
+      setAvailableModifyHistoryCount(savedCount);
       setSavedModifiedHookCount(savedCount);
       setSavedModifiedHookSessionId(savedCount > 0 ? sessionId : null);
       setGeneratedIdeas(prev => prev.map((idea, index) => ({
@@ -553,6 +576,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       );
 
       const savedCount = savedIdeas.length;
+      setAvailableFullIdeasHistoryCount(savedCount);
       setSavedFullIdeasCount(savedCount);
       setSavedFullIdeasSessionId(savedCount > 0 ? sessionId : null);
       setFullIdeasSaveStatus(savedCount > 0 ? 'saved' : 'error');
@@ -829,6 +853,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     setModifiedHooksSaveStatus('idle');
                     setSavedModifiedHookCount(0);
                     setSavedModifiedHookSessionId(null);
+                    setAvailableModifyHistoryCount(0);
                     setScreen('f2.2.1');
                   }}
                     className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
@@ -840,6 +865,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     setFullIdeasSaveStatus('idle');
                     setSavedFullIdeasCount(0);
                     setSavedFullIdeasSessionId(null);
+                    setAvailableFullIdeasHistoryCount(0);
                     setIdeaDirection('');
                     setScreen('f2.2.2');
                   }}
@@ -908,6 +934,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   setModifiedHooksSaveStatus('idle');
                   setSavedModifiedHookCount(0);
                   setSavedModifiedHookSessionId(null);
+                  setAvailableModifyHistoryCount(0);
                   setScreen('f2.2.1');
                 }}
                   className="w-full mt-5 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:shadow-lg transition-all">
@@ -1259,12 +1286,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                         : 'Lưu DB thất bại'}
                   </span>
                 )}
-                {savedFullIdeasSessionId && (
+                {savedFullIdeasSessionId && availableFullIdeasHistoryCount > 0 && (
                   <button
                     onClick={handleOpenFullIdeasHistory}
                     className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50"
                   >
-                    Xem History hook này
+                    {`Xem History (${availableFullIdeasHistoryCount})`}
                   </button>
                 )}
               </div>
@@ -1272,7 +1299,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
             {(fullIdeas.length > 0 || loadingFullIdeasHistory || fullIdeasSaveStatus !== 'idle') && (
               <p className="mb-4 text-xs leading-relaxed text-gray-500">
-                Full Ideas được lưu vào History theo Winning Hook này. Khi mở lại màn hình, app sẽ tự tải các idea đã tạo trước đó.
+                Full Ideas được lưu vào History theo Winning Hook này. Chỉ khi bấm `Xem History` mới tải và hiển thị lại các idea cũ.
               </p>
             )}
 
@@ -1349,6 +1376,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 </div>
                 <p className="font-bold text-gray-500 mb-1">Tạo Full Ideas từ Winning Hook</p>
                 <p className="text-sm text-gray-400 max-w-md mx-auto">AI sẽ dùng framework đã phân tích sẵn từ hook để tạo full production briefs (Hook + Body + CTA) mới.</p>
+                {availableFullIdeasHistoryCount > 0 && (
+                  <p className="mt-3 text-xs text-amber-600 font-medium">
+                    {`Hook này có ${availableFullIdeasHistoryCount} history đã lưu. Bấm "Xem History (${availableFullIdeasHistoryCount})" để mở.`}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1523,12 +1555,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       : 'Lưu DB thất bại'}
                 </span>
               )}
-              {savedModifiedHookSessionId && (
+              {savedModifiedHookSessionId && availableModifyHistoryCount > 0 && (
                 <button
                   onClick={handleOpenModifyHistory}
                   className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"
                 >
-                  Xem History hook này
+                  {`Xem History (${availableModifyHistoryCount})`}
                 </button>
               )}
             </div>
@@ -1536,7 +1568,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
           {(generatedIdeas.length > 0 || modifiedHooksSaveStatus !== 'idle') && (
             <p className="mb-4 text-xs leading-relaxed text-gray-500">
-              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook được lưu vào History (bảng generated_ideas) để xem lại output đã tạo. Nó không tự thêm vào Hook Library.
+              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook được lưu vào History (bảng generated_ideas). Chỉ khi bấm `Xem History` mới tải lại output cũ; nó không tự thêm vào Hook Library.
             </p>
           )}
 
@@ -1602,6 +1634,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               </div>
               <p className="font-bold text-gray-500 mb-1">Nhập ý tưởng và bấm tạo</p>
               <p className="text-sm text-gray-400">Các biến thể Hook mới sẽ hiển thị tại đây</p>
+              {availableModifyHistoryCount > 0 && (
+                <p className="mt-3 text-xs text-indigo-600 font-medium">
+                  {`Hook này có ${availableModifyHistoryCount} history đã lưu. Bấm "Xem History (${availableModifyHistoryCount})" để mở.`}
+                </p>
+              )}
             </div>
           )}
         </div>

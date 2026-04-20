@@ -357,6 +357,34 @@ function toFilterValues(value: string[] | string | null | undefined): string[] {
   return [];
 }
 
+export function isHookLibraryIdea(idea: GeneratedIdea): boolean {
+  const meta = idea.content?.meta;
+  const angleValues = toFilterValues(idea.filters_snapshot?.angle);
+  const videoStructures = toFilterValues(idea.filters_snapshot?.videoStructure);
+
+  if (meta?.builderVersion === 'hook_library_modify_history_v1' || meta?.builderVersion === 'hook_library_full_idea_v1') {
+    return true;
+  }
+
+  if (meta?.track === 'hook-modify' || meta?.track === 'hook-full-idea') {
+    return true;
+  }
+
+  if (meta?.sessionType === 'modify-hook' || meta?.sessionType === 'full-idea') {
+    return true;
+  }
+
+  if (idea.content?.creativeType === 'Modified Hook') {
+    return true;
+  }
+
+  if (videoStructures.includes('Hook Library')) {
+    return true;
+  }
+
+  return angleValues.some(value => value.startsWith('Winning Hook:') || value.startsWith('Modified Hook:'));
+}
+
 function isHookOnlyIdea(idea: GeneratedIdea): boolean {
   const body = idea.content?.body;
   const cta = idea.content?.cta;

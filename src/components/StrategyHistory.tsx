@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Copy, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, IdeaContent } from '@/types/database';
-import { getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { getIdeaSessions, isHookLibraryIdea, updateIdeaResult, type IdeaSession } from '@/lib/db';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
@@ -95,6 +95,21 @@ function toResultType(value: unknown): ResultType {
   return value === 'win' || value === 'failed' || value === 'monitoring' ? value : null;
 }
 
+function removeHookLibrarySessions(sessions: IdeaSession[]): IdeaSession[] {
+  return sessions
+    .map(session => {
+      const ideas = session.ideas.filter(idea => !isHookLibraryIdea(idea));
+      if (ideas.length === 0) return null;
+      return {
+        ...session,
+        ideas,
+        ideaCount: ideas.length,
+        createdAt: ideas[0]?.created_at || session.createdAt,
+      };
+    })
+    .filter((session): session is IdeaSession => Boolean(session));
+}
+
 export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; inline?: boolean }> = ({ app, onBack, inline = false }) => {
   const [sessions, setSessions] = useState<IdeaSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,9 +121,10 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
     (async () => {
       setLoading(true);
       const data = await getIdeaSessions(app.id);
-      setSessions(data);
+      const visibleSessions = removeHookLibrarySessions(data);
+      setSessions(visibleSessions);
       const r: Record<string, ResultType> = {};
-      data.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
+      visibleSessions.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
       setIdeaResults(r);
       setLoading(false);
     })();
