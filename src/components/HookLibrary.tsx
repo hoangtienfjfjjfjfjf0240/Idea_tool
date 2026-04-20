@@ -28,7 +28,7 @@ interface HookIdea {
     painpointImpact?: string;
     whyTheyStopScrolling?: string;
   };
-  savedHookId?: string;
+  savedIdeaId?: string;
 }
 
 interface FullIdea {
@@ -72,6 +72,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [ideaDirection, setIdeaDirection] = useState('');
   const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
   const [savedModifiedHookCount, setSavedModifiedHookCount] = useState(0);
+  const [savedModifiedHookSessionId, setSavedModifiedHookSessionId] = useState<string | null>(null);
   const [expandedIdea, setExpandedIdea] = useState<number | null>(null);
   const [favoriteModifiedHooks, setFavoriteModifiedHooks] = useState<Set<number>>(new Set());
   const [approvedModifiedHooks, setApprovedModifiedHooks] = useState<Set<number>>(new Set());
@@ -177,6 +178,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setIsLoading(true);
     setModifiedHooksSaveStatus('idle');
     setSavedModifiedHookCount(0);
+    setSavedModifiedHookSessionId(null);
     const controller = new AbortController();
     let requestTimedOut = false;
     const timeoutId = window.setTimeout(() => {
@@ -204,17 +206,17 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       if (res.ok && result.success && result.data?.length > 0) {
         const generated = result.data as HookIdea[];
         setGeneratedIdeas(generated);
-        await saveModifiedHooksToDatabase(generated);
+        await saveModifiedHooksToHistory(generated);
       } else {
         const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
-        await saveModifiedHooksToDatabase(mockIdeas);
+        await saveModifiedHooksToHistory(mockIdeas);
       }
     } catch (err) {
       if (requestTimedOut && selectedHook) {
         const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
-        await saveModifiedHooksToDatabase(mockIdeas);
+        await saveModifiedHooksToHistory(mockIdeas);
         return;
       }
 
@@ -317,40 +319,93 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     };
   };
 
-  const saveModifiedHooksToDatabase = async (ideas: HookIdea[]) => {
+  const normalizeModifiedHookContent = (idea: HookIdea, sourceHook: Hook): IdeaContent => {
+    const hook = idea.hook || {};
+    return {
+      creativeType: 'Modified Hook',
+      meta: {
+        builderVersion: 'hook_library_modify_history_v1',
+        pillar: sourceHook.painpoint || 'Hook Modify',
+        angleName: `Modified Hook: ${sourceHook.title}`,
+        hookPrimary: readText(hook.textOverlay, readText(hook.text, idea.title)),
+        visualRefNotes: sourceHook.visual_detail || undefined,
+        talentProfile: sourceHook.core_user || undefined,
+        track: 'hook-modify',
+        trackReason: readText(modifyPrompt, 'Generated from Hook Library Modify'),
+      },
+      framework: {
+        coreUser: readText(sourceHook.core_user, 'General viewer'),
+        painpoint: readText(sourceHook.painpoint, 'General user friction'),
+        emotion: readText(sourceHook.emotion, 'Curiosity'),
+        psp: readText(sourceHook.hook_concept, app?.name || 'Product solution'),
+      },
+      explanation: readText(idea.explanation, `Modified hook generated from "${sourceHook.title}"`),
+      hook: {
+        script: readText(hook.script, readText(hook.visual)),
+        textOverlay: readText(hook.textOverlay, readText(hook.text)),
+        visual: readText(hook.visual, readText(hook.script)),
+        text: readText(hook.text, readText(hook.textOverlay)),
+        voice: readText(hook.voice),
+        viTranslation: readText(hook.viTranslation),
+        viewerEmotion: readText(hook.viewerEmotion),
+        painpointImpact: readText(hook.painpointImpact),
+        whyTheyStopScrolling: readText(hook.whyTheyStopScrolling),
+      },
+      body: {
+        script: '',
+        textOverlay: '',
+        visual: '',
+        text: '',
+        voice: '',
+        viTranslation: '',
+      },
+      cta: {
+        script: '',
+        visual: '',
+        voice: '',
+        text: '',
+        textOverlay: '',
+        endCard: '',
+        viTranslation: '',
+      },
+    };
+  };
+
+  const saveModifiedHooksToHistory = async (ideas: HookIdea[]) => {
     if (!app?.id || !selectedHook || ideas.length === 0) return;
 
     setModifiedHooksSaveStatus('saving');
     setSavedModifiedHookCount(0);
+    setSavedModifiedHookSessionId(null);
+
+    const filtersSnapshot: FilterState = {
+      ...buildHookFilterSnapshot(selectedHook),
+      videoStructure: ['Modified Hook'],
+      angle: [`Modified Hook: ${selectedHook.title}`],
+    };
+    const sessionId = crypto.randomUUID();
 
     try {
-      const savedHooks = await Promise.all(
-        ideas.map(idea =>
-          dbService.addHook({
-            app_id: app.id,
-            title: idea.title || `Biến thể từ ${selectedHook.title}`,
-            subtitle: 'Modified Hook',
-            thumb: selectedHook.thumb || '✨',
-            description: idea.explanation || `Biến thể từ hook "${selectedHook.title}"`,
-            hook_concept: idea.hook.script || idea.hook.visual || idea.explanation || null,
-            visual_detail: idea.hook.visual || idea.hook.script || null,
-            core_user: selectedHook.core_user || null,
-            painpoint: selectedHook.painpoint || null,
-            emotion: selectedHook.emotion || null,
-            creative_type: selectedHook.creative_type || selectedHook.subtitle || null,
-            image_url: idea.hook.imageUrl || selectedHook.image_url || null,
-            video_url: null,
-          })
-        )
+      const savedIdeas = await dbService.saveIdeas(
+        app.id,
+        ideas.map((idea, index) => ({
+          title: readText(idea.title, `${selectedHook.title} - Modified Hook ${index + 1}`),
+          duration: 'Hook only',
+          content: normalizeModifiedHookContent(idea, selectedHook),
+          filtersSnapshot,
+        })),
+        sessionId,
+        filtersSnapshot
       );
-      const savedCount = savedHooks.filter(Boolean).length;
+
+      const savedCount = savedIdeas.length;
       setSavedModifiedHookCount(savedCount);
+      setSavedModifiedHookSessionId(savedCount > 0 ? sessionId : null);
       setGeneratedIdeas(prev => prev.map((idea, index) => ({
         ...idea,
-        savedHookId: savedHooks[index]?.id,
+        savedIdeaId: savedIdeas[index]?.id,
       })));
       setModifiedHooksSaveStatus(savedCount > 0 ? 'saved' : 'error');
-      await loadHooks();
     } catch (err) {
       console.error('Save modified hooks failed:', err);
       setModifiedHooksSaveStatus('error');
@@ -668,6 +723,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     setModifyPrompt('');
                     setModifiedHooksSaveStatus('idle');
                     setSavedModifiedHookCount(0);
+                    setSavedModifiedHookSessionId(null);
                     setScreen('f2.2.1');
                   }}
                     className="flex-1 text-xs py-2.5 flex items-center justify-center gap-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:shadow-md font-bold transition-all">
@@ -746,6 +802,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   setModifyPrompt('');
                   setModifiedHooksSaveStatus('idle');
                   setSavedModifiedHookCount(0);
+                  setSavedModifiedHookSessionId(null);
                   setScreen('f2.2.1');
                 }}
                   className="w-full mt-5 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:shadow-lg transition-all">
@@ -1341,18 +1398,18 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       : 'border-red-200 bg-red-50 text-red-600'
                 }`}>
                   {modifiedHooksSaveStatus === 'saved'
-                    ? `Đã lưu Hook Library (${savedModifiedHookCount})`
+                    ? `Đã lưu History (${savedModifiedHookCount})`
                     : modifiedHooksSaveStatus === 'saving'
                       ? 'Đang lưu DB...'
                       : 'Lưu DB thất bại'}
                 </span>
               )}
-              {savedModifiedHookCount > 0 && (
+              {savedModifiedHookSessionId && (
                 <button
-                  onClick={() => setScreen('f2.2')}
+                  onClick={() => setScreen('f2.3')}
                   className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"
                 >
-                  Xem Hook Library
+                  Xem History
                 </button>
               )}
             </div>
@@ -1360,7 +1417,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
           {(generatedIdeas.length > 0 || modifiedHooksSaveStatus !== 'idle') && (
             <p className="mb-4 text-xs leading-relaxed text-gray-500">
-              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook chỉ lưu vào Hook Library (bảng hooks), không ghi Vertical Strategy Map. Dùng Full Ideas để tạo Hook + Body + CTA và lưu vào map.
+              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook được lưu vào History (bảng generated_ideas) để xem lại output đã tạo. Nó không tự thêm vào Hook Library.
             </p>
           )}
 
@@ -1386,8 +1443,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     <div className="absolute left-3 top-3 flex gap-1.5 flex-wrap">
                       <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">Modified Hook</span>
                       <span className="text-[11px] px-2 py-1 bg-white/90 border border-white rounded-md text-gray-600 shadow-sm">English</span>
-                      {idea.savedHookId && (
-                        <span className="text-[11px] px-2 py-1 bg-emerald-50/95 border border-emerald-100 rounded-md text-emerald-700 shadow-sm">Đã lưu</span>
+                      {idea.savedIdeaId && (
+                        <span className="text-[11px] px-2 py-1 bg-emerald-50/95 border border-emerald-100 rounded-md text-emerald-700 shadow-sm">Đã lưu History</span>
                       )}
                     </div>
                   </div>

@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Loader2, Copy, ChevronDown, ChevronUp, Trophy, XCircle, Eye, ArrowRight } from 'lucide-react';
-import type { AppProject } from '@/types/database';
+import { ArrowLeft, Loader2, Copy, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
+import type { AppProject, FilterState, GeneratedIdea, IdeaContent } from '@/types/database';
 import { getIdeaSessions, updateIdeaResult, type IdeaSession } from '@/lib/db';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
 
@@ -69,7 +69,30 @@ interface CombinationRow {
   emotion: string;
   psp: string;
   count: number;
-  ideas: any[];
+  ideas: GeneratedIdea[];
+}
+
+type HistorySectionKey = 'hook' | 'body' | 'cta';
+type HistorySectionValue = Partial<IdeaContent[HistorySectionKey]> & { content?: string; endCard?: string };
+
+const HISTORY_SECTIONS: Array<{
+  key: HistorySectionKey;
+  label: string;
+  bg: string;
+  border: string;
+  title: string;
+}> = [
+  { key: 'hook', label: '🎣 HOOK', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
+  { key: 'body', label: '📖 BODY', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
+  { key: 'cta', label: '🔥 CTA', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
+];
+
+function listValues(values: string[] | undefined): string[] {
+  return Array.isArray(values) ? values : [];
+}
+
+function toResultType(value: unknown): ResultType {
+  return value === 'win' || value === 'failed' || value === 'monitoring' ? value : null;
 }
 
 export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; inline?: boolean }> = ({ app, onBack, inline = false }) => {
@@ -85,7 +108,7 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
       const data = await getIdeaSessions(app.id);
       setSessions(data);
       const r: Record<string, ResultType> = {};
-      data.forEach(s => s.ideas.forEach((i: any) => { if (i.result) r[i.id] = i.result; }));
+      data.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
       setIdeaResults(r);
       setLoading(false);
     })();
@@ -95,14 +118,14 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
   const rows = useMemo(() => {
     const map = new Map<string, CombinationRow>();
     sessions.forEach(session => {
-      const f = session.filters as any;
+      const f = session.filters as Partial<FilterState> | null;
       if (!f) return;
 
       // Use filters_snapshot values (what user selected at step 2)
-      const cuArr = (f.coreUser || []) as string[];
-      const ppArr = (f.painPoint || []) as string[];
-      const emArr = (f.emotion || []) as string[];
-      const pspArr = (f.solution || []) as string[];
+      const cuArr = listValues(f.coreUser);
+      const ppArr = listValues(f.painPoint);
+      const emArr = listValues(f.emotion);
+      const pspArr = listValues(f.solution);
 
       const cuLabel = cuArr.length > 0 ? cuArr.join(' + ') : 'Không rõ';
       const ppLabel = ppArr.length > 0 ? ppArr.join(' + ') : 'Không rõ';
@@ -131,14 +154,12 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
     return { cu: cu.size, pp: pp.size, em: em.size, psp: psp.size, win, failed, monitoring, totalIdeas };
   }, [rows, ideaResults]);
 
-  const maxCount = useMemo(() => Math.max(...rows.map(r => r.count), 1), [rows]);
-
   const handleSetResult = async (ideaId: string, result: ResultType) => {
     setIdeaResults(prev => ({ ...prev, [ideaId]: result }));
     await updateIdeaResult(ideaId, result);
   };
 
-  const handleSetRowResult = async (ideas: any[], result: ResultType) => {
+  const handleSetRowResult = async (ideas: GeneratedIdea[], result: ResultType) => {
     const updated = { ...ideaResults };
     ideas.forEach(i => { updated[i.id] = result; });
     setIdeaResults(updated);
@@ -147,7 +168,7 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
     }
   };
 
-  const copyIdea = (idea: any) => {
+  const copyIdea = (idea: GeneratedIdea) => {
     const c = idea.content;
     navigator.clipboard.writeText(
       `${idea.title} (${idea.duration})\n\n🎣 HOOK\nVisual: ${c.hook?.visual || ''}\nText: ${c.hook?.text || ''}\nVoice: "${c.hook?.voice || ''}"\n\n📖 BODY\nVisual: ${c.body?.visual || ''}\nText: ${c.body?.text || ''}\nVoice: "${c.body?.voice || ''}"\n\n🔥 CTA\nVoice: "${c.cta?.voice || ''}"\nText: ${c.cta?.text || ''}`
@@ -279,8 +300,8 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
                   <div className="mt-1.5 ml-3 mr-3 bg-gray-50 rounded-xl border border-gray-200 p-4 animate-in slide-in-from-top-1 duration-200">
                     <p className="text-xs text-gray-500 mb-3 font-medium">{row.count} ideas</p>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      {row.ideas.map((idea: any) => {
-                        const c = idea.content as any;
+                      {row.ideas.map((idea) => {
+                        const c = idea.content;
                         const isExp = expandedIdea === idea.id;
                         return (
                           <div key={idea.id} className="border border-gray-200 rounded-xl bg-white overflow-hidden">
@@ -302,13 +323,13 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
                             {isExp && (
                               <div className="border-t border-gray-100 p-3 space-y-2 bg-gray-50/30">
                                 {c?.explanation && <p className="text-gray-400 italic text-[11px] border-l-2 border-indigo-200 pl-2">{c.explanation}</p>}
-                                {[
-                                  { key: 'hook', label: '🎣 HOOK', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
-                                  { key: 'body', label: '📖 BODY', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
-                                  { key: 'cta', label: '🔥 CTA', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
-                                ].map(sec => {
-                                  const d = c?.[sec.key];
+                                {HISTORY_SECTIONS.map(sec => {
+                                  const d = c?.[sec.key] as HistorySectionValue | undefined;
                                   if (!d) return null;
+                                  const hasSectionContent = Boolean(
+                                    d.visual || d.text || d.content || d.voice || d.endCard || d.script || d.textOverlay
+                                  );
+                                  if (!hasSectionContent) return null;
                                   return (
                                     <div key={sec.key} className={`${sec.bg} rounded-lg p-2.5 border ${sec.border}`}>
                                       <span className={`text-[9px] font-bold ${sec.title} uppercase block mb-1`}>{sec.label}</span>
