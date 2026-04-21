@@ -161,6 +161,83 @@ function buildFallbackHookVariations(
   });
 }
 
+function buildBetterFallbackHookVariations(
+  hook: Record<string, unknown>,
+  instruction: string,
+  quantity: number,
+  startIndex = 0,
+) {
+  const title = readText(hook.title, 'Winning Hook');
+  const baseTitle = stripVariantSuffix(title) || title;
+  const concept = readText(hook.hook_concept, title);
+  const visualDetail = readText(
+    hook.visual_detail,
+    'A tight handheld close-up that reveals the pain point immediately',
+  );
+  const painpoint = readText(hook.painpoint, 'the viewer pain point');
+  const emotion = readText(hook.emotion, 'curiosity');
+  const coreUser = readText(hook.core_user, 'target viewer');
+  const instructionHint = extractInstructionHint(readText(instruction, concept), concept);
+  const patterns = [
+    {
+      angle: 'Change the setting and make the first frame more unexpected',
+      voice: `Wait, why does this simple move expose ${painpoint}?`,
+      overlay: compactText(`Why this move reveals ${painpoint}`, 36),
+    },
+    {
+      angle: 'Keep the same object but reveal the blocker through a different action',
+      voice: 'Same setup, but now the blocker shows up instantly.',
+      overlay: 'The detail people miss',
+    },
+    {
+      angle: 'Turn the same hook into a direct POV moment with a clearer visual contrast',
+      voice: 'From this angle, the problem shows up instantly.',
+      overlay: 'See the problem instantly',
+    },
+    {
+      angle: 'Use a social proof or comparison frame without changing the pain point',
+      voice: 'Most people watch this and still miss the real trigger.',
+      overlay: 'Most people miss this',
+    },
+    {
+      angle: 'Make the first second feel more urgent through prop, framing, and text',
+      voice: 'If this keeps happening, check this first.',
+      overlay: 'Check this first',
+    },
+  ];
+
+  return Array.from({ length: quantity }, (_, index) => {
+    const pattern = patterns[index % patterns.length];
+    const displayIndex = startIndex + index + 1;
+
+    return {
+      id: `hook-fallback-clean-${Date.now()}-${displayIndex}`,
+      title: `${baseTitle} - Biến thể ${displayIndex}`,
+      explanation: `Fallback nhanh vì AI gateway đang lỗi. Giữ concept "${concept}", đổi execution theo hướng: ${pattern.angle}.`,
+      meta: {
+        builderVersion: 'hook_library_fast_fallback_v2',
+        hookPrimary: pattern.overlay,
+        hookAlt1: compactText('Still missing this detail?', 40),
+        hookAlt2: compactText('The real trigger is here', 40),
+        visualRefNotes: visualDetail,
+        talentProfile: coreUser,
+        dontDo: 'Do not turn this into a full Body or CTA script',
+      },
+      hook: {
+        script: `[VISUAL] ${pattern.angle}. Start from: ${visualDetail}. Keep the original pain point "${painpoint}" and make "${instructionHint || baseTitle}" visible in the first second.\n[VOICE] ${pattern.voice}\n[TEXT OVERLAY] ${pattern.overlay}`,
+        visual: `${pattern.angle}. Start from: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second.`,
+        text: pattern.overlay,
+        voice: pattern.voice,
+        textOverlay: pattern.overlay,
+        viTranslation: `Giữ đúng nỗi đau "${painpoint}", nhưng mở theo hướng "${instructionHint}" để người xem thấy vấn đề ngay giây đầu.`,
+        viewerEmotion: emotion,
+        painpointImpact: painpoint,
+        whyTheyStopScrolling: `Visual đổi bối cảnh nhưng vẫn bám đúng nỗi đau "${painpoint}", nên người xem nhận ra vấn đề ngay.`,
+      },
+    };
+  });
+}
+
 function resolveHookModels(selected?: string): string[] {
   const map: Record<string, string> = {
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
@@ -237,7 +314,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       console.warn('[generate-hooks] AI unavailable; returning structured fallback hooks.');
       return NextResponse.json({
         success: true,
-        data: buildFallbackHookVariations(hook, instruction, requestedQuantity),
+        data: buildBetterFallbackHookVariations(hook, instruction, requestedQuantity),
         fallback: true,
         error: 'AI hook generation timed out or gateway returned an error.',
       });
@@ -248,7 +325,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       console.warn('[generate-hooks] Failed to parse AI output; returning structured fallback hooks.');
       return NextResponse.json({
         success: true,
-        data: buildFallbackHookVariations(hook, instruction, requestedQuantity),
+        data: buildBetterFallbackHookVariations(hook, instruction, requestedQuantity),
         fallback: true,
         error: 'Failed to parse AI hook response.',
       });
@@ -279,7 +356,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
 
     const data = validItems.slice(0, requestedQuantity);
     if (data.length < requestedQuantity) {
-      data.push(...buildFallbackHookVariations(hook, instruction, requestedQuantity - data.length, data.length));
+      data.push(...buildBetterFallbackHookVariations(hook, instruction, requestedQuantity - data.length, data.length));
     }
 
     return NextResponse.json({ success: true, data, modelUsed });

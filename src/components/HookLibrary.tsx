@@ -354,9 +354,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   };
 
   const handleCopy = (idea: HookIdea) => {
-    const scriptContent = idea.hook.voice
-      ? `[VOICE] ${idea.hook.voice}`
-      : idea.hook.script || `VISUAL: ${idea.hook.visual}\n[VOICE] ${idea.hook.voice}`;
+    const scriptContent = idea.hook.script
+      || [idea.hook.visual ? `[VISUAL] ${idea.hook.visual}` : '', idea.hook.voice ? `[VOICE] ${idea.hook.voice}` : '']
+        .filter(Boolean)
+        .join('\n');
     const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\n\n${scriptContent}\n\n[TEXT OVERLAY] ${idea.hook.textOverlay || idea.hook.text}`;
     navigator.clipboard.writeText(text);
   };
@@ -1805,7 +1806,14 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           ) : generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {generatedIdeas.map((idea, idx) => {
-                const hookContent = idea.hook.voice || idea.hook.textOverlay || idea.hook.text || idea.hook.script || idea.hook.visual || idea.explanation || '';
+                const hookContent = idea.hook.script
+                  || [idea.hook.visual ? `[VISUAL] ${idea.hook.visual}` : '', idea.hook.voice ? `[VOICE] ${idea.hook.voice}` : '']
+                    .filter(Boolean)
+                    .join('\n')
+                  || idea.hook.textOverlay
+                  || idea.hook.text
+                  || idea.explanation
+                  || '';
                 const textOverlay = idea.hook.textOverlay || idea.hook.text;
                 return (
                 <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-sm transition-all group">
