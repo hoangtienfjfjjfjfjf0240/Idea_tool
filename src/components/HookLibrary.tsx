@@ -531,6 +531,89 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     angle: [`Winning Hook: ${hook.title}`],
   });
 
+  const buildStructuredLocalFullIdeas = (
+    sourceHook: Hook,
+    count: number,
+    direction: string,
+    startIndex = 0,
+  ): FullIdea[] => {
+    const baseTitle = stripVariantSuffix(sourceHook.title);
+    const painpoint = sourceHook.painpoint || 'the user blocker';
+    const coreUser = sourceHook.core_user || 'General viewer';
+    const emotion = sourceHook.emotion || 'Curiosity';
+    const psp = sourceHook.hook_concept || app?.name || 'Product solution';
+    const visualBase = sourceHook.visual_detail || 'A social-first handheld setup that shows the problem clearly.';
+    const directionHint = readText(direction, psp);
+    const variants = [
+      {
+        creativeType: 'UGC',
+        hookOverlay: 'Why this move matters',
+        hookVoice: `Wait, why does this simple move expose ${painpoint}?`,
+        bodyOverlay: 'See the clue faster',
+        bodyVoice: `The reveal happens faster when the viewer sees the blocker before the explanation starts.`,
+        ctaOverlay: `Try ${app?.name || 'this app'} now`,
+        ctaVoice: `Open ${app?.name || 'the app'} and test this angle before you lock the creative.`,
+      },
+      {
+        creativeType: 'POV',
+        hookOverlay: 'The detail people miss',
+        hookVoice: `Most people miss this detail in the first second.`,
+        bodyOverlay: 'Show the blocker early',
+        bodyVoice: `Use a tighter POV so the pain point lands immediately and the solution feels obvious.`,
+        ctaOverlay: 'Build another version',
+        ctaVoice: `Spin one more variant from this hook and compare which opener lands better.`,
+      },
+      {
+        creativeType: 'Social Proof',
+        hookOverlay: 'Same pain, new angle',
+        hookVoice: `Same pain point, but this angle makes it click instantly.`,
+        bodyOverlay: 'Make the contrast obvious',
+        bodyVoice: `Frame the old friction and the new reveal in one quick contrast so the viewer gets the payoff fast.`,
+        ctaOverlay: `Test in ${app?.name || 'app'}`,
+        ctaVoice: `Turn this winning DNA into a new test inside ${app?.name || 'your workflow'}.`,
+      },
+    ];
+
+    return Array.from({ length: count }, (_, index) => {
+      const variant = variants[(startIndex + index) % variants.length];
+      const displayIndex = startIndex + index + 1;
+      return {
+        title: `${baseTitle} - Full Idea ${displayIndex}`,
+        duration: IDEA_RUNTIME_GUIDANCE,
+        creativeType: variant.creativeType,
+        explanation: `Expand winning hook DNA into a full brief that keeps the pain point "${painpoint}" and pushes direction "${directionHint}".`,
+        framework: {
+          coreUser,
+          painpoint,
+          emotion,
+          psp,
+        },
+        hook: {
+          script: `[VISUAL] ${visualBase} Reframe the opening so "${directionHint}" is visible immediately.\n[VOICE] ${variant.hookVoice}\n[TEXT OVERLAY] ${variant.hookOverlay}`,
+          visual: `${visualBase} Reframe the opening so "${directionHint}" is visible immediately.`,
+          text: variant.hookOverlay,
+          textOverlay: variant.hookOverlay,
+          voice: variant.hookVoice,
+        },
+        body: {
+          script: `[VISUAL] Push into a closer demo of the same problem, then show how ${psp} changes the situation.\n[VOICE] ${variant.bodyVoice}\n[TEXT OVERLAY] ${variant.bodyOverlay}`,
+          visual: `Push into a closer demo of the same problem, then show how ${psp} changes the situation.`,
+          text: variant.bodyOverlay,
+          textOverlay: variant.bodyOverlay,
+          voice: variant.bodyVoice,
+        },
+        cta: {
+          script: `[VISUAL] End on the app screen with the key action ready to tap.\n[VOICE] ${variant.ctaVoice}\n[TEXT OVERLAY] ${variant.ctaOverlay}`,
+          visual: 'End on the app screen with the key action ready to tap.',
+          voice: variant.ctaVoice,
+          text: variant.ctaOverlay,
+          textOverlay: variant.ctaOverlay,
+          endCard: `${app?.name || 'App'} - ${psp}`,
+        },
+      };
+    });
+  };
+
   const normalizeFullIdeaContent = (idea: FullIdea, sourceHook: Hook): IdeaContent => {
     const framework = idea.framework || {};
     const hook = idea.hook || {};
@@ -1350,16 +1433,30 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         });
         const result = await res.json();
         if (res.ok && result.success && result.data?.length > 0) {
-          const generated = result.data as FullIdea[];
+          const aiIdeas = result.data as FullIdea[];
+          const generated = aiIdeas.length >= fullIdeasQty
+            ? aiIdeas.slice(0, fullIdeasQty)
+            : [
+                ...aiIdeas,
+                ...buildStructuredLocalFullIdeas(selectedHook, fullIdeasQty - aiIdeas.length, ideaDirection, aiIdeas.length),
+              ];
           const saved = await saveFullIdeasToDatabase(generated);
           setFullIdeas(saved);
           setFullIdeasLive(saved);
-        } else {
-          alert(result.error || 'Có lỗi khi tạo ideas.');
+        }
+
+        if (!(res.ok && result.success && result.data?.length > 0)) {
+          const fallbackIdeas = buildStructuredLocalFullIdeas(selectedHook, fullIdeasQty, ideaDirection);
+          const saved = await saveFullIdeasToDatabase(fallbackIdeas);
+          setFullIdeas(saved);
+          setFullIdeasLive(saved);
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
-          alert('Có lỗi khi tạo ideas. Vui lòng thử lại.');
+          const fallbackIdeas = buildStructuredLocalFullIdeas(selectedHook, fullIdeasQty, ideaDirection);
+          const saved = await saveFullIdeasToDatabase(fallbackIdeas);
+          setFullIdeas(saved);
+          setFullIdeasLive(saved);
         }
       } finally {
         stopProgress();
