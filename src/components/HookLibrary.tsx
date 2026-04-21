@@ -191,6 +191,80 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       },
     }));
 
+  const compactModifyText = (value: string, limit = 72) => {
+    const text = value.replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    if (text.length <= limit) return text;
+    return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const extractModifyInstructionHint = (instruction: string, fallback: string) => {
+    const lines = instruction
+      .split('\n')
+      .map(line => line.replace(/^[-*]\s*/, '').trim())
+      .filter(Boolean)
+      .filter(line => !/^kết hợp hook\b/i.test(line.toLowerCase()));
+
+    return compactModifyText(lines[0] || fallback, 88);
+  };
+
+  const buildStructuredLocalModifiedHooks = (
+    sourceHook: Hook,
+    instruction: string,
+    count: number,
+    startIndex = 0,
+  ): HookIdea[] => {
+    const baseTitle = stripVariantSuffix(sourceHook.title);
+    const concept = sourceHook.hook_concept || baseTitle;
+    const painpoint = sourceHook.painpoint || 'the hidden blocker';
+    const visualDetail = sourceHook.visual_detail || 'A close handheld opening that shows the blocker immediately.';
+    const instructionHint = extractModifyInstructionHint(instruction, concept);
+    const fallbackAngles = [
+      {
+        visual: 'Move from a neutral setup into an immediate reveal on the exact pain object.',
+        voice: 'This tiny move might explain the whole problem.',
+        overlay: compactModifyText(baseTitle, 32) || 'Watch this first',
+      },
+      {
+        visual: 'Keep the same object, but reveal the blocker through a different hand action in frame one.',
+        voice: 'Same setup, but now the blocker shows up instantly.',
+        overlay: 'The blocker is here',
+      },
+      {
+        visual: 'Switch to a tighter POV angle so the viewer notices the pain before the explanation starts.',
+        voice: 'You miss this detail until you see it up close.',
+        overlay: 'Look closer',
+      },
+      {
+        visual: 'Use a faster contrast shot so the old pain and new clue appear in the same beat.',
+        voice: 'The pain looks familiar, but the reveal is different this time.',
+        overlay: 'Same pain, new reveal',
+      },
+      {
+        visual: 'Make the first second more urgent with a sharper gesture and a cleaner prop setup.',
+        voice: 'If this keeps happening, start with this check.',
+        overlay: 'Start with this check',
+      },
+    ];
+
+    return Array.from({ length: count }, (_, i) => {
+      const angle = fallbackAngles[(startIndex + i) % fallbackAngles.length];
+      return {
+        id: crypto.randomUUID(),
+        title: buildModifiedHookTitle(sourceHook.title, startIndex + i),
+        explanation: `Giu DNA cua "${concept}", doi execution theo huong "${instructionHint}" va van bam dung pain point "${painpoint}".`,
+        hook: {
+          script: `${angle.visual} Start from: ${visualDetail}\n[VOICE] ${angle.voice}\n[TEXT OVERLAY] ${angle.overlay}`,
+          visual: `${angle.visual} Start from: ${visualDetail}`,
+          text: angle.overlay,
+          textOverlay: angle.overlay,
+          voice: angle.voice,
+          viTranslation: `Van giu noi dau "${painpoint}", nhung mo theo huong "${instructionHint}".`,
+        },
+      };
+    });
+  };
+
   const handleCancel = () => {
     cancelRequestedRef.current = true;
     if (abortRef.current) {
@@ -242,20 +316,20 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           ? aiIdeas.slice(0, quantity)
           : [
               ...aiIdeas,
-              ...buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity - aiIdeas.length, aiIdeas.length),
+              ...buildStructuredLocalModifiedHooks(selectedHook, modifyPrompt, quantity - aiIdeas.length, aiIdeas.length),
             ];
         setGeneratedIdeas(generated);
         setModifyLiveIdeas(generated);
         await saveModifiedHooksToHistory(generated);
       } else {
-        const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
+        const mockIdeas = buildStructuredLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
         setModifyLiveIdeas(mockIdeas);
         await saveModifiedHooksToHistory(mockIdeas);
       }
     } catch (err) {
       if (requestTimedOut && selectedHook) {
-        const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
+        const mockIdeas = buildStructuredLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
         setModifyLiveIdeas(mockIdeas);
         await saveModifiedHooksToHistory(mockIdeas);

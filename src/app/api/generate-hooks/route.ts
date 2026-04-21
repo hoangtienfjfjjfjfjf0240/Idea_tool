@@ -41,7 +41,74 @@ function compactText(value: string, limit = 72) {
   return `${text.slice(0, limit).trim()}...`;
 }
 
-function buildFallbackHookVariations(hook: Record<string, unknown>, instruction: string, quantity: number) {
+function normalizeCompareText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractInstructionHint(instruction: string, fallback: string) {
+  const lines = instruction
+    .split('\n')
+    .map(line => line.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean)
+    .filter(line => !/^ket hop hook\b/i.test(normalizeCompareText(line)));
+
+  return compactText(lines[0] || fallback, 88);
+}
+
+function isUsableHookVariation(
+  item: Record<string, unknown>,
+  instruction: string,
+  sourceHook: Record<string, unknown>,
+) {
+  const normalizedHook = (item.hook || {}) as Record<string, unknown>;
+  const voice = readText(normalizedHook.voice);
+  const textOverlay = readText(normalizedHook.textOverlay, readText(normalizedHook.text));
+  const visual = readText(normalizedHook.visual, readText(normalizedHook.script));
+  const combined = `${voice}\n${textOverlay}\n${visual}`.trim();
+  if (!combined) return false;
+
+  const normalizedCombined = normalizeCompareText(combined);
+  const normalizedInstruction = normalizeCompareText(instruction);
+  const normalizedTitle = normalizeCompareText(stripVariantSuffix(readText(sourceHook.title, '')));
+  const bannedMarkers = [
+    'ket hop hook',
+    'phong cach',
+    'twist hook',
+    'trend viral tiktok',
+    'ugc nguoi that quay',
+  ];
+
+  if (bannedMarkers.some(marker => normalizedCombined.includes(marker))) {
+    return false;
+  }
+
+  if (normalizedInstruction && normalizedInstruction.length > 24 && normalizedCombined.includes(normalizedInstruction)) {
+    return false;
+  }
+
+  if (
+    normalizedTitle &&
+    normalizedCombined.includes(normalizedTitle) &&
+    (normalizedCombined.includes('bien the') || normalizedCombined.includes('variant'))
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildFallbackHookVariations(
+  hook: Record<string, unknown>,
+  instruction: string,
+  quantity: number,
+  startIndex = 0,
+) {
   const title = readText(hook.title, 'Winning Hook');
   const baseTitle = stripVariantSuffix(title) || title;
   const concept = readText(hook.hook_concept, title);
@@ -52,7 +119,7 @@ function buildFallbackHookVariations(hook: Record<string, unknown>, instruction:
   const painpoint = readText(hook.painpoint, 'the viewer pain point');
   const emotion = readText(hook.emotion, 'curiosity');
   const coreUser = readText(hook.core_user, 'target viewer');
-  const instructionHint = compactText(readText(instruction, concept), 88);
+  const instructionHint = extractInstructionHint(readText(instruction, concept), concept);
   const overlayBase = compactText(baseTitle, 32) || 'Winning hook';
   const bases = [
     'Change the setting and make the first frame more unexpected',
@@ -64,10 +131,10 @@ function buildFallbackHookVariations(hook: Record<string, unknown>, instruction:
 
   return Array.from({ length: quantity }, (_, index) => {
     const angle = bases[index % bases.length];
-    const displayIndex = index + 1;
+    const displayIndex = startIndex + index + 1;
 
     return {
-      id: `hook-fallback-${Date.now()}-${index}`,
+      id: `hook-fallback-${Date.now()}-${displayIndex}`,
       title: `${baseTitle} - Biến thể ${displayIndex}`,
       explanation: `Fallback nhanh vì AI gateway đang lỗi. Giữ concept "${concept}", đổi execution theo hướng: ${angle}.`,
       meta: {
@@ -188,7 +255,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
     }
 
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    const data = arr.slice(0, requestedQuantity).map((item: unknown, i: number) => {
+    const validItems = arr.map((item: unknown, i: number) => {
       const normalized = normalizeHookOutput(item);
       const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
       return {
@@ -208,7 +275,12 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
           whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',
         },
       };
-    });
+    }).filter(item => isUsableHookVariation(item, readText(instruction), hook));
+
+    const data = validItems.slice(0, requestedQuantity);
+    if (data.length < requestedQuantity) {
+      data.push(...buildFallbackHookVariations(hook, instruction, requestedQuantity - data.length, data.length));
+    }
 
     return NextResponse.json({ success: true, data, modelUsed });
   } catch (err) {
