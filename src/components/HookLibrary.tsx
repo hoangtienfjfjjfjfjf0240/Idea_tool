@@ -74,6 +74,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const [savedFullIdeasSessionId, setSavedFullIdeasSessionId] = useState<string | null>(null);
   const [fullIdeasQty, setFullIdeasQty] = useState(3);
   const [ideaDirection, setIdeaDirection] = useState('');
+  const [expandedFullIdeaKeys, setExpandedFullIdeaKeys] = useState<Record<string, boolean>>({});
   const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
   const [savedModifiedHookCount, setSavedModifiedHookCount] = useState(0);
   const [savedModifiedHookSessionId, setSavedModifiedHookSessionId] = useState<string | null>(null);
@@ -105,6 +106,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   }, [app?.id]);
 
   useEffect(() => { loadHooks(); }, [loadHooks]);
+  useEffect(() => { setExpandedFullIdeaKeys({}); }, [selectedHook?.id, isViewingFullIdeasHistory, fullIdeas.length]);
 
   const handleDeleteHook = async (id: string) => {
     if (deletingHookId) return;
@@ -352,6 +354,32 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const readText = (value: unknown, fallback = '') =>
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+
+  const buildIdeaSectionScript = (
+    section?: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']>
+  ) => {
+    const script = readText(section?.script);
+    if (script) return script;
+
+    const visual = readText(section?.visual);
+    const voice = readText(section?.voice);
+    const textOverlay = readText(section?.textOverlay, readText(section?.text));
+
+    return [
+      visual ? `[VISUAL] ${visual}` : '',
+      voice ? `[VOICE] ${voice}` : '',
+      textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
+
+  const toggleFullIdeaDetails = (key: string) => {
+    setExpandedFullIdeaKeys(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const mapHistoryIdeaToModifiedHook = useCallback((idea: GeneratedIdea): HookIdea => {
     const content = idea.content;
@@ -1608,60 +1636,86 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               </div>
             ) : fullIdeas.length > 0 ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {fullIdeas.map((idea, idx) => (
-                  <div key={idx} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
-                    <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500 w-full" />
-                    <div className="p-6">
-                      {/* Title + meta */}
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
-                          <div className="flex gap-2 flex-wrap">
-                            <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{idea.creativeType || 'Creative'}</span>
-                            {idea.savedIdeaId && (
-                              <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium">Đã lưu DB</span>
-                            )}
-                          </div>
-                        </div>
-                        <button onClick={() => {
-                          const text = `IDEA: ${idea.title}\n\nFRAMEWORK:\n- Core User: ${idea.framework?.coreUser}\n- Painpoint: ${idea.framework?.painpoint}\n- Emotion: ${idea.framework?.emotion}\n- PSP: ${idea.framework?.psp}\n\nHOOK:\n${idea.hook?.script}\n\nBODY:\n${idea.body?.script}\n\nCTA:\n${idea.cta?.script}`;
-                          navigator.clipboard.writeText(text);
-                        }} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy"><Copy size={16} /></button>
-                      </div>
+                {fullIdeas.map((idea, idx) => {
+                  const detailKey = String(idea.savedIdeaId || idea.id || `${selectedHook?.id || 'full-idea'}-${idx}`);
+                  const isDetailOpen = Boolean(expandedFullIdeaKeys[detailKey]);
+                  const visibleSections = isDetailOpen
+                    ? FULL_IDEA_SECTIONS
+                    : FULL_IDEA_SECTIONS.filter(sec => sec.key === 'hook');
+                  const copyText = `IDEA: ${idea.title}\n\nFRAMEWORK:\n- Core User: ${idea.framework?.coreUser}\n- Painpoint: ${idea.framework?.painpoint}\n- Emotion: ${idea.framework?.emotion}\n- PSP: ${idea.framework?.psp}\n\nHOOK:\n${buildIdeaSectionScript(idea.hook) || '—'}\n\nBODY:\n${buildIdeaSectionScript(idea.body) || '—'}\n\nCTA:\n${buildIdeaSectionScript(idea.cta) || '—'}`;
 
-                      {/* Explanation */}
-                      <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{idea.explanation}</p>
-
-                      {/* Sections: HOOK, BODY, CTA */}
-                      {FULL_IDEA_SECTIONS.map(sec => {
-                        const secData = idea[sec.key] || {};
-                        const scriptContent = secData?.script || '';
-                        const textOverlay = secData?.textOverlay || '';
-                        const endCard = sec.key === 'cta' ? (idea.cta?.endCard || '') : '';
-                        return (
-                          <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
-                            <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
-                            <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
-
-                            {/* Text Overlay + End Card */}
-                            <div className="flex gap-3">
-                              <div className="flex-1">
-                                <span className="text-[10px] font-bold text-amber-600 uppercase">📝 Text Overlay</span>
-                                <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
-                              </div>
-                              {sec.key === 'cta' && (
-                                <div className="flex-1">
-                                  <span className="text-[10px] font-bold text-emerald-600 uppercase">🏷️ End Card</span>
-                                  <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
-                                </div>
+                  return (
+                    <div key={detailKey} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
+                      <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500 w-full" />
+                      <div className="p-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
+                            <div className="flex gap-2 flex-wrap">
+                              <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{idea.creativeType || 'Creative'}</span>
+                              {idea.savedIdeaId && (
+                                <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium">Đã lưu DB</span>
                               )}
                             </div>
                           </div>
-                        );
-                      })}
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(copyText);
+                            }}
+                            className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="Copy"
+                          >
+                            <Copy size={16} />
+                          </button>
+                        </div>
+
+                        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2">
+                          <p className="text-xs font-medium text-amber-700">
+                            {isDetailOpen ? 'Showing hook, body, CTA, and explanation.' : 'Showing hook only. Open detail to inspect the full brief.'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => toggleFullIdeaDetails(detailKey)}
+                            className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50"
+                          >
+                            {isDetailOpen ? 'Hide Detail' : 'Show Detail'}
+                          </button>
+                        </div>
+
+                        {isDetailOpen && idea.explanation && (
+                          <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{idea.explanation}</p>
+                        )}
+
+                        {visibleSections.map(sec => {
+                          const secData = idea[sec.key] || {};
+                          const scriptContent = buildIdeaSectionScript(secData);
+                          const textOverlay = readText(secData?.textOverlay, readText(secData?.text));
+                          const endCard = sec.key === 'cta' ? readText(idea.cta?.endCard) : '';
+
+                          return (
+                            <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
+                              <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
+                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
+
+                              <div className="flex gap-3">
+                                <div className="flex-1">
+                                  <span className="text-[10px] font-bold text-amber-600 uppercase">Text Overlay</span>
+                                  <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
+                                </div>
+                                {sec.key === 'cta' && isDetailOpen && (
+                                  <div className="flex-1">
+                                    <span className="text-[10px] font-bold text-emerald-600 uppercase">End Card</span>
+                                    <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-gray-200 p-20 text-center">

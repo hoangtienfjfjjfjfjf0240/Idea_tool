@@ -309,6 +309,30 @@ function buildFallbackIdeasFromHook(
       ctaOverlay: `Test in ${options.appName}`,
       angle: 'Compare-frame social proof',
     },
+    {
+      creativeType: 'Reaction',
+      hookPrimary: 'You notice it late',
+      hookAlt1: 'This lands too late',
+      hookAlt2: 'Watch the miss happen',
+      hookVoice: 'You only notice the blocker when it is already too late.',
+      bodyVoice: 'Use a reaction beat to show the pain landing, then pivot into the product fix immediately.',
+      ctaVoice: `Use ${options.appName} to spin a reaction-led variant next.`,
+      bodyOverlay: 'Show the reaction beat',
+      ctaOverlay: `Try reaction format`,
+      angle: 'Reaction-led reveal',
+    },
+    {
+      creativeType: 'Challenge',
+      hookPrimary: 'Try spotting this',
+      hookAlt1: 'Can you catch it?',
+      hookAlt2: 'Most people fail this',
+      hookVoice: 'Try spotting the blocker before the reveal lands.',
+      bodyVoice: 'Turn the same friction into a quick challenge so the viewer stays to see the answer.',
+      ctaVoice: `Build a challenge version in ${options.appName} and test it against the control.`,
+      bodyOverlay: 'Make it a challenge',
+      ctaOverlay: `Test challenge hook`,
+      angle: 'Challenge-style stopper',
+    },
   ];
 
   return Array.from({ length: options.quantity }, (_, index) => {
@@ -367,6 +391,19 @@ function buildFallbackIdeasFromHook(
       },
     };
   });
+}
+
+function normalizeFallbackIdeasFromHook(
+  hook: Record<string, unknown>,
+  options: { quantity: number; startIndex?: number; duration: string; appName: string; ideaDirection?: string | null }
+) {
+  return buildFallbackIdeasFromHook(hook, options).map(item =>
+    normalizeIdeaOutput(item, {
+      duration: options.duration,
+      appName: options.appName,
+      pillar: asText(hook.painpoint) || 'General user friction',
+    })
+  );
 }
 
 function resolveModel(selected?: string): string {
@@ -456,7 +493,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       if (!text) {
         console.error('[generate-ideas-from-hook] AI returned null for batch', plan);
         warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: AI returned null, used fallback.`);
-        aggregatedIdeas.push(...buildFallbackIdeasFromHook(hook, {
+        aggregatedIdeas.push(...normalizeFallbackIdeasFromHook(hook, {
           quantity: plan.batchQuantity,
           startIndex: aggregatedIdeas.length,
           duration,
@@ -470,7 +507,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       if (!parsed) {
         console.error('[generate-ideas-from-hook] Failed to parse batch:', text.substring(0, 300));
         warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: parse failed, used fallback.`);
-        aggregatedIdeas.push(...buildFallbackIdeasFromHook(hook, {
+        aggregatedIdeas.push(...normalizeFallbackIdeasFromHook(hook, {
           quantity: plan.batchQuantity,
           startIndex: aggregatedIdeas.length,
           duration,
@@ -497,7 +534,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       if (dedupedBatch.length < plan.batchQuantity) {
         warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: only ${dedupedBatch.length}/${plan.batchQuantity} valid unique ideas, topped up with fallback.`);
-        aggregatedIdeas.push(...buildFallbackIdeasFromHook(hook, {
+        aggregatedIdeas.push(...normalizeFallbackIdeasFromHook(hook, {
           quantity: plan.batchQuantity - dedupedBatch.length,
           startIndex: aggregatedIdeas.length,
           duration,
