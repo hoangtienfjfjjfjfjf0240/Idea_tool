@@ -311,28 +311,16 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       });
       const result = await res.json();
       if (res.ok && result.success && result.data?.length > 0) {
-        const aiIdeas = result.data as HookIdea[];
-        const generated = aiIdeas.length >= quantity
-          ? aiIdeas.slice(0, quantity)
-          : [
-              ...aiIdeas,
-              ...buildStructuredLocalModifiedHooks(selectedHook, modifyPrompt, quantity - aiIdeas.length, aiIdeas.length),
-            ];
+        const generated = (result.data as HookIdea[]).slice(0, quantity);
         setGeneratedIdeas(generated);
         setModifyLiveIdeas(generated);
         await saveModifiedHooksToHistory(generated);
       } else {
-        const mockIdeas = buildStructuredLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
-        setGeneratedIdeas(mockIdeas);
-        setModifyLiveIdeas(mockIdeas);
-        await saveModifiedHooksToHistory(mockIdeas);
+        alert(result.error || 'Có lỗi khi tạo hook. Vui lòng thử lại.');
       }
     } catch (err) {
-      if (requestTimedOut && selectedHook) {
-        const mockIdeas = buildStructuredLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
-        setGeneratedIdeas(mockIdeas);
-        setModifyLiveIdeas(mockIdeas);
-        await saveModifiedHooksToHistory(mockIdeas);
+      if (requestTimedOut) {
+        alert('Tạo hook bị timeout. Vui lòng thử lại.');
         return;
       }
 
@@ -1433,30 +1421,16 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         });
         const result = await res.json();
         if (res.ok && result.success && result.data?.length > 0) {
-          const aiIdeas = result.data as FullIdea[];
-          const generated = aiIdeas.length >= fullIdeasQty
-            ? aiIdeas.slice(0, fullIdeasQty)
-            : [
-                ...aiIdeas,
-                ...buildStructuredLocalFullIdeas(selectedHook, fullIdeasQty - aiIdeas.length, ideaDirection, aiIdeas.length),
-              ];
+          const generated = (result.data as FullIdea[]).slice(0, fullIdeasQty);
           const saved = await saveFullIdeasToDatabase(generated);
           setFullIdeas(saved);
           setFullIdeasLive(saved);
-        }
-
-        if (!(res.ok && result.success && result.data?.length > 0)) {
-          const fallbackIdeas = buildStructuredLocalFullIdeas(selectedHook, fullIdeasQty, ideaDirection);
-          const saved = await saveFullIdeasToDatabase(fallbackIdeas);
-          setFullIdeas(saved);
-          setFullIdeasLive(saved);
+        } else {
+          alert(result.error || 'Có lỗi khi tạo ideas.');
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
-          const fallbackIdeas = buildStructuredLocalFullIdeas(selectedHook, fullIdeasQty, ideaDirection);
-          const saved = await saveFullIdeasToDatabase(fallbackIdeas);
-          setFullIdeas(saved);
-          setFullIdeasLive(saved);
+          alert('Có lỗi khi tạo ideas. Vui lòng thử lại.');
         }
       } finally {
         stopProgress();

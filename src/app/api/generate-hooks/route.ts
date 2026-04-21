@@ -99,9 +99,6 @@ function isUsableHookVariation(
   const bannedMarkers = [
     'ket hop hook',
     'phong cach',
-    'twist hook',
-    'trend viral tiktok',
-    'ugc nguoi that quay',
   ];
 
   if (bannedMarkers.some(marker => normalizedCombined.includes(marker))) {
