@@ -166,7 +166,7 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
 
 function normalizeAndValidateIdeas(
   items: unknown[],
-  context: { duration: string; appName: string; pillar: string; angleIndex: number }
+  context: { duration: string; appName: string; pillar: string; angleIndex: number; ideaStartIndex?: number }
 ) {
   const valid: Record<string, unknown>[] = [];
   const invalidReasons: string[] = [];
@@ -178,7 +178,7 @@ function normalizeAndValidateIdeas(
         appName: context.appName,
         pillar: context.pillar,
       }),
-      { angleIndex: context.angleIndex, ideaIndex, pillar: context.pillar }
+      { angleIndex: context.angleIndex, ideaIndex: (context.ideaStartIndex || 0) + ideaIndex, pillar: context.pillar }
     );
     const errors = validateIdeaOutput(normalized);
 
@@ -917,6 +917,8 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const primaryPillar = filters?.painPoint?.[0] || 'General user friction';
       const angleIndex = Number(config?.angleIndex || 1);
       const totalAngles = Number(config?.totalAngles || 1);
+      const requestStartIndex = Math.max(0, Number(config?.startIndex || 0) || 0);
+      const totalVariations = Math.max(requestedQuantity, Number(config?.totalVariations || requestedQuantity) || requestedQuantity);
       const resolvedModel = resolveModel(selectedModel);
       const batchPlans = buildIdeaBatchPlans(requestedQuantity);
 
@@ -999,7 +1001,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
             `Selected angle: ${angleContext || 'Creative freedom'}`,
             `Idea description: ${config?.ideaDescription || 'Creative freedom'}`,
             `Target market: ${filters?.targetMarket?.join(', ') || 'Default market'}`,
-            `Batch window: ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`,
+            `Batch window: ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}/${totalVariations}`,
           ],
         });
 
@@ -1021,7 +1023,7 @@ ${diversityBlock || ''}
 ## TASK
 Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Duration: ${duration}
-- The final target for this request is ${requestedQuantity} ideas. This batch only covers items ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}.
+- The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
 - Each idea must stay inside the selected pillar and selected angle focus.
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
 - If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
@@ -1068,6 +1070,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           appName,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
+          ideaStartIndex: requestStartIndex + plan.batchStartIndex,
         });
         let valid = dedupeIdeas(validation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
         const duplicateDetected = valid.length > 1 && hasNearDuplicateIdeas(valid);
@@ -1113,6 +1116,7 @@ ${retryNotes.join('\n\n')}`, {
               appName,
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
+              ideaStartIndex: requestStartIndex + plan.batchStartIndex,
             });
             const retryValid = dedupeIdeas(retryValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
             const retryHasDuplicates = retryValid.length > 1 && hasNearDuplicateIdeas(retryValid);
@@ -1154,7 +1158,7 @@ ${retryNotes.join('\n\n')}`, {
               filters,
               quantity: missingCount + 10,
               duration,
-              startIndex: plan.batchStartIndex + batchIdeas.length,
+              startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
               angleIndex,
               ideaDescription: config?.ideaDescription,
             });
@@ -1167,7 +1171,7 @@ ${retryNotes.join('\n\n')}`, {
                 filters,
                 quantity: plan.batchQuantity - batchIdeas.length,
                 duration,
-                startIndex: plan.batchStartIndex + batchIdeas.length,
+                startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
                 angleIndex,
                 ideaDescription: config?.ideaDescription,
               }));
@@ -1193,7 +1197,7 @@ ${retryNotes.join('\n\n')}`, {
             filters,
             quantity: plan.batchQuantity,
             duration,
-            startIndex: plan.batchStartIndex,
+            startIndex: requestStartIndex + plan.batchStartIndex,
             angleIndex,
             ideaDescription: config?.ideaDescription,
           });
@@ -1213,7 +1217,7 @@ ${retryNotes.join('\n\n')}`, {
           filters,
           quantity: missingCount,
           duration,
-          startIndex: aggregatedIdeas.length,
+          startIndex: requestStartIndex + aggregatedIdeas.length,
           angleIndex,
           ideaDescription: config?.ideaDescription,
         });
