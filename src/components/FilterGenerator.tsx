@@ -698,60 +698,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     abortRef.current = controller;
     startProgress();
     try {
-      const buildFallbackIdeasForAngle = (
-        filtersSnapshot: FilterState,
-        angle: string | null,
-        count: number,
-        startIndex = 0
-      ) => Array.from({ length: count }, (_, ideaIndex) => ({
-        title: `Ý tưởng ${angle ? `${angle} - ` : ''}${startIndex + ideaIndex + 1}: ${app.name}`,
-        duration: IDEA_RUNTIME_GUIDANCE,
-        creativeType: 'UGC',
-        meta: {
-          builderVersion: 'prompt_system_builder_v1',
-          pillar: filtersSnapshot.painPoint?.[0] || 'Nỗi đau phổ biến',
-          pillarIndex: 0,
-          angleName: angle || 'Core angle',
-          angleType: 'Curiosity',
-          angleDesc: angle || filtersSnapshot.painPoint?.[0] || 'Core angle',
-          hookPrimary: filtersSnapshot.painPoint?.[0] || 'Bạn có biết?',
-          hookAlt1: `Vẫn đang bị ${filtersSnapshot.painPoint?.[0] || 'vấn đề này'}?`,
-          hookAlt2: `${filtersSnapshot.solution?.[0] || app.name} xử lý chuyện này thế nào?`,
-          dontDo: 'Không dùng visual chung chung không gắn với painpoint.',
-          track: 'B',
-          priority: 'A',
-        },
-        framework: {
-          coreUser: filtersSnapshot.coreUser?.[0] || 'Người dùng phổ thông',
-          painpoint: filtersSnapshot.painPoint?.[0] || 'Nỗi đau phổ biến',
-          emotion: filtersSnapshot.emotion?.[0] || 'Tò mò',
-          psp: filtersSnapshot.solution?.[0] || app.name,
-        },
-        explanation: `Video kết hợp ${filtersSnapshot.painPoint?.[0] || 'nỗi đau'} với ${filtersSnapshot.solution?.[0] || 'tính năng chính'} của ${app.name}`,
-        hook: {
-          visual: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
-          script: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
-          text: filtersSnapshot.painPoint?.[0] || 'Bạn có biết?',
-          textOverlay: filtersSnapshot.painPoint?.[0] || 'Bạn có biết?',
-          voice: `"${filtersSnapshot.painPoint?.[0] || 'Điều gì đang không ổn ở đây vậy?'}"`,
-        },
-        body: {
-          visual: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
-          script: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
-          text: `${filtersSnapshot.solution?.[0] || 'Tính năng chính'}`,
-          textOverlay: `${filtersSnapshot.solution?.[0] || 'Tính năng chính'}`,
-          voice: '"Chỉ cần thử trên ảnh thật là thấy ngay hướng đi."',
-        },
-        cta: {
-          visual: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
-          script: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
-          voice: '"Thử ngay trước khi chốt style."',
-          text: `Thử ${app.name}`,
-          textOverlay: `Thử ${app.name}`,
-          endCard: `${app.name} - Tải miễn phí`,
-        },
-      }));
-
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
         const c = idea.content;
         return `${i + 1}. "${idea.title}"
@@ -809,7 +755,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           const result = await res.json() as GenerateIdeasApiResponse;
           const aiItems = res.ok && result.success && Array.isArray(result.data) ? result.data : [];
           if (!res.ok || !result.success || aiItems.length === 0) {
-            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} returned no AI ideas, using fallback.`, result?.error || result);
+            throw new Error(result?.error || `Angle ${task.angleIndex + 1} không có idea hợp lệ từ API.`);
           }
 
           if (result.meta?.warnings?.length) {
@@ -818,14 +764,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
           const completedItems = aiItems.slice(0, quantity);
           if (completedItems.length < quantity) {
-            completedItems.push(
-              ...buildFallbackIdeasForAngle(
-                task.filtersSnapshot,
-                task.selectedAngle,
-                quantity - completedItems.length,
-                completedItems.length
-              )
-            );
+            throw new Error(`Angle ${task.angleIndex + 1} chỉ trả ${completedItems.length}/${quantity} idea. API chưa top-up đủ.`);
           }
 
           return completedItems.map(item => ({
@@ -837,11 +776,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             throw error;
           }
 
-          console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed, using fallback.`, error);
-          return buildFallbackIdeasForAngle(task.filtersSnapshot, task.selectedAngle, quantity).map(item => ({
-            item,
-            filtersSnapshot: task.filtersSnapshot,
-          }));
+          console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed.`, error);
+          throw error instanceof Error ? error : new Error(`Angle ${task.angleIndex + 1} request failed.`);
         }
       };
 
@@ -898,62 +834,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           },
         }));
       } else {
-        ideas = anglesToGenerate.flatMap((angle, angleIndex) =>
-          Array.from({ length: quantity }, (_, ideaIndex) => ({
-            title: `Ý tưởng ${angleIndex * quantity + ideaIndex + 1}: ${app.name}`,
-            duration: IDEA_RUNTIME_GUIDANCE,
-            filtersSnapshot: {
-              ...filters,
-              angle: angle ? [angle] : [],
-            } as FilterState,
-            content: {
-              creativeType: 'UGC',
-              meta: {
-                builderVersion: 'prompt_system_builder_v1',
-                pillar: filters.painPoint[0] || 'Nỗi đau phổ biến',
-                pillarIndex: 0,
-                angleName: angle || 'Core angle',
-                angleType: 'Curiosity',
-                angleDesc: angle || filters.painPoint[0] || 'Core angle',
-                hookPrimary: filters.painPoint[0] || 'Bạn có biết?',
-                hookAlt1: `Vẫn đang bị ${filters.painPoint[0] || 'vấn đề này'}?`,
-                hookAlt2: `${filters.solution[0] || app.name} xử lý chuyện này thế nào?`,
-                dontDo: 'Không dùng visual chung chung không gắn với painpoint.',
-                track: 'B',
-                priority: 'A',
-              },
-              framework: {
-                coreUser: filters.coreUser[0] || 'Người dùng phổ thông',
-                painpoint: filters.painPoint[0] || 'Nỗi đau phổ biến',
-                emotion: filters.emotion[0] || 'Tò mò',
-                psp: filters.solution[0] || app.name,
-              },
-          explanation: `Video kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
-              hook: {
-                visual: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
-                script: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
-                text: filters.painPoint[0] || 'Bạn có biết?',
-                textOverlay: filters.painPoint[0] || 'Bạn có biết?',
-                voice: `"${filters.painPoint[0] || 'Điều gì đang không ổn ở đây vậy?'}"`,
-              },
-              body: {
-                visual: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
-                script: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
-                text: `${filters.solution[0] || 'Tính năng chính'}`,
-                textOverlay: `${filters.solution[0] || 'Tính năng chính'}`,
-                voice: `"Chỉ cần thử trên ảnh thật là thấy ngay hướng đi."`,
-              },
-              cta: {
-                visual: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
-                script: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
-                voice: '"Thử ngay trước khi chốt style."',
-                text: `Thử ${app.name}`,
-                textOverlay: `Thử ${app.name}`,
-                endCard: `${app.name} - Tải miễn phí`,
-              },
-            },
-          }))
-        );
+        throw new Error(result.error || 'API không trả idea hợp lệ.');
       }
 
       const tempResults: GeneratedIdea[] = ideas.map((idea, idx) => ({
@@ -1006,7 +887,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       console.error('Generate failed:', err);
-      alert('Có lỗi khi tạo ý tưởng. Vui lòng thử lại.');
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Có lỗi khi tạo ý tưởng. Vui lòng thử lại.';
+      alert(message);
       stopProgress();
       setIsGenerating(false);
     }

@@ -23,6 +23,8 @@ const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 20;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 32000;
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 18000;
 
 type IdeaBatchPlan = {
   batchQuantity: number;
@@ -1047,6 +1049,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           max_tokens: 16384,
           useCreativePersona: false,
           priority: 'high',
+          timeoutMs: GENERATE_IDEAS_BATCH_TIMEOUT_MS,
         });
 
         if (!text) {
@@ -1099,6 +1102,7 @@ ${retryNotes.join('\n\n')}`, {
             max_tokens: 16384,
             useCreativePersona: false,
             priority: 'high',
+            timeoutMs: GENERATE_IDEAS_RETRY_TIMEOUT_MS,
           });
 
           if (retryText) {
