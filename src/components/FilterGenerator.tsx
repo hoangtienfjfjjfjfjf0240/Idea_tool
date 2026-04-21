@@ -53,6 +53,38 @@ interface ImportedTrendAnalysis {
 
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
 
+type IdeaApiSection = {
+  script?: string;
+  visual?: string;
+  voice?: string;
+  text?: string;
+  textOverlay?: string;
+  text_overlay?: string;
+  endCard?: string;
+  end_card?: string;
+};
+
+type GeneratedIdeaApiItem = {
+  title?: string;
+  duration?: string;
+  creativeType?: string;
+  meta?: IdeaContent['meta'];
+  framework?: IdeaContent['framework'];
+  explanation?: string;
+  hook?: IdeaApiSection;
+  body?: IdeaApiSection;
+  cta?: IdeaApiSection;
+};
+
+type GenerateIdeasApiResponse = {
+  success?: boolean;
+  data?: GeneratedIdeaApiItem[];
+  error?: string;
+  meta?: {
+    warnings?: string[];
+  };
+};
+
 const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
   { id: 'painPoint', label: 'Nỗi đau', icon: Zap },
@@ -721,15 +753,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       }));
 
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
-        const c = idea.content as any;
+        const c = idea.content;
         return `${i + 1}. "${idea.title}"
    Framework: CoreUser="${c?.framework?.coreUser || ''}", Painpoint="${c?.framework?.painpoint || ''}", Emotion="${c?.framework?.emotion || ''}", PSP="${c?.framework?.psp || ''}"
-   Hook: visual="${c?.hook?.visual || ''}", content="${c?.hook?.content || ''}", voice="${c?.hook?.voice || ''}"
+   Hook: visual="${c?.hook?.visual || ''}", script="${c?.hook?.script || ''}", voice="${c?.hook?.voice || ''}"
    Body: visual="${c?.body?.visual || ''}", voice="${c?.body?.voice || ''}"
    CTA: "${c?.cta?.voice || ''}"`;
       }).join('\n');
 
-      const selectedAngles = (filters.angle || []).filter(Boolean);
+      const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
       const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
       const generationTasks = anglesToGenerate.map((angle, angleIndex) => ({
         selectedAngle: angle,
@@ -740,7 +772,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         } as FilterState,
       }));
       const totalRequestedIdeas = generationTasks.length * quantity;
-      let allData: Array<{ item: any; filtersSnapshot: FilterState }> = [];
+      let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const maxConcurrent = Math.min(3, Math.max(1, generationTasks.length));
 
       const requestAngleBatch = async (task: { selectedAngle: string | null; angleIndex: number; filtersSnapshot: FilterState }) => {
@@ -774,8 +806,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             signal: controller.signal,
           });
 
-          const result = await res.json();
-          const aiItems = res.ok && result.success && Array.isArray(result.data) ? result.data as any[] : [];
+          const result = await res.json() as GenerateIdeasApiResponse;
+          const aiItems = res.ok && result.success && Array.isArray(result.data) ? result.data : [];
           if (!res.ok || !result.success || aiItems.length === 0) {
             console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} returned no AI ideas, using fallback.`, result?.error || result);
           }
@@ -801,6 +833,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             filtersSnapshot: task.filtersSnapshot,
           }));
         } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            throw error;
+          }
+
           console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed, using fallback.`, error);
           return buildFallbackIdeasForAngle(task.filtersSnapshot, task.selectedAngle, quantity).map(item => ({
             item,
@@ -1141,7 +1177,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     };
   }, [selectedSeason, selectedSeasonMonth, selectedSeasonInsights, selectedSeasonEvents]);
 
-  const selectedAngleCount = Math.max(1, (filters.angle || []).filter(Boolean).length);
+  const selectedAngleCount = Math.max(1, Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean))).length);
   const totalIdeasToGenerate = selectedAngleCount * quantity;
 
   const handleOpenResults = () => {

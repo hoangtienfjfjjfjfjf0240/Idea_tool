@@ -397,14 +397,17 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
-function ideaSignature(idea: any): string {
+function ideaSignature(idea: Record<string, unknown>): string {
+  const hook = asRecord(idea.hook);
+  const body = asRecord(idea.body);
+
   return [
-    idea?.title,
-    idea?.creativeType,
-    idea?.hook?.visual,
-    idea?.hook?.voice,
-    idea?.hook?.textOverlay,
-    idea?.body?.visual,
+    asText(idea.title),
+    asText(idea.creativeType),
+    asText(hook.visual),
+    asText(hook.voice),
+    asText(hook.textOverlay),
+    asText(body.visual),
   ].filter(Boolean).join(' ');
 }
 
@@ -432,7 +435,7 @@ function jaccardSimilarity(a: string, b: string): number {
   return overlap / (left.size + right.size - overlap);
 }
 
-function hasNearDuplicateIdeas(ideas: any[]): boolean {
+function hasNearDuplicateIdeas(ideas: Record<string, unknown>[]): boolean {
   for (let i = 0; i < ideas.length; i++) {
     for (let j = i + 1; j < ideas.length; j++) {
       if (jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.62) {
@@ -442,6 +445,21 @@ function hasNearDuplicateIdeas(ideas: any[]): boolean {
   }
 
   return false;
+}
+
+function dedupeIdeas(candidates: Record<string, unknown>[], existing: Record<string, unknown>[] = []): Record<string, unknown>[] {
+  const unique: Record<string, unknown>[] = [];
+
+  for (const candidate of candidates) {
+    const signature = ideaSignature(candidate);
+    const isUnique = [...existing, ...unique].every(item => (
+      jaccardSimilarity(signature, ideaSignature(item)) < 0.62
+    ));
+
+    if (isUnique) unique.push(candidate);
+  }
+
+  return unique;
 }
 
 function toPositiveInt(value: unknown, fallback: number) {
@@ -496,6 +514,196 @@ Batch nay phai tao dung cac idea trong cua so ${rangeLabel}.
 - Khong duoc lap lai scene family da xuat hien o cac cua so truoc.
 - Moi idea moi van phai giu dung core user, painpoint, emotion, PSP, target market va angle dang chon.
 - Neu da co idea truoc do rat giong ve opening action, location, camera reveal, props hoac cau noi mo dau thi phai doi sang huong khac.\n`;
+}
+
+function firstFilterValue(filters: Record<string, unknown>, key: string, fallback: string): string {
+  return asStringList(filters[key])[0] || fallback;
+}
+
+function buildFallbackIdeasForFilters(options: {
+  appName: string;
+  filters: unknown;
+  quantity: number;
+  duration: string;
+  startIndex?: number;
+  angleIndex: number;
+  ideaDescription?: unknown;
+}) {
+  const filters = asRecord(options.filters);
+  const coreUser = firstFilterValue(filters, 'coreUser', 'Selected viewer');
+  const painpoint = firstFilterValue(filters, 'painPoint', 'General user friction');
+  const emotion = firstFilterValue(filters, 'emotion', 'Curiosity');
+  const psp = firstFilterValue(filters, 'solution', options.appName);
+  const angleName = firstFilterValue(filters, 'angle', 'Core angle');
+  const visualType = firstFilterValue(filters, 'visualType', 'UGC');
+  const targetMarket = asStringList(filters.targetMarket).join(', ') || 'selected market';
+  const direction = asText(options.ideaDescription) || angleName || painpoint;
+  const normalizedAngleIndex = Math.max(options.angleIndex - 1, 0);
+  const patterns = [
+    {
+      creativeType: 'UGC',
+      hookPrimary: 'Why does this still happen?',
+      hookAlt1: 'The hidden blocker is here',
+      hookAlt2: 'Stop missing this cue',
+      hookVoice: 'Why does this still happen every time?',
+      bodyVoice: 'Show the exact blocker first, then reveal the product fix in one clear action.',
+      ctaVoice: `Try ${options.appName} with this setup.`,
+      bodyOverlay: 'Reveal the blocker',
+      ctaOverlay: `Try ${options.appName}`,
+      scene: 'handheld close-up on the exact object causing friction',
+    },
+    {
+      creativeType: 'POV',
+      hookPrimary: 'Still stuck at this step?',
+      hookAlt1: 'This step kills momentum',
+      hookAlt2: 'Watch the fix land',
+      hookVoice: 'Still stuck at this step?',
+      bodyVoice: 'Move from the stuck moment into a simple before-choice-after-action flow.',
+      ctaVoice: `Build your version in ${options.appName}.`,
+      bodyOverlay: 'Fix the stuck step',
+      ctaOverlay: 'Build your version',
+      scene: 'POV frame where the viewer sees the blocker from their own angle',
+    },
+    {
+      creativeType: 'Reaction',
+      hookPrimary: 'What changed in one tap?',
+      hookAlt1: 'The reaction says it all',
+      hookAlt2: 'One tap changed this',
+      hookVoice: 'Wait, what changed in one tap?',
+      bodyVoice: 'Cut to the reaction, then show the app action that made the change obvious.',
+      ctaVoice: `Open ${options.appName} and test it.`,
+      bodyOverlay: 'One action, clear result',
+      ctaOverlay: 'Test it now',
+      scene: 'reaction shot after the first visible result appears on screen',
+    },
+    {
+      creativeType: 'Split Screen',
+      hookPrimary: 'Without this, it drags',
+      hookAlt1: 'One side feels stuck',
+      hookAlt2: 'The contrast is obvious',
+      hookVoice: 'Without this, the same task drags.',
+      bodyVoice: 'Use a split frame to compare the slow path with the app-assisted path.',
+      ctaVoice: `Compare it inside ${options.appName}.`,
+      bodyOverlay: 'Slow path vs fix',
+      ctaOverlay: 'Compare your result',
+      scene: 'split-screen contrast between the messy route and the cleaner app route',
+    },
+    {
+      creativeType: 'Challenge',
+      hookPrimary: 'Can you spot the blocker?',
+      hookAlt1: 'Most people miss this',
+      hookAlt2: 'Find the problem first',
+      hookVoice: 'Can you spot the blocker before I show it?',
+      bodyVoice: 'Turn the pain point into a quick challenge, then show the fix after the viewer guesses.',
+      ctaVoice: `Try the challenge in ${options.appName}.`,
+      bodyOverlay: 'Spot the blocker',
+      ctaOverlay: 'Try the challenge',
+      scene: 'challenge-style opening with the blocker visible but not explained yet',
+    },
+    {
+      creativeType: 'Social Proof',
+      hookPrimary: 'Everyone notices this late',
+      hookAlt1: 'This comment was right',
+      hookAlt2: 'The late clue matters',
+      hookVoice: 'Everyone notices this way too late.',
+      bodyVoice: 'Frame the idea as a comment reply, then prove the comment with a quick demo.',
+      ctaVoice: `Use ${options.appName} for your next test.`,
+      bodyOverlay: 'The comment was right',
+      ctaOverlay: 'Make your next test',
+      scene: 'comment-reply opener with a real-world proof shot immediately after',
+    },
+    {
+      creativeType: 'ASMR',
+      hookPrimary: 'Why it feels harder',
+      hookAlt1: 'The texture gives it away',
+      hookAlt2: 'Listen to the problem',
+      hookVoice: 'This is why it feels harder than it should.',
+      bodyVoice: 'Use a tactile sound or texture cue to make the pain point feel concrete.',
+      ctaVoice: `Check the cleaner path in ${options.appName}.`,
+      bodyOverlay: 'Feel the friction',
+      ctaOverlay: 'Check the cleaner path',
+      scene: 'macro texture or sound cue that makes the friction obvious',
+    },
+    {
+      creativeType: 'Trend Format',
+      hookPrimary: 'Never miss this cue',
+      hookAlt1: 'The cue appears first',
+      hookAlt2: 'This cue changes it',
+      hookVoice: 'Never miss this cue again.',
+      bodyVoice: 'Use a fast trend-style cut to repeat the cue, then show the app payoff.',
+      ctaVoice: `Make the cue obvious with ${options.appName}.`,
+      bodyOverlay: 'Cue first, fix second',
+      ctaOverlay: 'Make it obvious',
+      scene: 'fast trend-style cut built around one repeated visual cue',
+    },
+  ];
+
+  return Array.from({ length: options.quantity }, (_, index) => {
+    const displayIndex = (options.startIndex || 0) + index;
+    const pattern = patterns[displayIndex % patterns.length];
+    const rawIdea = {
+      id: `P0-A${normalizedAngleIndex}-I${displayIndex}`,
+      title: `Idea ${displayIndex + 1}: ${pattern.hookPrimary}`,
+      duration: options.duration,
+      creativeType: pattern.creativeType,
+      meta: {
+        builderVersion: 'prompt_system_builder_v1',
+        pillar: painpoint,
+        pillarIndex: 0,
+        angleName,
+        angleType: 'Curiosity',
+        angleDesc: direction,
+        hookPrimary: pattern.hookPrimary,
+        hookAlt1: pattern.hookAlt1,
+        hookAlt2: pattern.hookAlt2,
+        visualRefNotes: `${visualType} for ${targetMarket}; open on ${pattern.scene}.`,
+        talentProfile: coreUser,
+        dontDo: 'Do not show a generic app screen without the selected pain object.',
+        track: visualType.toLowerCase().includes('motion') ? 'C' : 'B',
+        trackReason: `Fallback keeps the selected angle "${angleName}" visible through ${pattern.scene}.`,
+        priority: 'A',
+      },
+      framework: {
+        coreUser,
+        painpoint,
+        emotion,
+        psp,
+      },
+      explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
+      hook: {
+        visual: `Open with ${pattern.scene}. The first frame clearly shows "${painpoint}" for ${coreUser}, in a ${targetMarket} context, before any app UI appears.`,
+        voice: pattern.hookVoice,
+        textOverlay: pattern.hookPrimary,
+        viTranslation: `Giữ đúng painpoint "${painpoint}" và mở bằng angle "${angleName}".`,
+        viewerProfile: coreUser,
+        viewerEmotion: `Viewer feels ${emotion} because the blocker is visible before the explanation.`,
+        painpointImpact: `The pain point becomes concrete through the first visible object or action.`,
+        whyTheyStopScrolling: `The hook asks a direct question and makes the blocker visible immediately.`,
+      },
+      body: {
+        visual: `Show the stuck moment for two quick beats, then move into ${options.appName} solving the exact same situation without changing the pain point.`,
+        voice: pattern.bodyVoice,
+        textOverlay: pattern.bodyOverlay,
+        viTranslation: `Demo ${psp} như cách giải quyết trực tiếp cho painpoint đã chọn.`,
+      },
+      cta: {
+        visual: `End on the ${options.appName} result screen with the key action visible and no extra feature detour.`,
+        voice: pattern.ctaVoice,
+        textOverlay: pattern.ctaOverlay,
+        viTranslation: `Kêu gọi người xem test đúng tình huống này trong app.`,
+        endCard: `${options.appName} - ${psp}`,
+      },
+    };
+
+    return repairIdeaTrackingFields(
+      normalizeIdeaOutput(rawIdea, {
+        duration: options.duration,
+        appName: options.appName,
+        pillar: painpoint,
+      }),
+      { angleIndex: normalizedAngleIndex, ideaIndex: displayIndex, pillar: painpoint }
+    );
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -770,7 +978,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           selectedModel || 'gemini-2.5-pro'
         );
 
-        let text = await askAI(prompt, {
+        const text = await askAI(prompt, {
           model: resolvedModel,
           temperature: plan.batchQuantity > 1 ? 0.9 : 0.8,
           max_tokens: 16384,
@@ -782,7 +990,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           throw new Error('AI không phản hồi');
         }
 
-        let parsed = parseJson(text);
+        const parsed = parseJson(text);
         if (!parsed) {
           console.error('[generate-ideas] Failed to parse:', text.substring(0, 300));
           throw new Error('Không parse được response. Thử lại.');
@@ -795,7 +1003,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
         });
-        let valid = validation.valid.slice(0, plan.batchQuantity);
+        let valid = dedupeIdeas(validation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
         const duplicateDetected = valid.length > 1 && hasNearDuplicateIdeas(valid);
         const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < plan.batchQuantity;
 
@@ -836,7 +1044,7 @@ ${retryNotes.join('\n\n')}`, {
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
             });
-            const retryValid = retryValidation.valid.slice(0, plan.batchQuantity);
+            const retryValid = dedupeIdeas(retryValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
             const retryHasDuplicates = retryValid.length > 1 && hasNearDuplicateIdeas(retryValid);
 
             const shouldUseRetry = retryValid.length > valid.length
@@ -864,16 +1072,43 @@ ${retryNotes.join('\n\n')}`, {
 
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
+      let fallbackCount = 0;
 
       for (const plan of batchPlans) {
         try {
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
-          aggregatedIdeas.push(...batchIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
+            const missingCount = plan.batchQuantity - batchIdeas.length;
+            const fallbackIdeas = buildFallbackIdeasForFilters({
+              appName,
+              filters,
+              quantity: missingCount,
+              duration,
+              startIndex: plan.batchStartIndex + batchIdeas.length,
+              angleIndex,
+              ideaDescription: config?.ideaDescription,
+            });
+            const uniqueFallback = dedupeIdeas(fallbackIdeas, [...aggregatedIdeas, ...batchIdeas]).slice(0, missingCount);
+            batchIdeas.push(...uniqueFallback);
+
+            if (batchIdeas.length < plan.batchQuantity) {
+              batchIdeas.push(...buildFallbackIdeasForFilters({
+                appName,
+                filters,
+                quantity: plan.batchQuantity - batchIdeas.length,
+                duration,
+                startIndex: plan.batchStartIndex + batchIdeas.length,
+                angleIndex,
+                ideaDescription: config?.ideaDescription,
+              }));
+            }
+
+            fallbackCount += missingCount;
             batchErrors.push(
-              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} only returned ${batchIdeas.length}/${plan.batchQuantity} ideas`
+              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few valid unique ideas, topped up ${missingCount}.`
             );
           }
+          aggregatedIdeas.push(...batchIdeas.slice(0, plan.batchQuantity));
         } catch (batchError) {
           const rangeLabel = `${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`;
           console.error(`[generate-ideas] Batch ${rangeLabel} failed:`, batchError);
@@ -883,16 +1118,38 @@ ${retryNotes.join('\n\n')}`, {
               : `${rangeLabel}: Unknown batch error`
           );
 
-          if (aggregatedIdeas.length === 0) {
-            return NextResponse.json({ error: 'AI không phản hồi. Thử lại.' }, { status: 500 });
-          }
-
-          break;
+          const fallbackIdeas = buildFallbackIdeasForFilters({
+            appName,
+            filters,
+            quantity: plan.batchQuantity,
+            duration,
+            startIndex: plan.batchStartIndex,
+            angleIndex,
+            ideaDescription: config?.ideaDescription,
+          });
+          aggregatedIdeas.push(...fallbackIdeas);
+          fallbackCount += fallbackIdeas.length;
         }
       }
 
       if (aggregatedIdeas.length === 0) {
         return NextResponse.json({ error: 'Không có kết quả hơp lệ.' }, { status: 500 });
+      }
+
+      if (aggregatedIdeas.length < requestedQuantity) {
+        const missingCount = requestedQuantity - aggregatedIdeas.length;
+        const finalTopUp = buildFallbackIdeasForFilters({
+          appName,
+          filters,
+          quantity: missingCount,
+          duration,
+          startIndex: aggregatedIdeas.length,
+          angleIndex,
+          ideaDescription: config?.ideaDescription,
+        });
+        aggregatedIdeas.push(...finalTopUp);
+        fallbackCount += finalTopUp.length;
+        batchErrors.push(`Final top-up added ${missingCount} fallback ideas to satisfy requested quantity.`);
       }
 
       const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity);
@@ -904,6 +1161,7 @@ ${retryNotes.join('\n\n')}`, {
           generatedQuantity: finalIdeas.length,
           batchCount: batchPlans.length,
           partial: finalIdeas.length < requestedQuantity,
+          fallbackCount,
           warnings: batchErrors.length > 0 ? batchErrors : undefined,
         },
       });
