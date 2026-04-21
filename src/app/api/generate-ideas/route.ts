@@ -639,7 +639,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics, trendingStructures } = body;
       const featureContext = filters?.solution?.length ? filters.solution.join(', ') : 'General App Features';
       const requestedQuantity = Math.min(toPositiveInt(config?.quantity, 3), MAX_IDEAS_PER_REQUEST);
-      const duration = config?.duration || '30s';
+      const duration = config?.duration || 'Short social-first runtime';
       const visualType = config?.visualType || 'UGC (Người thật)';
       const targetLang = detectLang(filters?.coreUser);
       const marketContext = buildMarketContext(filters?.targetMarket);
@@ -913,7 +913,7 @@ ${retryNotes.join('\n\n')}`, {
     const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics, trendingStructures } = body;
     const featureContext = filters?.solution?.length ? filters.solution.join(', ') : "General App Features";
     const quantity = Math.min(config?.quantity || 3, 5); // Cap at 5 to avoid gateway timeout
-    const duration = config?.duration || '30s';
+    const duration = config?.duration || 'Short social-first runtime';
     const visualType = config?.visualType || 'UGC (Người thật)';
     const targetLang = detectLang(filters?.coreUser);
     const marketContext = buildMarketContext(filters?.targetMarket);
@@ -1007,7 +1007,7 @@ ${diversityBlock || ''}
 
 ## TASK
 Generate ${quantity} production-ready full ideas for the selected filter combination.
-- Duration: ${duration}
+- Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
 - If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.

@@ -26,13 +26,34 @@ function readText(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function stripVariantSuffix(value: string) {
+  let next = value.trim();
+  while (/\s*-\s*Biến thể\s*\d+\s*$/i.test(next)) {
+    next = next.replace(/\s*-\s*Biến thể\s*\d+\s*$/i, '').trim();
+  }
+  return next;
+}
+
+function compactText(value: string, limit = 72) {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit).trim()}...`;
+}
+
 function buildFallbackHookVariations(hook: Record<string, unknown>, instruction: string, quantity: number) {
   const title = readText(hook.title, 'Winning Hook');
+  const baseTitle = stripVariantSuffix(title) || title;
   const concept = readText(hook.hook_concept, title);
-  const visualDetail = readText(hook.visual_detail, 'A tight handheld close-up that reveals the pain point immediately');
+  const visualDetail = readText(
+    hook.visual_detail,
+    'A tight handheld close-up that reveals the pain point immediately',
+  );
   const painpoint = readText(hook.painpoint, 'the viewer pain point');
   const emotion = readText(hook.emotion, 'curiosity');
   const coreUser = readText(hook.core_user, 'target viewer');
+  const instructionHint = compactText(readText(instruction, concept), 88);
+  const overlayBase = compactText(baseTitle, 32) || 'Winning hook';
   const bases = [
     'Change the setting and make the first frame more unexpected',
     'Keep the same object but reveal the blocker through a different action',
@@ -47,22 +68,24 @@ function buildFallbackHookVariations(hook: Record<string, unknown>, instruction:
 
     return {
       id: `hook-fallback-${Date.now()}-${index}`,
-      title: `${title} - Biến thể ${displayIndex}`,
+      title: `${baseTitle} - Biến thể ${displayIndex}`,
       explanation: `Fallback nhanh vì AI gateway đang lỗi. Giữ concept "${concept}", đổi execution theo hướng: ${angle}.`,
       meta: {
         builderVersion: 'hook_library_fast_fallback_v1',
-        hookPrimary: `Try this before morning`,
-        hookAlt1: `Most people skip this`,
-        hookAlt2: `This looks small but matters`,
+        hookPrimary: overlayBase,
+        hookAlt1: compactText(`${overlayBase} - góc mở khác`, 40),
+        hookAlt2: compactText(`${overlayBase} - nhấn đau hơn`, 40),
         visualRefNotes: visualDetail,
         talentProfile: coreUser,
         dontDo: 'Do not turn this into a full Body or CTA script',
       },
       hook: {
-        visual: `${angle}. Start from: ${visualDetail}. Make "${instruction}" visible in the first 1 second.`,
-        voice: `If you care about this, try this tiny check first.`,
-        textOverlay: `Try this first`,
-        viTranslation: `Nếu bạn quan tâm chuyện này, hãy thử kiểm tra nhỏ này trước.`,
+        script: `${angle}. Start from: ${visualDetail}. Keep the original pain point "${painpoint}" and make "${instructionHint || baseTitle}" visible in the first second.`,
+        visual: `${angle}. Start from: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second.`,
+        text: overlayBase,
+        voice: `${overlayBase}: keep the same pain point, but reveal it faster in the first second.`,
+        textOverlay: overlayBase,
+        viTranslation: `${overlayBase}: giữ đúng nỗi đau cũ, nhưng mở nhanh hơn ngay giây đầu tiên.`,
         viewerEmotion: emotion,
         painpointImpact: painpoint,
         whyTheyStopScrolling: `Visual đổi bối cảnh nhưng vẫn bám đúng nỗi đau "${painpoint}", nên người xem nhận ra vấn đề ngay.`,

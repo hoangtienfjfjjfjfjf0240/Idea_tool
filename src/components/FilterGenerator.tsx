@@ -1,10 +1,11 @@
 'use client';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Clock, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2, Hash, Eye } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2, Hash, Eye } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 import { CATEGORY_SEEDS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
+import { buildFavoriteFingerprint, loadFavoriteKeys, saveFavoriteKeys } from '@/lib/favorites';
 
 interface FilterGeneratorProps {
   app: AppProject;
@@ -49,6 +50,8 @@ interface ImportedTrendAnalysis {
   promptBooster: string;
   modelUsed?: string;
 }
+
+const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
 
 const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
@@ -360,7 +363,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const progressRef = useRef<NodeJS.Timeout | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [results, setResults] = useState<GeneratedIdea[]>([]);
-  const [duration, setDuration] = useState('30s');
   const [quantity, setQuantity] = useState(3);
   const [ideaDescription, setIdeaDescription] = useState('');
   const [editModeCat, setEditModeCat] = useState<string | null>(null);
@@ -378,6 +380,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // New feature states
   const [expandedIdeas, setExpandedIdeas] = useState<Set<string>>(new Set());
   const [favoriteIdeas, setFavoriteIdeas] = useState<Set<string>>(new Set());
+  const [showFavoriteIdeas, setShowFavoriteIdeas] = useState(false);
   const [trendingTopics, setTrendingTopics] = useState<string[]>([]);
   const [trendingInput, setTrendingInput] = useState('');
   const [importedTrendAnalyses, setImportedTrendAnalyses] = useState<ImportedTrendAnalysis[]>([]);
@@ -507,6 +510,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       dbService.getIdeas(app.id).then(ideas => {
         setResults(ideas);
         setSavedHistory(ideas);
+        setShowHistory(true);
       });
     }
   }, [currentScreen]);
@@ -526,6 +530,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const ideas = await dbService.getIdeas(app.id);
     setSavedHistory(ideas);
   };
+
+  const getIdeaFavoriteKey = useCallback((idea: GeneratedIdea) => buildFavoriteFingerprint([
+    'filter-generator',
+    app.id,
+    idea.title,
+    idea.duration,
+    idea.content?.hook?.voice,
+    idea.content?.hook?.textOverlay,
+    idea.content?.hook?.script,
+    idea.content?.body?.voice,
+    idea.content?.cta?.voice,
+    idea.content?.cta?.endCard,
+  ]), [app.id]);
+
+  useEffect(() => {
+    setFavoriteIdeas(loadFavoriteKeys(app.id));
+    setShowFavoriteIdeas(false);
+  }, [app.id]);
+
+  useEffect(() => {
+    saveFavoriteKeys(app.id, favoriteIdeas);
+  }, [app.id, favoriteIdeas]);
 
   // === Category Management ===
   const handleAddCategory = () => {
@@ -642,7 +668,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     try {
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
         const c = idea.content as any;
-        return `${i + 1}. "${idea.title}" (${idea.duration})
+        return `${i + 1}. "${idea.title}"
    Framework: CoreUser="${c?.framework?.coreUser || ''}", Painpoint="${c?.framework?.painpoint || ''}", Emotion="${c?.framework?.emotion || ''}", PSP="${c?.framework?.psp || ''}"
    Hook: visual="${c?.hook?.visual || ''}", content="${c?.hook?.content || ''}", voice="${c?.hook?.voice || ''}"
    Body: visual="${c?.body?.visual || ''}", voice="${c?.body?.voice || ''}"
@@ -673,7 +699,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             filters: task.filtersSnapshot,
             config: {
               quantity,
-              duration,
+              duration: IDEA_RUNTIME_GUIDANCE,
               ideaDescription,
               visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
               seasonalVisualContext,
@@ -736,7 +762,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       if (result.success && result.data?.length > 0) {
         ideas = result.data.map(({ item, filtersSnapshot }) => ({
           title: item.title || `Ý tưởng: ${app.name}`,
-          duration: item.duration || duration,
+          duration: item.duration || IDEA_RUNTIME_GUIDANCE,
           filtersSnapshot,
           content: {
             creativeType: item.creativeType || '',
@@ -771,7 +797,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         ideas = anglesToGenerate.flatMap((angle, angleIndex) =>
           Array.from({ length: quantity }, (_, ideaIndex) => ({
             title: `Ý tưởng ${angleIndex * quantity + ideaIndex + 1}: ${app.name}`,
-            duration,
+            duration: IDEA_RUNTIME_GUIDANCE,
             filtersSnapshot: {
               ...filters,
               angle: angle ? [angle] : [],
@@ -798,7 +824,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 emotion: filters.emotion[0] || 'Tò mò',
                 psp: filters.solution[0] || app.name,
               },
-              explanation: `Video ${duration} kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
+          explanation: `Video kết hợp ${filters.painPoint[0] || 'nỗi đau'} với ${filters.solution[0] || 'tính năng chính'} của ${app.name}`,
               hook: {
                 visual: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
                 script: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
@@ -893,7 +919,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const hookVariantsBlock = [meta?.hookPrimary, meta?.hookAlt1, meta?.hookAlt2].some(Boolean)
       ? `\n🧠 HOOK VARIATIONS\n[PRIMARY] ${meta?.hookPrimary || ''}\n[ALT 1] ${meta?.hookAlt1 || ''}\n[ALT 2] ${meta?.hookAlt2 || ''}\n`
       : '';
-    const copyText = `TIÊU ĐỀ: ${idea.title} (${idea.duration})\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK (3-5s)\n[VISUAL] ${hookVisual}\n[VOICE] ${c.hook?.voice || ''}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY (10-25s)\n[VISUAL] ${bodyVisual}\n[VOICE] ${c.body?.voice || ''}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA (3-5s)\n[VISUAL] ${ctaVisual}\n[VOICE] ${c.cta?.voice || ''}\n[TEXT OVERLAY] ${c.cta?.textOverlay || c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
+    const copyText = `TIÊU ĐỀ: ${idea.title}\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK\n[VISUAL] ${hookVisual}\n[VOICE] ${c.hook?.voice || ''}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY\n[VISUAL] ${bodyVisual}\n[VOICE] ${c.body?.voice || ''}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA\n[VISUAL] ${ctaVisual}\n[VOICE] ${c.cta?.voice || ''}\n[TEXT OVERLAY] ${c.cta?.textOverlay || c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
     const finalCopyText = hookVariantsBlock
       ? copyText.replace('═══ VIDEO SCRIPT ═══\n\n', `═══ VIDEO SCRIPT ═══\n${hookVariantsBlock}\n`)
       : copyText;
@@ -910,7 +936,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const ctaVisual = content.cta?.visual || content.cta?.script || '';
     const primaryHook = meta?.hookPrimary || '';
     const sections = [
-      `TIÊU ĐỀ: ${idea.title} (${idea.duration})`,
+      `TIÊU ĐỀ: ${idea.title}`,
       '═══ FRAMEWORK ═══',
       `Core User: ${framework?.coreUser || ''}`,
       `Painpoint: ${framework?.painpoint || ''}`,
@@ -996,6 +1022,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer(null);
   };
 
+  const historyCount = savedHistory.length;
+  const favoriteCount = useMemo(() => {
+    const keys = new Set(savedHistory.map(getIdeaFavoriteKey).filter(key => favoriteIdeas.has(key)));
+    return keys.size;
+  }, [favoriteIdeas, getIdeaFavoriteKey, savedHistory]);
+
+  useEffect(() => {
+    if (favoriteCount === 0 && showFavoriteIdeas) {
+      setShowFavoriteIdeas(false);
+    }
+  }, [favoriteCount, showFavoriteIdeas]);
+
+  const visibleResults = useMemo(() => {
+    const source = showHistory ? savedHistory : results;
+    if (!showFavoriteIdeas) return source;
+    return source.filter(idea => favoriteIdeas.has(getIdeaFavoriteKey(idea)));
+  }, [favoriteIdeas, getIdeaFavoriteKey, results, savedHistory, showFavoriteIdeas, showHistory]);
+
   const seasonalVisualContext = useMemo<SeasonalVisualContext | null>(() => {
     const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
     const seasonKey = activeMonth?.season || selectedSeason;
@@ -1033,10 +1077,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const totalIdeasToGenerate = selectedAngleCount * quantity;
 
   const handleOpenResults = () => {
-    if (results.length === 0 && savedHistory.length > 0) {
-      setResults(savedHistory);
-      setShowHistory(true);
-    }
+    setShowHistory(results.length === 0 && savedHistory.length > 0);
     setScreen('f2.1.2');
   };
 
@@ -1478,19 +1519,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             )}
           </div>
 
-          {/* Duration + Quantity */}
-          <div className="grid grid-cols-2 gap-5">
-            <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Clock size={14} /> Thời lượng</label>
-              <div className="flex gap-2">
-                {['15s', '30s', '60s'].map(d => (
-                  <button key={d} onClick={() => setDuration(d)}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${duration === d ? 'bg-indigo-500 text-white shadow-lg' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>
-                    {d}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Quantity */}
+          <div className="grid grid-cols-1 gap-5">
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
               <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><ListOrdered size={14} /> Số lượng Idea</label>
               <input type="number" min="1" max="10" value={quantity}
@@ -1593,18 +1623,32 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-gray-100">
         <div>
           <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <Wand2 className="text-indigo-500" size={24} /> Kết Quả ({results.length})
+            <Wand2 className="text-indigo-500" size={24} /> Kết Quả ({visibleResults.length})
           </h3>
           <p className="text-gray-400 text-sm mt-1">
             {showHistory ? 'Tất cả ý tưởng đã tạo' : 'Ý tưởng theo bối cảnh đã chọn'}
+            {showFavoriteIdeas ? ' • Đang lọc các idea đã thả tim' : ''}
             {' • '}<span className="text-emerald-500 font-medium">Đã lưu Supabase ✓</span>
           </p>
         </div>
         <div className="flex gap-2">
-          {savedHistory.length > results.length && !showHistory && (
-            <button onClick={() => { setResults(savedHistory); setShowHistory(true); }}
+          {historyCount > 0 && (
+            <button onClick={() => setShowHistory(prev => !prev)}
               className="text-sm flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600">
-              📜 Lịch sử ({savedHistory.length})
+              {showHistory ? 'Ẩn Lịch sử' : `📜 Lịch sử (${historyCount})`}
+            </button>
+          )}
+          {favoriteCount > 0 && (
+            <button
+              onClick={() => setShowFavoriteIdeas(prev => !prev)}
+              className={`text-sm flex items-center gap-2 px-4 py-2 border rounded-xl transition-colors ${
+                showFavoriteIdeas
+                  ? 'border-rose-200 bg-rose-50 text-rose-600'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <Heart size={14} fill={showFavoriteIdeas ? 'currentColor' : 'none'} />
+              {showFavoriteIdeas ? 'Hiện tất cả' : `Đã thả tim (${favoriteCount})`}
             </button>
           )}
           <button onClick={() => setScreen('f2.1.1')} className="text-sm flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600"><ArrowLeft size={14} /> Cấu hình</button>
@@ -1614,12 +1658,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         </div>
       </div>
 
-      {results.length > 0 ? (
+      {visibleResults.length > 0 ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {results.map((idea, idx) => {
+          {visibleResults.map((idea, idx) => {
             const c = idea.content as any;
             const isEditing = editingIdea === idea.id;
-            const ideaKey = idea.id || `idea-${idx}`;
+            const ideaKey = getIdeaFavoriteKey(idea) || idea.id || `idea-${idx}`;
             const isExpanded = expandedIdeas.has(ideaKey);
             const isFavorite = favoriteIdeas.has(ideaKey);
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
@@ -1643,7 +1687,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <div className="flex gap-2 flex-wrap">
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                         <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
-                        <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{idea.duration || '30s'}</span>
                         {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
                         {angleTag && <span className="text-[11px] px-2 py-0.5 bg-teal-50 text-teal-600 rounded-md">{truncatePreviewText(angleTag, 32)}</span>}
                       </div>
@@ -1753,11 +1796,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                                 cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', voice: refined.cta.voice || '', text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
                               };
                               const newTitle = refined.title || idea.title;
-                              await dbService.updateIdeaContent(idea.id, newTitle, newContent);
-                              const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: newTitle, content: newContent } : i);
-                              setResults(updater);
-                              setSavedHistory(updater);
-                              setRefiningIdea(null);
+                               await dbService.updateIdeaContent(idea.id, newTitle, newContent);
+                               const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: newTitle, content: newContent } : i);
+                               setResults(updater);
+                               setSavedHistory(updater);
+                               setRefiningIdea(null);
                               setRefineInstruction('');
                             } else {
                               alert(result.error || 'AI Refine thất bại. Thử lại.');
@@ -1831,7 +1874,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         type="button"
                         onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
                         className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
-                        title="Favorite"
+                        title={isFavorite ? 'Bỏ khỏi danh sách đã chọn' : 'Đánh dấu đã chọn'}
                       >
                         <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
                       </button>
@@ -1854,8 +1897,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       ) : (
         <div className="text-center py-20 text-gray-400">
           <Wand2 size={48} className="mx-auto mb-4 text-gray-300" />
-          <p className="font-bold text-gray-500">Chưa có ý tưởng nào</p>
-          <p className="text-sm">Bấm &quot;Tạo thêm&quot; để bắt đầu.</p>
+          <p className="font-bold text-gray-500">{showFavoriteIdeas ? 'Chưa có idea nào được thả tim' : 'Chưa có ý tưởng nào'}</p>
+          <p className="text-sm">
+            {showFavoriteIdeas ? 'Tắt bộ lọc "Đã thả tim" hoặc thả tim ở các card để gom các idea đã chọn.' : 'Bấm "Tạo thêm" để bắt đầu.'}
+          </p>
         </div>
       )}
     </div>

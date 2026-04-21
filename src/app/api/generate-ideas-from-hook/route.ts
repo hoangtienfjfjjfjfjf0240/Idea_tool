@@ -31,7 +31,7 @@ function resolveModel(selected?: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const { hook, quantity = 3, duration = '30s', appName, appCategory, ideaDirection, selectedModel } = await request.json();
+    const { hook, quantity = 3, duration = 'Short social-first runtime', appName, appCategory, ideaDirection, selectedModel } = await request.json();
     const cappedQty = Math.min(quantity, 5);
     const targetLanguage = 'English';
 
@@ -72,7 +72,7 @@ ${frameworkInjection}
 Create ${cappedQty} full ideas inspired by the winning hook.
 - Keep the same strategic DNA and problem-solution logic.
 - Change situation, character, setting, and opening mechanism enough that they are not shallow rewrites.
-- Each output must include hook, body, and CTA for a ${duration} video.
+- Each output must include hook, body, and CTA, but keep runtime flexible and social-first instead of forcing a fixed 15s/30s/60s bucket.
 - If the user provided an idea direction, prioritize it without breaking the winning DNA.
 
 ${buildIdeaOutputSpec({ quantity: cappedQty, duration, appName, language: targetLanguage })}

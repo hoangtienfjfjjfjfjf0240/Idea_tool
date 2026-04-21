@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Check, RefreshCw, Eye, Trash2, Brain, Clock } from 'lucide-react';
+import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loader2, ListOrdered, Upload, Check, RefreshCw, Eye, Trash2, Brain } from 'lucide-react';
 import type { ScreenType, Hook, AppProject, FilterState, IdeaContent, GeneratedIdea } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
@@ -53,21 +53,25 @@ const FULL_IDEA_SECTIONS = [
 ] as const;
 
 const MODIFY_HOOK_REQUEST_TIMEOUT_MS = 70000;
+const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
 
 export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app, selectedModel }) => {
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [selectedHook, setSelectedHook] = useState<Hook | null>(null);
   const [modifyPrompt, setModifyPrompt] = useState('');
   const [generatedIdeas, setGeneratedIdeas] = useState<HookIdea[]>([]);
+  const [modifyLiveIdeas, setModifyLiveIdeas] = useState<HookIdea[]>([]);
+  const [isViewingModifyHistory, setIsViewingModifyHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [quantity, setQuantity] = useState(3);
   // Hook-to-Ideas state
   const [fullIdeas, setFullIdeas] = useState<FullIdea[]>([]);
+  const [fullIdeasLive, setFullIdeasLive] = useState<FullIdea[]>([]);
+  const [isViewingFullIdeasHistory, setIsViewingFullIdeasHistory] = useState(false);
   const [fullIdeasLoading, setFullIdeasLoading] = useState(false);
   const [fullIdeasSaveStatus, setFullIdeasSaveStatus] = useState<SaveStatus>('idle');
   const [savedFullIdeasCount, setSavedFullIdeasCount] = useState(0);
   const [savedFullIdeasSessionId, setSavedFullIdeasSessionId] = useState<string | null>(null);
-  const [fullIdeasDuration, setFullIdeasDuration] = useState('30s');
   const [fullIdeasQty, setFullIdeasQty] = useState(3);
   const [ideaDirection, setIdeaDirection] = useState('');
   const [modifiedHooksSaveStatus, setModifiedHooksSaveStatus] = useState<SaveStatus>('idle');
@@ -150,15 +154,40 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setTimeout(() => { setProgress(0); setProgressLabel(''); }, 1500);
   };
 
+  const stripVariantSuffix = (value: string) => {
+    let next = value.trim();
+    while (/\s*-\s*Biến thể\s*\d+\s*$/i.test(next)) {
+      next = next.replace(/\s*-\s*Biến thể\s*\d+\s*$/i, '').trim();
+    }
+    return next;
+  };
+
+  const buildModifiedHookTitle = (sourceTitle: string, index: number) => {
+    const baseTitle = stripVariantSuffix(sourceTitle) || sourceTitle.trim();
+    return `${baseTitle} - Biến thể ${index + 1}`;
+  };
+
+  const normalizeDisplayedHookTitle = (value: string) => {
+    const matches = [...value.matchAll(/-\s*Biến thể\s*(\d+)/gi)];
+    if (matches.length <= 1) return value;
+    const firstMatch = matches[0];
+    const base = value.slice(0, firstMatch.index).trim();
+    const lastVariant = matches[matches.length - 1]?.[1] || '1';
+    return `${base} - Biến thể ${lastVariant}`;
+  };
+
   const buildLocalModifiedHooks = (sourceHook: Hook, instruction: string, count: number): HookIdea[] =>
     Array.from({ length: count }, (_, i) => ({
       id: crypto.randomUUID(),
-      title: `${sourceHook.title} - Biến thể ${i + 1}`,
+      title: buildModifiedHookTitle(sourceHook.title, i),
       explanation: `Áp dụng "${sourceHook.hook_concept || sourceHook.title}" kết hợp "${instruction}"`,
       hook: {
+        script: `${sourceHook.visual_detail || 'Cảnh mở bằng hook gốc'}. Giữ DNA của hook "${stripVariantSuffix(sourceHook.title)}", nhưng đổi execution theo hướng: ${instruction}.`,
         visual: `${sourceHook.visual_detail || 'Cận cảnh'} + ${instruction}`,
-        text: `${sourceHook.title} (v${i + 1})`,
-        voice: `"${instruction} — ${sourceHook.description || ''}"`,
+        text: stripVariantSuffix(sourceHook.title),
+        textOverlay: stripVariantSuffix(sourceHook.title),
+        voice: `${stripVariantSuffix(sourceHook.title)} — biến thể ${i + 1}. ${instruction}.`,
+        viTranslation: `${stripVariantSuffix(sourceHook.title)} — biến thể ${i + 1}. ${instruction}.`,
       },
     }));
 
@@ -182,6 +211,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setModifiedHooksSaveStatus('idle');
     setSavedModifiedHookCount(0);
     setSavedModifiedHookSessionId(null);
+    setIsViewingModifyHistory(false);
     const controller = new AbortController();
     let requestTimedOut = false;
     const timeoutId = window.setTimeout(() => {
@@ -209,16 +239,19 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       if (res.ok && result.success && result.data?.length > 0) {
         const generated = result.data as HookIdea[];
         setGeneratedIdeas(generated);
+        setModifyLiveIdeas(generated);
         await saveModifiedHooksToHistory(generated);
       } else {
         const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
+        setModifyLiveIdeas(mockIdeas);
         await saveModifiedHooksToHistory(mockIdeas);
       }
     } catch (err) {
       if (requestTimedOut && selectedHook) {
         const mockIdeas = buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity);
         setGeneratedIdeas(mockIdeas);
+        setModifyLiveIdeas(mockIdeas);
         await saveModifiedHooksToHistory(mockIdeas);
         return;
       }
@@ -241,7 +274,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   };
 
   const handleCopy = (idea: HookIdea) => {
-    const scriptContent = idea.hook.script || `VISUAL: ${idea.hook.visual}\n[VOICE] ${idea.hook.voice}`;
+    const scriptContent = idea.hook.voice
+      ? `[VOICE] ${idea.hook.voice}`
+      : idea.hook.script || `VISUAL: ${idea.hook.visual}\n[VOICE] ${idea.hook.voice}`;
     const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\n\n${scriptContent}\n\n[TEXT OVERLAY] ${idea.hook.textOverlay || idea.hook.text}`;
     navigator.clipboard.writeText(text);
   };
@@ -253,7 +288,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const content = idea.content;
     return {
       id: idea.id,
-      title: readText(idea.title, readText(content.meta?.hookPrimary, 'Modified Hook')),
+      title: normalizeDisplayedHookTitle(readText(idea.title, readText(content.meta?.hookPrimary, 'Modified Hook'))),
       explanation: readText(content.explanation, 'Modified hook from history'),
       hook: {
         script: readText(content.hook?.script, readText(content.hook?.voice, readText(content.hook?.visual))),
@@ -275,7 +310,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     return {
       id: idea.id,
       title: readText(idea.title, 'Full Idea'),
-      duration: readText(idea.duration, '30s'),
+      duration: readText(idea.duration),
       creativeType: readText(content.creativeType, 'Creative'),
       explanation: readText(content.explanation),
       framework: content.framework,
@@ -357,18 +392,30 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   }, [app?.id, selectedHook, applyFullIdeaHistoryIdeas]);
 
   const handleOpenModifyHistory = useCallback(async () => {
+    if (isViewingModifyHistory) {
+      setGeneratedIdeas(modifyLiveIdeas);
+      setIsViewingModifyHistory(false);
+      return;
+    }
     await loadModifyHistoryForSelectedHook();
+    setIsViewingModifyHistory(true);
     window.requestAnimationFrame(() => {
       modifyResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [loadModifyHistoryForSelectedHook]);
+  }, [isViewingModifyHistory, loadModifyHistoryForSelectedHook, modifyLiveIdeas]);
 
   const handleOpenFullIdeasHistory = useCallback(async () => {
+    if (isViewingFullIdeasHistory) {
+      setFullIdeas(fullIdeasLive);
+      setIsViewingFullIdeasHistory(false);
+      return;
+    }
     await loadFullIdeasHistoryForSelectedHook();
+    setIsViewingFullIdeasHistory(true);
     window.requestAnimationFrame(() => {
       fullIdeasResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [loadFullIdeasHistoryForSelectedHook]);
+  }, [fullIdeasLive, isViewingFullIdeasHistory, loadFullIdeasHistoryForSelectedHook]);
 
   useEffect(() => {
     if (!app?.id || !selectedHook) return;
@@ -386,6 +433,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       });
     }
   }, [app?.id, currentScreen, selectedHook, checkModifyHistoryAvailability, checkFullIdeasHistoryAvailability]);
+
+  useEffect(() => {
+    setIsViewingModifyHistory(false);
+    setIsViewingFullIdeasHistory(false);
+  }, [currentScreen, selectedHook?.id]);
 
   const buildHookFilterSnapshot = (hook: Hook): FilterState => ({
     coreUser: hook.core_user ? [hook.core_user] : [],
@@ -528,7 +580,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       const savedIdeas = await dbService.saveIdeas(
         app.id,
         ideas.map((idea, index) => ({
-          title: readText(idea.title, `${selectedHook.title} - Modified Hook ${index + 1}`),
+          title: normalizeDisplayedHookTitle(readText(idea.title, buildModifiedHookTitle(selectedHook.title, index))),
           duration: 'Hook only',
           content: normalizeModifiedHookContent(idea, selectedHook),
           filtersSnapshot,
@@ -541,10 +593,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       setAvailableModifyHistoryCount(savedCount);
       setSavedModifiedHookCount(savedCount);
       setSavedModifiedHookSessionId(savedCount > 0 ? sessionId : null);
-      setGeneratedIdeas(prev => prev.map((idea, index) => ({
+      const attachSavedIds = (list: HookIdea[]) => list.map((idea, index) => ({
         ...idea,
         savedIdeaId: savedIdeas[index]?.id,
-      })));
+      }));
+      setGeneratedIdeas(attachSavedIds);
+      setModifyLiveIdeas(attachSavedIds);
       setModifiedHooksSaveStatus(savedCount > 0 ? 'saved' : 'error');
     } catch (err) {
       console.error('Save modified hooks failed:', err);
@@ -567,7 +621,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         app.id,
         ideas.map((idea, index) => ({
           title: readText(idea.title, `${selectedHook.title} - Full Idea ${index + 1}`),
-          duration: readText(idea.duration, fullIdeasDuration),
+          duration: readText(idea.duration, IDEA_RUNTIME_GUIDANCE),
           content: normalizeFullIdeaContent(idea, selectedHook),
           filtersSnapshot,
         })),
@@ -683,21 +737,112 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     } finally { setIsSaving(false); }
   };
 
-  const extractThumbnail = (file: File): Promise<string> => {
+  const extractVideoAssets = (file: File): Promise<{ thumbnail: string; analysisImage: string }> => {
     return new Promise((resolve) => {
       const video = document.createElement('video');
-      video.preload = 'metadata'; video.muted = true; video.playsInline = true;
-      const cleanup = () => { if (video.src) URL.revokeObjectURL(video.src); video.remove(); };
-      video.onloadeddata = () => { video.currentTime = 0.1; };
-      video.onseeked = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); resolve(canvas.toDataURL('image/jpeg', 0.7)); }
-        else resolve('');
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+
+      const cleanup = () => {
+        if (video.src) URL.revokeObjectURL(video.src);
+        video.remove();
+      };
+
+      const captureFrame = (time: number) => new Promise<string>((frameResolve) => {
+        const handleSeeked = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            frameResolve('');
+            return;
+          }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          frameResolve(canvas.toDataURL('image/jpeg', 0.78));
+        };
+
+        video.onseeked = handleSeeked;
+        video.currentTime = Math.max(0, Math.min(time, Math.max(video.duration - 0.05, 0)));
+      });
+
+      video.onloadedmetadata = async () => {
+        try {
+          const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+          const capturePoints = [0.1, duration * 0.35, duration * 0.75];
+          const frames: string[] = [];
+
+          for (const point of capturePoints) {
+            const frame = await captureFrame(point);
+            if (frame) frames.push(frame);
+          }
+
+          const thumbnail = frames[0] || '';
+          if (frames.length === 0) {
+            resolve({ thumbnail: '', analysisImage: '' });
+            cleanup();
+            return;
+          }
+
+          const images = await Promise.all(frames.map(frame => new Promise<HTMLImageElement>((imgResolve, imgReject) => {
+            const img = new Image();
+            img.onload = () => imgResolve(img);
+            img.onerror = () => imgReject(new Error('Frame load failed'));
+            img.src = frame;
+          })));
+
+          const frameWidth = 360;
+          const frameHeight = Math.round((images[0].naturalHeight / images[0].naturalWidth) * frameWidth);
+          const headerHeight = 64;
+          const gap = 16;
+          const canvas = document.createElement('canvas');
+          canvas.width = images.length * frameWidth + Math.max(0, images.length - 1) * gap;
+          canvas.height = headerHeight + frameHeight;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({ thumbnail, analysisImage: thumbnail });
+            cleanup();
+            return;
+          }
+
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#0f172a';
+          ctx.font = 'bold 22px Arial';
+          ctx.fillText('Video analysis frames', 16, 28);
+          ctx.fillStyle = '#475569';
+          ctx.font = '16px Arial';
+          ctx.fillText('Infer core user, painpoint, emotion, and creative type from these moments.', 16, 52);
+
+          images.forEach((img, index) => {
+            const x = index * (frameWidth + gap);
+            ctx.drawImage(img, x, headerHeight, frameWidth, frameHeight);
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+            ctx.fillRect(x + 10, headerHeight + 10, 90, 28);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 15px Arial';
+            ctx.fillText(index === 0 ? 'Opening' : index === 1 ? 'Middle' : 'Later', x + 20, headerHeight + 29);
+          });
+
+          resolve({
+            thumbnail,
+            analysisImage: canvas.toDataURL('image/jpeg', 0.88),
+          });
+        } catch (error) {
+          console.error('Extract video assets failed:', error);
+          resolve({ thumbnail: '', analysisImage: '' });
+        } finally {
+          cleanup();
+        }
+      };
+
+      video.onerror = () => {
+        resolve({ thumbnail: '', analysisImage: '' });
         cleanup();
       };
-      video.onerror = () => { resolve(''); cleanup(); };
+
       video.src = URL.createObjectURL(file);
     });
   };
@@ -752,13 +897,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
     if (file.type.startsWith('video')) {
       const localUrl = URL.createObjectURL(file);
-      const thumb = await extractThumbnail(file);
-      pendingThumbRef.current = thumb || null;
-      setEditingHookData(prev => ({ ...prev, localVideoUrl: localUrl, localImageUrl: thumb || undefined }));
+      const { thumbnail, analysisImage } = await extractVideoAssets(file);
+      pendingThumbRef.current = thumbnail || null;
+      setEditingHookData(prev => ({ ...prev, localVideoUrl: localUrl, localImageUrl: thumbnail || undefined }));
 
-      // Send thumbnail frame to Gemini for analysis
-      if (thumb) {
-        await analyzeWithGemini(thumb, file.name);
+      // Send a contact sheet from multiple frames so the AI can infer strategy fields from the whole video.
+      if (analysisImage || thumbnail) {
+        await analyzeWithGemini(analysisImage || thumbnail, file.name);
       } else {
         setEditingHookData(prev => ({ ...prev, subtitle: 'Video Hook' }));
         setAnalysisSuccess(true);
@@ -849,6 +994,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <button onClick={() => {
                     setSelectedHook(hook);
                     setGeneratedIdeas([]);
+                    setModifyLiveIdeas([]);
+                    setIsViewingModifyHistory(false);
                     setModifyPrompt('');
                     setModifiedHooksSaveStatus('idle');
                     setSavedModifiedHookCount(0);
@@ -862,6 +1009,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <button onClick={() => {
                     setSelectedHook(hook);
                     setFullIdeas([]);
+                    setFullIdeasLive([]);
+                    setIsViewingFullIdeasHistory(false);
                     setFullIdeasSaveStatus('idle');
                     setSavedFullIdeasCount(0);
                     setSavedFullIdeasSessionId(null);
@@ -930,6 +1079,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   setPreviewHook(null);
                   setSelectedHook(previewHook);
                   setGeneratedIdeas([]);
+                  setModifyLiveIdeas([]);
+                  setIsViewingModifyHistory(false);
                   setModifyPrompt('');
                   setModifiedHooksSaveStatus('idle');
                   setSavedModifiedHookCount(0);
@@ -1093,9 +1244,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const handleGenerateFullIdeas = async () => {
       setFullIdeasLoading(true);
       setFullIdeas([]);
+      setFullIdeasLive([]);
       setFullIdeasSaveStatus('idle');
       setSavedFullIdeasCount(0);
       setSavedFullIdeasSessionId(null);
+      setIsViewingFullIdeasHistory(false);
       const controller = new AbortController();
       abortRef.current = controller;
       startProgress();
@@ -1103,11 +1256,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         const res = await fetch('/api/generate-ideas-from-hook', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            hook: selectedHook,
-            quantity: fullIdeasQty,
-            duration: fullIdeasDuration,
-            ideaDirection: ideaDirection || null,
+            body: JSON.stringify({
+              hook: selectedHook,
+              quantity: fullIdeasQty,
+              duration: IDEA_RUNTIME_GUIDANCE,
+              ideaDirection: ideaDirection || null,
             appName: app?.name || '',
             appCategory: app?.category || '',
             selectedModel: selectedModel || '',
@@ -1119,6 +1272,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           const generated = result.data as FullIdea[];
           const saved = await saveFullIdeasToDatabase(generated);
           setFullIdeas(saved);
+          setFullIdeasLive(saved);
         } else {
           alert(result.error || 'Có lỗi khi tạo ideas.');
         }
@@ -1203,18 +1357,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
               <h3 className="font-bold text-gray-700 flex items-center gap-2 text-sm"><Brain size={14} className="text-amber-500" /> Tạo Full Ideas từ Hook này</h3>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><Clock size={10} /> Duration</label>
-                  <div className="flex gap-1">
-                    {['15s', '30s', '60s'].map(d => (
-                      <button key={d} onClick={() => setFullIdeasDuration(d)}
-                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${fullIdeasDuration === d ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100'}`}>
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><ListOrdered size={10} /> Số lượng</label>
                   <div className="flex gap-1">
@@ -1291,7 +1434,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     onClick={handleOpenFullIdeasHistory}
                     className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50"
                   >
-                    {`Xem History (${availableFullIdeasHistoryCount})`}
+                    {isViewingFullIdeasHistory ? 'Ẩn History' : `Xem History (${availableFullIdeasHistoryCount})`}
                   </button>
                 )}
               </div>
@@ -1299,7 +1442,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
             {(fullIdeas.length > 0 || loadingFullIdeasHistory || fullIdeasSaveStatus !== 'idle') && (
               <p className="mb-4 text-xs leading-relaxed text-gray-500">
-                Full Ideas được lưu vào History theo Winning Hook này. Chỉ khi bấm `Xem History` mới tải và hiển thị lại các idea cũ.
+                Full Ideas được lưu vào History theo Winning Hook này. Có thể bật/tắt `Xem History` để đổi giữa output hiện tại và các idea cũ đã lưu.
               </p>
             )}
 
@@ -1322,7 +1465,6 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
                           <div className="flex gap-2 flex-wrap">
-                            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{idea.duration}</span>
                             <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{idea.creativeType || 'Creative'}</span>
                             {idea.savedIdeaId && (
                               <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium">Đã lưu DB</span>
@@ -1378,7 +1520,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                 <p className="text-sm text-gray-400 max-w-md mx-auto">AI sẽ dùng framework đã phân tích sẵn từ hook để tạo full production briefs (Hook + Body + CTA) mới.</p>
                 {availableFullIdeasHistoryCount > 0 && (
                   <p className="mt-3 text-xs text-amber-600 font-medium">
-                    {`Hook này có ${availableFullIdeasHistoryCount} history đã lưu. Bấm "Xem History (${availableFullIdeasHistoryCount})" để mở.`}
+                    {`Hook này có ${availableFullIdeasHistoryCount} history đã lưu. Bấm "Xem History (${availableFullIdeasHistoryCount})" để xem lại hoặc ẩn đi.`}
                   </p>
                 )}
               </div>
@@ -1555,20 +1697,20 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       : 'Lưu DB thất bại'}
                 </span>
               )}
-              {savedModifiedHookSessionId && availableModifyHistoryCount > 0 && (
-                <button
-                  onClick={handleOpenModifyHistory}
-                  className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"
-                >
-                  {`Xem History (${availableModifyHistoryCount})`}
-                </button>
-              )}
+                {savedModifiedHookSessionId && availableModifyHistoryCount > 0 && (
+                  <button
+                    onClick={handleOpenModifyHistory}
+                    className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50"
+                  >
+                    {isViewingModifyHistory ? 'Ẩn History' : `Xem History (${availableModifyHistoryCount})`}
+                  </button>
+                )}
             </div>
           </div>
 
           {(generatedIdeas.length > 0 || modifiedHooksSaveStatus !== 'idle') && (
             <p className="mb-4 text-xs leading-relaxed text-gray-500">
-              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook được lưu vào History (bảng generated_ideas). Chỉ khi bấm `Xem History` mới tải lại output cũ; nó không tự thêm vào Hook Library.
+              <span className="font-bold text-gray-700">Hook-only:</span> Modify Hook được lưu vào History (bảng generated_ideas). Có thể bật/tắt `Xem History` để đổi giữa output hiện tại và output cũ; nó không tự thêm vào Hook Library.
             </p>
           )}
 
@@ -1583,7 +1725,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           ) : generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {generatedIdeas.map((idea, idx) => {
-                const hookContent = idea.hook.script || idea.hook.voice || idea.hook.visual || idea.explanation || '';
+                const hookContent = idea.hook.voice || idea.hook.textOverlay || idea.hook.text || idea.hook.script || idea.hook.visual || idea.explanation || '';
                 const textOverlay = idea.hook.textOverlay || idea.hook.text;
                 return (
                 <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-sm transition-all group">
@@ -1636,7 +1778,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               <p className="text-sm text-gray-400">Các biến thể Hook mới sẽ hiển thị tại đây</p>
               {availableModifyHistoryCount > 0 && (
                 <p className="mt-3 text-xs text-indigo-600 font-medium">
-                  {`Hook này có ${availableModifyHistoryCount} history đã lưu. Bấm "Xem History (${availableModifyHistoryCount})" để mở.`}
+                  {`Hook này có ${availableModifyHistoryCount} history đã lưu. Bấm "Xem History (${availableModifyHistoryCount})" để xem lại hoặc ẩn đi.`}
                 </p>
               )}
             </div>

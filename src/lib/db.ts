@@ -412,6 +412,20 @@ function isFullIdeaRecord(idea: GeneratedIdea): boolean {
   return !isHookOnlyIdea(idea);
 }
 
+function isModifyIdeaRecord(idea: GeneratedIdea): boolean {
+  const meta = idea.content?.meta;
+  const videoStructures = toFilterValues(idea.filters_snapshot?.videoStructure);
+
+  if (meta?.builderVersion === 'hook_library_modify_history_v1') return true;
+  if (meta?.track === 'hook-modify' || meta?.sessionType === 'modify-hook') return true;
+  if (idea.content?.creativeType === 'Modified Hook') return true;
+  if (videoStructures.includes('Modified Hook')) return true;
+
+  if (isFullIdeaRecord(idea)) return false;
+
+  return isHookOnlyIdea(idea) && videoStructures.includes('Hook Library');
+}
+
 function matchesHookHistoryIdea(
   idea: GeneratedIdea,
   hook: Pick<Hook, 'id' | 'title'>,
@@ -430,7 +444,7 @@ function matchesHookHistoryIdea(
   if (!matchesSourceHook && !matchesAngle) return false;
 
   if (track === 'modify') {
-    return meta?.track === 'hook-modify' || meta?.sessionType === 'modify-hook' || idea.content?.creativeType === 'Modified Hook' || isHookOnlyIdea(idea);
+    return isModifyIdeaRecord(idea);
   }
 
   return isFullIdeaRecord(idea);

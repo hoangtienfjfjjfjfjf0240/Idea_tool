@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAIWithImage } from '@/lib/aiClient';
+import { parseJsonLoose } from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
+
+function readText(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { imageBase64, fileName } = await request.json();
@@ -16,7 +22,8 @@ export async function POST(request: NextRequest) {
 
     const prompt = `Bạn là Senior Creative Strategist chuyên Meta/TikTok Video Ads cho Mobile App.
 
-Phân tích frame/ảnh quảng cáo này theo META VIDEO CREATIVE FRAMEWORK.
+Phân tích ảnh quảng cáo này theo META VIDEO CREATIVE FRAMEWORK.
+Nếu ảnh là contact sheet gồm nhiều frame của video, hãy suy luận từ toàn bộ tiến trình opening -> middle -> later, không chỉ nhìn frame đầu.
 
 HOOK FORMULA: Hook = Nơi CORE USER cảm thấy EMOTION khi thấy PAINPOINT qua visual/text/voice.
 
@@ -31,6 +38,10 @@ Hãy phân tích và trả về JSON:
 8. "emotion": Cảm xúc hook tạo ra cho người xem (VD: "Sợ hãi + Lo lắng", "Tò mò + FOMO")
 9. "creative_type": Phân loại creative type cụ thể hơn. VD: "UGC Expert Apple", "Hỏi Alexa", "Interview đường phố"
 
+Yêu cầu:
+- Không để trống core_user, painpoint, emotion, creative_type nếu vẫn có thể suy luận tương đối chắc từ visual/text/context.
+- Ưu tiên cụ thể, không dùng placeholder chung chung kiểu "N/A", "Unknown", "General user" trừ khi bất khả thi.
+
 OUTPUT JSON ONLY (no markdown, no code fences):
 {"title":"...","subtitle":"...","description":"...","hook_concept":"...","visual_detail":"...","core_user":"...","painpoint":"...","emotion":"...","creative_type":"..."}`;
 
@@ -40,28 +51,23 @@ OUTPUT JSON ONLY (no markdown, no code fences):
       return NextResponse.json({ error: 'AI analysis failed' }, { status: 500 });
     }
 
-    // Parse JSON from response
-    let cleanText = text.replace(/```json\s*|```/g, '').trim();
-    const firstCurly = cleanText.indexOf('{');
-    const lastCurly = cleanText.lastIndexOf('}');
-    if (firstCurly !== -1 && lastCurly !== -1) {
-      cleanText = cleanText.substring(firstCurly, lastCurly + 1);
+    const analysis = parseJsonLoose(text);
+    if (!analysis || Array.isArray(analysis)) {
+      return NextResponse.json({ error: 'AI analysis parse failed' }, { status: 500 });
     }
-
-    const analysis = JSON.parse(cleanText);
     
     return NextResponse.json({ 
       success: true, 
       data: {
-        title: analysis.title || fileName?.replace(/\.[^/.]+$/, '') || 'Hook',
-        subtitle: analysis.subtitle || 'Video Hook',
-        description: analysis.description || '',
-        hook_concept: analysis.hook_concept || '',
-        visual_detail: analysis.visual_detail || '',
-        core_user: analysis.core_user || '',
-        painpoint: analysis.painpoint || '',
-        emotion: analysis.emotion || '',
-        creative_type: analysis.creative_type || analysis.subtitle || '',
+        title: readText(analysis.title, fileName?.replace(/\.[^/.]+$/, '') || 'Hook'),
+        subtitle: readText(analysis.subtitle, 'Video Hook'),
+        description: readText(analysis.description),
+        hook_concept: readText(analysis.hook_concept),
+        visual_detail: readText(analysis.visual_detail),
+        core_user: readText(analysis.core_user),
+        painpoint: readText(analysis.painpoint),
+        emotion: readText(analysis.emotion),
+        creative_type: readText(analysis.creative_type, readText(analysis.subtitle)),
       }
     });
   } catch (err) {
