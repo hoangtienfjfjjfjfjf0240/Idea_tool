@@ -365,11 +365,14 @@ function buildBatchDiversityBlock(quantity: number, angle: string, angleIndex: n
   if (quantity <= 1) return '';
 
   const lanes = [
-    'Idea 1: UGC/POV đời thường, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.',
-    'Idea 2: Reaction hoặc social interruption, có người/vật thứ hai làm tình huống đổi nhịp.',
-    'Idea 3: Split-screen hoặc reveal bất ngờ, mở bằng một blocking object/không gian khác hẳn idea 1.',
-    'Idea 4: ASMR/oddly satisfying, mở bằng texture/âm thanh/chuyển động nhỏ gây dừng scroll.',
-    'Idea 5: Comment-reply/social proof, mở bằng một câu hỏi hoặc phản ứng từ người khác.',
+    'Idea 1: UGC handheld đời thường, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.',
+    'Idea 2: Reaction/social interruption, có người hoặc vật thứ hai làm tình huống đổi nhịp.',
+    'Idea 3: Split Screen/reveal bất ngờ, mở bằng một blocking object hoặc không gian khác hẳn idea 1.',
+    'Idea 4: ASMR/oddly satisfying, mở bằng texture, âm thanh hoặc chuyển động nhỏ gây dừng scroll.',
+    'Idea 5: Comment-reply/Social Proof, mở bằng một câu hỏi hoặc phản ứng từ người khác.',
+    'Idea 6: Challenge, biến painpoint thành một câu đố hoặc nhiệm vụ 1 nhịp.',
+    'Idea 7: Interview/street-test, mở bằng một câu hỏi trực diện với người dùng.',
+    'Idea 8: Trend Format, dùng format trend nhưng đổi scene family và first action.',
   ].slice(0, quantity).join('\n');
 
   return `
@@ -394,6 +397,7 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Không có 2 title cùng cấu trúc.
 - Không có 2 hook.visual cùng địa điểm + hành động mở đầu.
 - Không có 2 hook.voice cùng ý nói.
+- POV tối đa 1 idea trong batch này, trừ khi user chọn visualType bắt buộc chỉ POV.
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
@@ -409,6 +413,21 @@ function ideaSignature(idea: Record<string, unknown>): string {
     asText(hook.textOverlay),
     asText(body.visual),
   ].filter(Boolean).join(' ');
+}
+
+function creativeTypeKey(idea: Record<string, unknown>): string {
+  const key = normalizeCompareText(asText(idea.creativeType) || asText(asRecord(idea.meta).angleType));
+  if (!key) return 'creative';
+  if (key.includes('pov')) return 'pov';
+  if (key.includes('split')) return 'split-screen';
+  if (key.includes('reaction')) return 'reaction';
+  if (key.includes('asmr') || key.includes('satisfying')) return 'asmr';
+  if (key.includes('social') || key.includes('proof') || key.includes('comment')) return 'social-proof';
+  if (key.includes('challenge')) return 'challenge';
+  if (key.includes('interview')) return 'interview';
+  if (key.includes('trend')) return 'trend-format';
+  if (key.includes('ugc')) return 'ugc';
+  return key;
 }
 
 function tokenSet(text: string): Set<string> {
@@ -447,16 +466,33 @@ function hasNearDuplicateIdeas(ideas: Record<string, unknown>[]): boolean {
   return false;
 }
 
+function countCreativeTypes(ideas: Record<string, unknown>[]): Record<string, number> {
+  return ideas.reduce<Record<string, number>>((counts, idea) => {
+    const key = creativeTypeKey(idea);
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+}
+
 function dedupeIdeas(candidates: Record<string, unknown>[], existing: Record<string, unknown>[] = []): Record<string, unknown>[] {
   const unique: Record<string, unknown>[] = [];
+  const creativeCounts = countCreativeTypes(existing);
+  const maxPovPerRequest = 1;
+  const maxPerCreativeType = Math.max(2, Math.ceil((existing.length + candidates.length) / 4));
 
   for (const candidate of candidates) {
     const signature = ideaSignature(candidate);
+    const creativeKey = creativeTypeKey(candidate);
+    const isOverusedPov = creativeKey === 'pov' && (creativeCounts.pov || 0) >= maxPovPerRequest;
+    const isOverusedCreativeType = creativeKey !== 'pov' && (creativeCounts[creativeKey] || 0) >= maxPerCreativeType;
     const isUnique = [...existing, ...unique].every(item => (
       jaccardSimilarity(signature, ideaSignature(item)) < 0.62
     ));
 
-    if (isUnique) unique.push(candidate);
+    if (isUnique && !isOverusedPov && !isOverusedCreativeType) {
+      unique.push(candidate);
+      creativeCounts[creativeKey] = (creativeCounts[creativeKey] || 0) + 1;
+    }
   }
 
   return unique;
@@ -553,18 +589,6 @@ function buildFallbackIdeasForFilters(options: {
       scene: 'handheld close-up on the exact object causing friction',
     },
     {
-      creativeType: 'POV',
-      hookPrimary: 'Still stuck at this step?',
-      hookAlt1: 'This step kills momentum',
-      hookAlt2: 'Watch the fix land',
-      hookVoice: 'Still stuck at this step?',
-      bodyVoice: 'Move from the stuck moment into a simple before-choice-after-action flow.',
-      ctaVoice: `Build your version in ${options.appName}.`,
-      bodyOverlay: 'Fix the stuck step',
-      ctaOverlay: 'Build your version',
-      scene: 'POV frame where the viewer sees the blocker from their own angle',
-    },
-    {
       creativeType: 'Reaction',
       hookPrimary: 'What changed in one tap?',
       hookAlt1: 'The reaction says it all',
@@ -635,6 +659,42 @@ function buildFallbackIdeasForFilters(options: {
       bodyOverlay: 'Cue first, fix second',
       ctaOverlay: 'Make it obvious',
       scene: 'fast trend-style cut built around one repeated visual cue',
+    },
+    {
+      creativeType: 'Interview',
+      hookPrimary: 'Would you notice this?',
+      hookAlt1: 'This answer changes it',
+      hookAlt2: 'Ask this first',
+      hookVoice: 'Would you notice this before it becomes a problem?',
+      bodyVoice: 'Use a quick street-test or friend-test question, then prove the answer with the app flow.',
+      ctaVoice: `Run the same check in ${options.appName}.`,
+      bodyOverlay: 'Ask before solving',
+      ctaOverlay: 'Run the check',
+      scene: 'interview-style opener where one person points at the exact blocker',
+    },
+    {
+      creativeType: 'UGC',
+      hookPrimary: 'This shortcut is hidden',
+      hookAlt1: 'The shortcut starts here',
+      hookAlt2: 'Skip the slow version',
+      hookVoice: 'This shortcut is hidden in the moment everyone ignores.',
+      bodyVoice: 'Show the slow manual path for one beat, then switch into the cleaner app path.',
+      ctaVoice: `Try the shortcut with ${options.appName}.`,
+      bodyOverlay: 'Skip the slow path',
+      ctaOverlay: 'Try the shortcut',
+      scene: 'over-the-shoulder UGC shot with the slow manual workaround visible first',
+    },
+    {
+      creativeType: 'POV',
+      hookPrimary: 'Still stuck at this step?',
+      hookAlt1: 'This step kills momentum',
+      hookAlt2: 'Watch the fix land',
+      hookVoice: 'Still stuck at this step?',
+      bodyVoice: 'Move from the stuck moment into a simple before-choice-after-action flow.',
+      ctaVoice: `Build your version in ${options.appName}.`,
+      bodyOverlay: 'Fix the stuck step',
+      ctaOverlay: 'Build your version',
+      scene: 'single POV frame where the viewer sees the blocker from their own angle',
     },
   ];
 
@@ -920,11 +980,13 @@ Trả JSON array of strings. KHÔNG markdown.`;
             'Keep every idea production-ready and executable today',
             'Stay social-first, UGC-friendly, and market-native',
             'Differentiate opening action, blocker, reveal, and voice opening across ideas',
+            'Use a mixed creativeType spread; POV is allowed only once per selected angle unless the user explicitly selected POV-only visual type',
           ],
           dontList: [
             'Do not drift away from the selected pain point',
             'Do not output cinematic brand-film copy',
             'Do not repeat the same scene family with new wording',
+            'Do not label several ideas as POV just because they are shot handheld',
           ],
           anglesPerPillar: 1,
           ideasPerAngle: plan.batchQuantity,
@@ -963,6 +1025,7 @@ Generate ${plan.batchQuantity} production-ready full ideas for the selected filt
 - If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
 - Hook, body, and CTA must follow one continuous problem-solution chain.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
+- Creative type cap: output at most 1 POV idea in this batch. Use UGC, Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format for the rest.
 
 ${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang })}
 
@@ -1021,6 +1084,9 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           }
           if (duplicateDetected) {
             retryNotes.push(`The previous batch contains ideas that are too similar. Regenerate all ${plan.batchQuantity} ideas with clearly different scene families, opening actions, props, camera reveals, voice openings, and creative types.`);
+          }
+          if (valid.length < plan.batchQuantity) {
+            retryNotes.push('Too many ideas reused the same creativeType or POV. Keep POV to max 1 and fill the rest with non-POV formats.');
           }
 
           const retryText = await askAI(`${prompt}
@@ -1082,7 +1148,7 @@ ${retryNotes.join('\n\n')}`, {
             const fallbackIdeas = buildFallbackIdeasForFilters({
               appName,
               filters,
-              quantity: missingCount,
+              quantity: missingCount + 10,
               duration,
               startIndex: plan.batchStartIndex + batchIdeas.length,
               angleIndex,
