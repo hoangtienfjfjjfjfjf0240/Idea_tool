@@ -8,7 +8,7 @@ import {
 
 export const maxDuration = 60;
 
-const MAX_HOOK_VARIATIONS = 5;
+const MAX_HOOK_VARIATIONS = 20;
 const HOOK_MODEL_TIMEOUT_MS = 30000;
 const HOOK_FALLBACK_TIMEOUT_MS = 20000;
 const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];

@@ -176,18 +176,18 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     return `${base} - Biến thể ${lastVariant}`;
   };
 
-  const buildLocalModifiedHooks = (sourceHook: Hook, instruction: string, count: number): HookIdea[] =>
+  const buildLocalModifiedHooks = (sourceHook: Hook, instruction: string, count: number, startIndex = 0): HookIdea[] =>
     Array.from({ length: count }, (_, i) => ({
       id: crypto.randomUUID(),
-      title: buildModifiedHookTitle(sourceHook.title, i),
+      title: buildModifiedHookTitle(sourceHook.title, startIndex + i),
       explanation: `Áp dụng "${sourceHook.hook_concept || sourceHook.title}" kết hợp "${instruction}"`,
       hook: {
         script: `${sourceHook.visual_detail || 'Cảnh mở bằng hook gốc'}. Giữ DNA của hook "${stripVariantSuffix(sourceHook.title)}", nhưng đổi execution theo hướng: ${instruction}.`,
         visual: `${sourceHook.visual_detail || 'Cận cảnh'} + ${instruction}`,
         text: stripVariantSuffix(sourceHook.title),
         textOverlay: stripVariantSuffix(sourceHook.title),
-        voice: `${stripVariantSuffix(sourceHook.title)} — biến thể ${i + 1}. ${instruction}.`,
-        viTranslation: `${stripVariantSuffix(sourceHook.title)} — biến thể ${i + 1}. ${instruction}.`,
+        voice: `${stripVariantSuffix(sourceHook.title)} — biến thể ${startIndex + i + 1}. ${instruction}.`,
+        viTranslation: `${stripVariantSuffix(sourceHook.title)} — biến thể ${startIndex + i + 1}. ${instruction}.`,
       },
     }));
 
@@ -237,7 +237,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       });
       const result = await res.json();
       if (res.ok && result.success && result.data?.length > 0) {
-        const generated = result.data as HookIdea[];
+        const aiIdeas = result.data as HookIdea[];
+        const generated = aiIdeas.length >= quantity
+          ? aiIdeas.slice(0, quantity)
+          : [
+              ...aiIdeas,
+              ...buildLocalModifiedHooks(selectedHook, modifyPrompt, quantity - aiIdeas.length, aiIdeas.length),
+            ];
         setGeneratedIdeas(generated);
         setModifyLiveIdeas(generated);
         await saveModifiedHooksToHistory(generated);

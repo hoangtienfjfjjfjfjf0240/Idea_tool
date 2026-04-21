@@ -666,6 +666,60 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     abortRef.current = controller;
     startProgress();
     try {
+      const buildFallbackIdeasForAngle = (
+        filtersSnapshot: FilterState,
+        angle: string | null,
+        count: number,
+        startIndex = 0
+      ) => Array.from({ length: count }, (_, ideaIndex) => ({
+        title: `Ý tưởng ${angle ? `${angle} - ` : ''}${startIndex + ideaIndex + 1}: ${app.name}`,
+        duration: IDEA_RUNTIME_GUIDANCE,
+        creativeType: 'UGC',
+        meta: {
+          builderVersion: 'prompt_system_builder_v1',
+          pillar: filtersSnapshot.painPoint?.[0] || 'Nỗi đau phổ biến',
+          pillarIndex: 0,
+          angleName: angle || 'Core angle',
+          angleType: 'Curiosity',
+          angleDesc: angle || filtersSnapshot.painPoint?.[0] || 'Core angle',
+          hookPrimary: filtersSnapshot.painPoint?.[0] || 'Bạn có biết?',
+          hookAlt1: `Vẫn đang bị ${filtersSnapshot.painPoint?.[0] || 'vấn đề này'}?`,
+          hookAlt2: `${filtersSnapshot.solution?.[0] || app.name} xử lý chuyện này thế nào?`,
+          dontDo: 'Không dùng visual chung chung không gắn với painpoint.',
+          track: 'B',
+          priority: 'A',
+        },
+        framework: {
+          coreUser: filtersSnapshot.coreUser?.[0] || 'Người dùng phổ thông',
+          painpoint: filtersSnapshot.painPoint?.[0] || 'Nỗi đau phổ biến',
+          emotion: filtersSnapshot.emotion?.[0] || 'Tò mò',
+          psp: filtersSnapshot.solution?.[0] || app.name,
+        },
+        explanation: `Video kết hợp ${filtersSnapshot.painPoint?.[0] || 'nỗi đau'} với ${filtersSnapshot.solution?.[0] || 'tính năng chính'} của ${app.name}`,
+        hook: {
+          visual: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
+          script: 'Nhân vật đứng trong không gian thật, lia camera vào chi tiết đang gây bối rối.',
+          text: filtersSnapshot.painPoint?.[0] || 'Bạn có biết?',
+          textOverlay: filtersSnapshot.painPoint?.[0] || 'Bạn có biết?',
+          voice: `"${filtersSnapshot.painPoint?.[0] || 'Điều gì đang không ổn ở đây vậy?'}"`,
+        },
+        body: {
+          visual: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
+          script: `Mở app ${app.name}, demo tính năng trên ảnh thật của không gian.`,
+          text: `${filtersSnapshot.solution?.[0] || 'Tính năng chính'}`,
+          textOverlay: `${filtersSnapshot.solution?.[0] || 'Tính năng chính'}`,
+          voice: '"Chỉ cần thử trên ảnh thật là thấy ngay hướng đi."',
+        },
+        cta: {
+          visual: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
+          script: 'Cận màn hình app và thao tác cuối cùng trước khi tải.',
+          voice: '"Thử ngay trước khi chốt style."',
+          text: `Thử ${app.name}`,
+          textOverlay: `Thử ${app.name}`,
+          endCard: `${app.name} - Tải miễn phí`,
+        },
+      }));
+
       const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
         const c = idea.content as any;
         return `${i + 1}. "${idea.title}"
@@ -690,47 +744,69 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const maxConcurrent = Math.min(3, Math.max(1, generationTasks.length));
 
       const requestAngleBatch = async (task: { selectedAngle: string | null; angleIndex: number; filtersSnapshot: FilterState }) => {
-        const res = await fetch('/api/generate-ideas', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            appName: app.name,
-            appCategory: app.category,
-            filters: task.filtersSnapshot,
-            config: {
-              quantity,
-              duration: IDEA_RUNTIME_GUIDANCE,
-              ideaDescription,
-              visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
-              seasonalVisualContext,
-              totalVariations: quantity,
-              angleIndex: task.angleIndex + 1,
-              totalAngles: anglesToGenerate.length,
-              selectedAngle: task.selectedAngle,
-            },
-            previousIdeas: previousIdeasSummary || null,
-            appKnowledge: app.app_knowledge || null,
-            selectedModel: selectedModel || '',
-            trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
-            trendingStructures: importedTrendAnalyses.length > 0
-              ? importedTrendAnalyses.map(item => item.promptBooster).filter(Boolean)
-              : null,
-          }),
-          signal: controller.signal,
-        });
+        try {
+          const res = await fetch('/api/generate-ideas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              appName: app.name,
+              appCategory: app.category,
+              filters: task.filtersSnapshot,
+              config: {
+                quantity,
+                duration: IDEA_RUNTIME_GUIDANCE,
+                ideaDescription,
+                visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
+                seasonalVisualContext,
+                totalVariations: quantity,
+                angleIndex: task.angleIndex + 1,
+                totalAngles: anglesToGenerate.length,
+                selectedAngle: task.selectedAngle,
+              },
+              previousIdeas: previousIdeasSummary || null,
+              appKnowledge: app.app_knowledge || null,
+              selectedModel: selectedModel || '',
+              trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
+              trendingStructures: importedTrendAnalyses.length > 0
+                ? importedTrendAnalyses.map(item => item.promptBooster).filter(Boolean)
+                : null,
+            }),
+            signal: controller.signal,
+          });
 
-        const result = await res.json();
-        if (!res.ok || !result.success || !result.data?.length) {
-          throw new Error(result.error || `AI không phản hồi ở angle ${task.angleIndex + 1}`);
-        }
+          const result = await res.json();
+          const aiItems = res.ok && result.success && Array.isArray(result.data) ? result.data as any[] : [];
+          if (!res.ok || !result.success || aiItems.length === 0) {
+            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} returned no AI ideas, using fallback.`, result?.error || result);
+          }
 
-        if (result.meta?.warnings?.length) {
-          console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} warnings:`, result.meta.warnings);
+          if (result.meta?.warnings?.length) {
+            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} warnings:`, result.meta.warnings);
+          }
+
+          const completedItems = aiItems.slice(0, quantity);
+          if (completedItems.length < quantity) {
+            completedItems.push(
+              ...buildFallbackIdeasForAngle(
+                task.filtersSnapshot,
+                task.selectedAngle,
+                quantity - completedItems.length,
+                completedItems.length
+              )
+            );
+          }
+
+          return completedItems.map(item => ({
+            item,
+            filtersSnapshot: task.filtersSnapshot,
+          }));
+        } catch (error) {
+          console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed, using fallback.`, error);
+          return buildFallbackIdeasForAngle(task.filtersSnapshot, task.selectedAngle, quantity).map(item => ({
+            item,
+            filtersSnapshot: task.filtersSnapshot,
+          }));
         }
-        return (result.data as any[]).map(item => ({
-          item,
-          filtersSnapshot: task.filtersSnapshot,
-        }));
       };
 
       for (let start = 0; start < generationTasks.length; start += maxConcurrent) {
@@ -738,18 +814,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         const briefStart = start * quantity + 1;
         const briefEnd = Math.min(end * quantity, totalRequestedIdeas);
         setProgressLabel(`Đang tạo full brief ${briefStart}-${briefEnd}/${totalRequestedIdeas}...`);
-        const chunk = await Promise.allSettled(
+        const chunk = await Promise.all(
           generationTasks.slice(start, end).map(task => requestAngleBatch(task))
         );
-        const successful = chunk
-          .filter((item): item is PromiseFulfilledResult<Array<{ item: any; filtersSnapshot: FilterState }>> => item.status === 'fulfilled')
-          .flatMap(item => item.value);
-        allData = [...allData, ...successful];
-
-        const failed = chunk.filter(item => item.status === 'rejected');
-        if (failed.length > 0) {
-          console.warn('Some idea requests failed:', failed);
-        }
+        allData = [...allData, ...chunk.flatMap(item => item)];
         if (allData.length === 0 && end >= generationTasks.length) {
           throw new Error('AI không phản hồi');
         }
