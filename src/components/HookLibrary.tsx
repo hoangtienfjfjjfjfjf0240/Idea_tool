@@ -221,28 +221,28 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const instructionHint = extractModifyInstructionHint(instruction, concept);
     const fallbackAngles = [
       {
-        visual: 'Move from a neutral setup into an immediate reveal on the exact pain object.',
+        visual: 'Open on a real desk setup, then snap into a macro reveal on the exact blocker.',
         voice: 'This tiny move might explain the whole problem.',
         overlay: compactModifyText(baseTitle, 32) || 'Watch this first',
       },
       {
-        visual: 'Keep the same object, but reveal the blocker through a different hand action in frame one.',
-        voice: 'Same setup, but now the blocker shows up instantly.',
+        visual: 'Keep the same object, but use a stop-start hand action so the blocker appears on the second beat.',
+        voice: 'Same setup, but this gesture makes the blocker obvious.',
         overlay: 'The blocker is here',
       },
       {
-        visual: 'Switch to a tighter POV angle so the viewer notices the pain before the explanation starts.',
-        voice: 'You miss this detail until you see it up close.',
+        visual: 'Switch into a POV angle with tighter framing so the pain lands before the explanation starts.',
+        voice: 'You miss this detail until the POV gets closer.',
         overlay: 'Look closer',
       },
       {
-        visual: 'Use a faster contrast shot so the old pain and new clue appear in the same beat.',
-        voice: 'The pain looks familiar, but the reveal is different this time.',
+        visual: 'Split the first second into a compare frame so the wrong version and the clue appear together.',
+        voice: 'The pain looks familiar, but this compare frame makes it click faster.',
         overlay: 'Same pain, new reveal',
       },
       {
-        visual: 'Make the first second more urgent with a sharper gesture and a cleaner prop setup.',
-        voice: 'If this keeps happening, start with this check.',
+        visual: 'Add one prop cue and a quicker first gesture so the opening feels urgent before the explanation lands.',
+        voice: 'If this keeps happening, start with this check before anything else.',
         overlay: 'Start with this check',
       },
     ];

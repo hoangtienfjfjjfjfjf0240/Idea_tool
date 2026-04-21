@@ -51,6 +51,26 @@ function normalizeCompareText(value: string) {
     .trim();
 }
 
+function countWords(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+}
+
+function jaccardSimilarity(a: string, b: string) {
+  const tokensA = new Set(normalizeCompareText(a).split(' ').filter(Boolean));
+  const tokensB = new Set(normalizeCompareText(b).split(' ').filter(Boolean));
+  if (tokensA.size === 0 && tokensB.size === 0) return 1;
+  let intersection = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) intersection += 1;
+  }
+  const union = new Set([...tokensA, ...tokensB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
 function extractInstructionHint(instruction: string, fallback: string) {
   const lines = instruction
     .split('\n')
@@ -101,6 +121,74 @@ function isUsableHookVariation(
   }
 
   return true;
+}
+
+function buildHookVariationFingerprint(item: Record<string, unknown>) {
+  const normalizedHook = (item.hook || {}) as Record<string, unknown>;
+  return [
+    readText(item.title),
+    readText(normalizedHook.visual, readText(normalizedHook.script)),
+    readText(normalizedHook.voice),
+    readText(normalizedHook.textOverlay, readText(normalizedHook.text)),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function isDistinctHookVariation(
+  candidate: Record<string, unknown>,
+  existing: Record<string, unknown>[],
+) {
+  const candidateHook = (candidate.hook || {}) as Record<string, unknown>;
+  const candidateVoice = readText(candidateHook.voice);
+  const candidateOverlay = readText(candidateHook.textOverlay, readText(candidateHook.text));
+  const candidateVisual = readText(candidateHook.visual, readText(candidateHook.script));
+  const candidateFingerprint = buildHookVariationFingerprint(candidate);
+
+  if (countWords(candidateVoice) < 4 && countWords(candidateOverlay) < 2) {
+    return false;
+  }
+
+  return existing.every(item => {
+    const hook = (item.hook || {}) as Record<string, unknown>;
+    const voice = readText(hook.voice);
+    const overlay = readText(hook.textOverlay, readText(hook.text));
+    const visual = readText(hook.visual, readText(hook.script));
+    const fingerprint = buildHookVariationFingerprint(item);
+
+    if (normalizeCompareText(candidateOverlay) === normalizeCompareText(overlay)) {
+      return false;
+    }
+
+    if (normalizeCompareText(candidateVoice) === normalizeCompareText(voice)) {
+      return false;
+    }
+
+    if (jaccardSimilarity(candidateFingerprint, fingerprint) >= 0.72) {
+      return false;
+    }
+
+    if (
+      candidateVisual &&
+      visual &&
+      jaccardSimilarity(candidateVisual, visual) >= 0.82 &&
+      jaccardSimilarity(candidateVoice, voice) >= 0.45
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function dedupeHookVariations(items: Record<string, unknown>[]) {
+  const unique: Record<string, unknown>[] = [];
+  for (const item of items) {
+    if (isDistinctHookVariation(item, unique)) {
+      unique.push(item);
+    }
+  }
+  return unique;
 }
 
 function buildFallbackHookVariations(
@@ -180,28 +268,33 @@ function buildBetterFallbackHookVariations(
   const instructionHint = extractInstructionHint(readText(instruction, concept), concept);
   const patterns = [
     {
-      angle: 'Change the setting and make the first frame more unexpected',
+      angle: 'Move the hook into a desk setup with a sudden close-up reveal',
+      visualLead: 'Open in a real work desk setup with the hand hovering over the object, then snap into a macro close-up on the exact blocker.',
       voice: `Wait, why does this simple move expose ${painpoint}?`,
       overlay: compactText(`Why this move reveals ${painpoint}`, 36),
     },
     {
-      angle: 'Keep the same object but reveal the blocker through a different action',
-      voice: 'Same setup, but now the blocker shows up instantly.',
+      angle: 'Keep the same object but show the blocker through a sharper hand action',
+      visualLead: 'Start with the same object from the winning hook, but use a stop-start hand action so the blocker appears on the second beat.',
+      voice: 'Same setup, but this gesture makes the blocker impossible to miss.',
       overlay: 'The detail people miss',
     },
     {
-      angle: 'Turn the same hook into a direct POV moment with a clearer visual contrast',
-      voice: 'From this angle, the problem shows up instantly.',
+      angle: 'Switch to a POV angle with harder contrast and a tighter frame',
+      visualLead: 'Turn the camera into a direct POV shot and make the problem pop through tighter framing and stronger contrast.',
+      voice: 'From this angle, the problem hits instantly.',
       overlay: 'See the problem instantly',
     },
     {
-      angle: 'Use a social proof or comparison frame without changing the pain point',
-      voice: 'Most people watch this and still miss the real trigger.',
+      angle: 'Use a side-by-side compare frame to make the blocker feel social',
+      visualLead: 'Split the screen into a familiar wrong version and a corrected version so the viewer spots the blocker on sight.',
+      voice: 'Most people still miss the real trigger until they see this compare.',
       overlay: 'Most people miss this',
     },
     {
-      angle: 'Make the first second feel more urgent through prop, framing, and text',
-      voice: 'If this keeps happening, check this first.',
+      angle: 'Add urgency with a faster prop cue and a cleaner first-second check',
+      visualLead: 'Bring in one extra prop and a faster first gesture so the scene feels urgent before the explanation lands.',
+      voice: 'If this keeps happening, check this first before you move on.',
       overlay: 'Check this first',
     },
   ];
@@ -224,8 +317,8 @@ function buildBetterFallbackHookVariations(
         dontDo: 'Do not turn this into a full Body or CTA script',
       },
       hook: {
-        script: `[VISUAL] ${pattern.angle}. Start from: ${visualDetail}. Keep the original pain point "${painpoint}" and make "${instructionHint || baseTitle}" visible in the first second.\n[VOICE] ${pattern.voice}\n[TEXT OVERLAY] ${pattern.overlay}`,
-        visual: `${pattern.angle}. Start from: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second.`,
+        script: `[VISUAL] ${pattern.visualLead} Reference visual DNA: ${visualDetail}. Keep the original pain point "${painpoint}" but push the direction "${instructionHint || baseTitle}" through a clearly different opening action.\n[VOICE] ${pattern.voice}\n[TEXT OVERLAY] ${pattern.overlay}`,
+        visual: `${pattern.visualLead} Reference visual DNA: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second through a different opening action.`,
         text: pattern.overlay,
         voice: pattern.voice,
         textOverlay: pattern.overlay,
@@ -332,7 +425,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
     }
 
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    const validItems = arr.map((item: unknown, i: number) => {
+    const validItems = dedupeHookVariations(arr.map((item: unknown, i: number) => {
       const normalized = normalizeHookOutput(item);
       const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
       return {
@@ -352,7 +445,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
           whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',
         },
       };
-    }).filter(item => isUsableHookVariation(item, readText(instruction), hook));
+    }).filter(item => isUsableHookVariation(item, readText(instruction), hook)));
 
     const data = validItems.slice(0, requestedQuantity);
     if (data.length < requestedQuantity) {
