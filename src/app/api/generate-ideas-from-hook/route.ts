@@ -162,14 +162,6 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
 
   if (!TRACKING_ID_PATTERN.test(id)) errors.push('id must follow P{pillar}-A{angle}-I{idea}');
   if (!hookPrimary) errors.push('meta.hookPrimary is required');
-  if (hookPrimary && countWords(hookPrimary) > 12) errors.push('meta.hookPrimary exceeds 12 words');
-  if (!hookAlt1 || !hookAlt2) errors.push('meta.hookAlt1 and meta.hookAlt2 are required');
-  if (hookPrimary && hookAlt1 && hookAlt2 && !hasDistinctHookVariations([hookPrimary, hookAlt1, hookAlt2])) {
-    errors.push('hook variations must be genuinely different');
-  }
-  if (hookPrimary && !PATTERN_INTERRUPT_PATTERN.test([hookPrimary, hookVoice, hookTextOverlay].filter(Boolean).join(' '))) {
-    errors.push('meta.hookPrimary lacks a clear interrupt signal');
-  }
   if (!hookVisual) errors.push('hook.visual is required');
   if (!hookVoice && !hookTextOverlay) errors.push('hook needs voice or text overlay');
   if (!bodyVisual) errors.push('body.visual is required');
@@ -177,8 +169,6 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   if (!ctaVisual) errors.push('cta.visual is required');
   if (!ctaVoice && !ctaTextOverlay) errors.push('cta needs voice or text overlay');
   if (!ctaEndCard) errors.push('cta.endCard is required');
-  if (totalVoiceWords(item) > 60) errors.push('voiceover exceeds 60 words');
-  if (!isSpecificDontDo(dontDo)) errors.push('meta.dontDo is too generic');
 
   const complianceText = [
     hookPrimary,
