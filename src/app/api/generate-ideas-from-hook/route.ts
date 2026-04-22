@@ -12,12 +12,10 @@ import {
 } from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
-const MAX_IDEAS_PER_AI_BATCH = 3;
+const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
-const GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS = 16000;
-const GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS = 9000;
-const IDEA_FAST_GEMINI_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
-const IDEA_FAST_OPENAI_MODELS = ['openai/gpt-5.4-mini', 'openai/gpt-4.1'];
+const GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS = 90000;
+const GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS = 15000;
 const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
 const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|painful\b|awkward\b|annoying\b|sao\b|vẫn\b|đừng\b|không cần\b|thay vì|bao giờ|tệ nhất|mệt|phiền|khổ)/i;
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
@@ -438,12 +436,7 @@ function resolveModel(selected?: string): string {
 }
 
 function resolveIdeaModels(selected?: string): string[] {
-  const primary = resolveModel(selected);
-  const fastFallbacks = primary.startsWith('gemini/')
-    ? IDEA_FAST_GEMINI_MODELS
-    : IDEA_FAST_OPENAI_MODELS;
-
-  return Array.from(new Set([primary, ...fastFallbacks]));
+  return [resolveModel(selected)];
 }
 
 export async function POST(request: NextRequest) {
