@@ -452,6 +452,28 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
+function buildSingleIdeaSlotBlock(slotNumber: number, totalVariations: number): string {
+  if (totalVariations <= 1) return '';
+
+  const lanes = [
+    'UGC handheld: open with a personal action already stuck mid-task.',
+    'Reaction/social interruption: a second person or object changes the rhythm.',
+    'Split screen/reveal: use a blocking object or setting that differs from idea 1.',
+    'ASMR/oddly satisfying: use texture, sound, or small motion as the stop-scroll cue.',
+    'Comment reply/social proof: open from a question, comment, or outside reaction.',
+    'Challenge: turn the pain point into a quick viewer task or one-beat puzzle.',
+    'Interview/street test: open with a direct question to the target user.',
+    'Trend format: use a trend structure but change scene family and first action.',
+  ];
+  const lane = lanes[(Math.max(1, slotNumber) - 1) % lanes.length];
+
+  return `
+[SINGLE IDEA SLOT]
+You are creating idea ${slotNumber}/${totalVariations} for this selected angle.
+Use this lane for differentiation: ${lane}
+Do not write a generic fallback. Make the first visual/action clearly different from the other possible slots while staying on the exact same pain point, emotion, PSP, and angle.`;
+}
+
 function ideaSignature(idea: Record<string, unknown>): string {
   const hook = asRecord(idea.hook);
   const body = asRecord(idea.body);
@@ -1092,16 +1114,21 @@ Trả JSON array of strings. KHÔNG markdown.`;
         const inRequestHistoryBlock = inRequestHistory
           ? `\n[IDEAS ALREADY GENERATED IN THIS SAME REQUEST]\n${inRequestHistory}\nAvoid repeating these scene families, hook reveals, and voice openings.\n`
           : '';
+        const slotStartIndex = requestStartIndex + plan.batchStartIndex;
         const variationBlock = buildVariationWindowBlock(
-          plan.batchStartIndex,
+          slotStartIndex,
           plan.batchQuantity,
-          requestedQuantity
+          totalVariations
         );
         const diversityBlock = buildBatchDiversityBlock(
           plan.batchQuantity,
           angleContext,
           angleIndex,
           totalAngles
+        );
+        const singleIdeaSlotBlock = buildSingleIdeaSlotBlock(
+          slotStartIndex + 1,
+          totalVariations
         );
 
         const frameworkInjection = buildFrameworkInjection({
@@ -1159,6 +1186,7 @@ ${marketContext}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
+${singleIdeaSlotBlock || ''}
 
 ## TASK
 Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
