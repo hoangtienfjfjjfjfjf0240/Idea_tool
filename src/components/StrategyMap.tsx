@@ -336,70 +336,77 @@ function buildVerticalWorkflowLayout(
   hiddenNodeIds: Set<string>,
   minWidth: number
 ) {
-  const treeRows = new Map<WorkflowLevel, WorkflowNode[]>();
   const customRows = new Map<WorkflowLevel, CustomWorkflowNode[]>();
   const treeEdges: { fromId: string; toId: string }[] = [];
-  const nodeById = new Map<string, WorkflowNode>();
 
   LEVEL_ORDER.forEach(level => {
-    treeRows.set(level, []);
     customRows.set(level, []);
   });
 
-  const addTreeNode = (node: WorkflowNode) => {
-    if (hiddenNodeIds.has(node.id)) return;
-    const row = treeRows.get(node.level);
-    if (!row || nodeById.has(node.id)) return;
-    row.push(node);
-    nodeById.set(node.id, node);
-  };
-
-  const walk = (node: TreeNode) => {
-    addTreeNode(node);
-    node.children.forEach(child => {
-      if (!hiddenNodeIds.has(node.id) && !hiddenNodeIds.has(child.id)) {
-        treeEdges.push({ fromId: node.id, toId: child.id });
-      }
-      walk(child);
-    });
-  };
-
-  walk(tree);
   customNodes.forEach(node => {
     if (hiddenNodeIds.has(node.id)) return;
     customRows.get(node.level)?.push(node);
-    nodeById.set(node.id, node);
   });
 
-  const baseMaxRowCount = Math.max(...LEVEL_ORDER.map(level => treeRows.get(level)?.length || 1), 1);
-  const baseContentWidth = baseMaxRowCount * NODE_W + Math.max(0, baseMaxRowCount - 1) * GAP_X;
-  const baseCanvasW = Math.max(minWidth, LEVEL_LABEL_W + baseContentWidth + 96);
   const centerAreaX = LEVEL_LABEL_W + 48;
-  const baseAvailableW = baseCanvasW - centerAreaX - 48;
+  const minCenter = centerAreaX + NODE_W / 2;
   const flatNodes: FlatNode[] = [];
   const posById = new Map<string, FlatNode>();
-  let maxRight = baseCanvasW - 32;
+  const rowCentersByLevel = new Map<WorkflowLevel, number[]>();
+  let nextLeafCenter = minCenter;
+  let maxRight = minWidth - 32;
   let minLeft = 0;
 
-  LEVEL_ORDER.forEach((level, levelIndex) => {
-    const row = treeRows.get(level) || [];
-    const rowW = row.length * NODE_W + Math.max(0, row.length - 1) * GAP_X;
-    const startX = centerAreaX + Math.max(0, (baseAvailableW - rowW) / 2);
-    const y = 24 + levelIndex * (NODE_H + ROW_GAP);
-    const rowCenters: number[] = [];
+  LEVEL_ORDER.forEach(level => rowCentersByLevel.set(level, []));
 
-    row.forEach((node, index) => {
-      const flat = {
-        node,
-        absX: startX + index * (NODE_W + GAP_X) + NODE_W / 2,
-        absY: y,
-      };
-      flatNodes.push(flat);
-      posById.set(node.id, flat);
-      rowCenters.push(flat.absX);
-      minLeft = Math.min(minLeft, flat.absX - NODE_W / 2);
-      maxRight = Math.max(maxRight, flat.absX + NODE_W / 2);
+  const getLevelY = (level: WorkflowLevel) => {
+    const levelIndex = Math.max(0, LEVEL_ORDER.indexOf(level));
+    return 24 + levelIndex * (NODE_H + ROW_GAP);
+  };
+
+  const reserveLeafCenter = () => {
+    const x = nextLeafCenter;
+    nextLeafCenter += NODE_W + GAP_X;
+    return x;
+  };
+
+  const registerFlatNode = (node: WorkflowNode, absX: number, absY: number) => {
+    const flat = { node, absX, absY };
+    flatNodes.push(flat);
+    posById.set(node.id, flat);
+    rowCentersByLevel.get(node.level)?.push(absX);
+    minLeft = Math.min(minLeft, absX - NODE_W / 2);
+    maxRight = Math.max(maxRight, absX + NODE_W / 2);
+    return flat;
+  };
+
+  const layoutTreeNode = (node: TreeNode): number | null => {
+    if (hiddenNodeIds.has(node.id)) return null;
+
+    const childCenters = node.children
+      .map(child => ({ child, x: layoutTreeNode(child) }))
+      .filter((item): item is { child: TreeNode; x: number } => typeof item.x === 'number');
+
+    const absX = childCenters.length > 0
+      ? (childCenters[0].x + childCenters[childCenters.length - 1].x) / 2
+      : reserveLeafCenter();
+
+    registerFlatNode(node, absX, getLevelY(node.level));
+
+    childCenters.forEach(({ child }) => {
+      treeEdges.push({ fromId: node.id, toId: child.id });
     });
+
+    return absX;
+  };
+
+  layoutTreeNode(tree);
+
+  const baseCanvasW = Math.max(minWidth, maxRight + 48, LEVEL_LABEL_W + NODE_W + 96);
+
+  LEVEL_ORDER.forEach((level, levelIndex) => {
+    const y = 24 + levelIndex * (NODE_H + ROW_GAP);
+    const rowCenters = rowCentersByLevel.get(level) || [];
 
     const customRow = [...(customRows.get(level) || [])].sort((a, b) => {
       const ax = typeof a.preferredX === 'number' ? a.preferredX : Number.MAX_SAFE_INTEGER;
@@ -409,12 +416,12 @@ function buildVerticalWorkflowLayout(
 
     customRow.forEach((node, index) => {
       const manualPosition = manualNodePositions[node.id];
-      const fallbackX = startX + rowW + (row.length > 0 ? GAP_X : 0) + index * (NODE_W + GAP_X) + NODE_W / 2;
+      const rightMostRowCenter = rowCenters.length > 0 ? Math.max(...rowCenters) : minCenter - NODE_CLEARANCE;
+      const fallbackX = rightMostRowCenter + NODE_CLEARANCE * (index + 1);
       const resolvedY = manualPosition?.y ?? y;
       let resolvedX = manualPosition?.x;
 
       if (typeof resolvedX !== 'number') {
-        const minCenter = centerAreaX + NODE_W / 2;
         const maxCenter = Math.max(minCenter, baseCanvasW - NODE_W / 2 - 32 + customRow.length * NODE_CLEARANCE);
         resolvedX = clamp(typeof node.preferredX === 'number' ? node.preferredX : fallbackX, minCenter, maxCenter);
         if (rowCenters.some(center => Math.abs(center - resolvedX!) < NODE_CLEARANCE)) {
@@ -431,20 +438,12 @@ function buildVerticalWorkflowLayout(
         }
       }
 
-      const flat = {
-        node,
-        absX: resolvedX,
-        absY: resolvedY,
-      };
-      flatNodes.push(flat);
-      posById.set(node.id, flat);
-      rowCenters.push(flat.absX);
-      minLeft = Math.min(minLeft, flat.absX - NODE_W / 2);
-      maxRight = Math.max(maxRight, flat.absX + NODE_W / 2);
+      registerFlatNode(node, resolvedX, resolvedY);
     });
   });
 
   const canvasW = Math.max(baseCanvasW, maxRight + 48, LEVEL_LABEL_W + NODE_W + 96);
+  flatNodes.sort((a, b) => LEVEL_ORDER.indexOf(a.node.level) - LEVEL_ORDER.indexOf(b.node.level));
 
   const makeLine = (edge: { fromId: string; toId: string }, custom = false): FlatLine | null => {
     const from = posById.get(edge.fromId);
