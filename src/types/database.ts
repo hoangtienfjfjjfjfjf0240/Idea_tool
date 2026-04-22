@@ -83,9 +83,12 @@ export interface IdeaContent {
   explanation: string;   // Giải thích tại sao idea hiệu quả
   // Video structure: Hook + Body + CTA
   hook: {
+    durationSeconds?: number;
     visual: string;      // Hình ảnh / cảnh quay
     text: string;        // Text on screen (liên quan voice)
     voice: string;       // Voice-over (liên quan text)
+    characterSpeech?: string;
+    voiceover?: string;
     script?: string;
     textOverlay?: string;
     viTranslation?: string;
@@ -98,6 +101,8 @@ export interface IdeaContent {
     visual: string;      // Demo PSP giải quyết painpoint
     text: string;        // Text on screen (liên quan voice)
     voice: string;       // Voice-over (liên quan text)
+    characterSpeech?: string;
+    voiceover?: string;
     script?: string;
     textOverlay?: string;
     viTranslation?: string;
@@ -107,6 +112,8 @@ export interface IdeaContent {
     voice: string;       // Voice-over kêu gọi
     text: string;        // Text on screen
     endCard: string;     // End card content
+    characterSpeech?: string;
+    voiceover?: string;
     script?: string;
     textOverlay?: string;
     viTranslation?: string;

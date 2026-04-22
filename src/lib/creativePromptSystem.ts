@@ -34,6 +34,7 @@ type HookOutputSpecOptions = {
 type SectionNormalizationOptions = {
   includeViewerFields?: boolean;
   includeEndCard?: boolean;
+  includeDurationSeconds?: boolean;
 };
 
 function normalizeList(value?: string[], fallback = 'N/A'): string {
@@ -56,6 +57,43 @@ function readText(value: unknown, fallback = ''): string {
   return text || fallback;
 }
 
+function readNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const match = value.match(/\d+(?:[.,]\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0].replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function estimateHookDurationSeconds(input: {
+  voice?: unknown;
+  voiceover?: unknown;
+  voiceOver?: unknown;
+  characterSpeech?: unknown;
+  textOverlay?: unknown;
+  text?: unknown;
+  script?: unknown;
+  visual?: unknown;
+}): number {
+  const characterSpeech = readText(input.characterSpeech);
+  const voiceover = readText(input.voiceover, readText(input.voiceOver));
+  const voice = readText(input.voice);
+  const overlay = readText(input.textOverlay, readText(input.text));
+  const script = readText(input.script, readText(input.visual));
+  const spokenText = [characterSpeech, voiceover || voice, overlay].filter(Boolean).join(' ');
+  const timingText = spokenText || script;
+  const words = timingText
+    .replace(/\[[^\]]+\]/g, ' ')
+    .split(/\s+/)
+    .map(word => word.trim())
+    .filter(Boolean).length;
+
+  if (words === 0) return 3;
+  const baseSeconds = spokenText ? 1 + words / 2.7 : 2 + words / 5.2;
+  return Math.min(8, Math.max(2, Math.ceil(baseSeconds)));
+}
+
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -64,9 +102,17 @@ function readRecord(value: unknown): Record<string, unknown> {
 
 function buildScript(section: Record<string, unknown>): string {
   const visual = readText(section.visual) || readText(section.script);
+  const characterSpeech = readText(section.characterSpeech) || readText(section.character_speech) || readText(section.talentSpeech) || readText(section.talent_speech);
+  const voiceover = readText(section.voiceover) || readText(section.voiceOver) || readText(section.voice_over);
   const voice = readText(section.voice);
   const textOverlay = readText(section.textOverlay) || readText(section.text_overlay) || readText(section.text);
-  return [visual, voice ? `[VOICE] ${voice}` : '', textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '']
+  return [
+    visual,
+    characterSpeech ? `[CHARACTER SPEECH] ${characterSpeech}` : '',
+    voiceover ? `[VOICEOVER] ${voiceover}` : '',
+    !characterSpeech && !voiceover && voice ? `[VOICE] ${voice}` : '',
+    textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
+  ]
     .filter(Boolean)
     .join('\n');
 }
@@ -97,14 +143,26 @@ function normalizeSection(
   options: SectionNormalizationOptions = {}
 ): Record<string, unknown> {
   const section = readRecord(input);
+  const characterSpeech = readText(section.characterSpeech, readText(section.character_speech, readText(section.talentSpeech, readText(section.talent_speech))));
+  const voiceover = readText(section.voiceover, readText(section.voiceOver, readText(section.voice_over)));
+  const legacyVoice = readText(section.voice);
   const normalized: Record<string, unknown> = {
     visual: readText(section.visual, readText(section.script)),
-    voice: readText(section.voice),
+    characterSpeech,
+    voiceover,
+    voice: legacyVoice || voiceover || characterSpeech,
     textOverlay: readText(section.textOverlay, readText(section.text_overlay, readText(section.text))),
     text: readText(section.text, readText(section.textOverlay, readText(section.text_overlay))),
     viTranslation: readText(section.viTranslation, readText(section.vi_translation)),
     script: readText(section.script, buildScript(section)),
   };
+
+  if (options.includeDurationSeconds) {
+    normalized.durationSeconds = Math.round(
+      readNumber(section.durationSeconds ?? section.duration_seconds ?? section.hookDurationSeconds ?? section.hook_duration_seconds)
+      ?? estimateHookDurationSeconds(normalized)
+    );
+  }
 
   if (options.includeViewerFields) {
     normalized.viewerProfile = readText(section.viewerProfile, readText(section.viewer_profile));
@@ -185,10 +243,11 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in the hook.
 - meta.hookPrimary, meta.hookAlt1, meta.hookAlt2 must use 3 different rhetorical approaches, not 3 paraphrases.
-- Voice must sound like a real person talking in-feed, not a polished ad.
+- On-camera speech must be characterSpeech; off-camera narrator/video voice must be voiceover. Do not merge both into one [VOICE] script.
+- Voice/speech must sound like a real person talking in-feed, not a polished ad.
 - Keep the output social-first, UGC-friendly, handheld, relatable.
 - hook.visual should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
-- Separate visual, voice, and textOverlay clearly for hook, body, and CTA.
+- Separate visual, characterSpeech, voiceover, and textOverlay clearly for hook, body, and CTA.
 - Include Vietnamese translation fields so the VN team can review fast.
 - When a batch requests multiple ideas, diversify creative type, opening action, blocker, reveal, and voice opening.
 - Keep hooks, body, and CTA tied to the same problem-solution chain.`;
@@ -299,10 +358,13 @@ ${selectedFiltersBlock}  "framework": {
   },
   "explanation": "Vietnamese explanation of why this idea works",
   "hook": {
+    "durationSeconds": 4,
     "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense sentences covering camera, location, blocker, and visible painpoint clue",
-    "voice": "Natural voice line in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
-    "viTranslation": "Vietnamese translation of hook voice + text",
+    "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
     "viewerProfile": "Vietnamese description of who stops scrolling",
     "viewerEmotion": "Vietnamese description of what the viewer feels",
     "painpointImpact": "Vietnamese description of why this pain lands",
@@ -310,15 +372,19 @@ ${selectedFiltersBlock}  "framework": {
   },
   "body": {
     "visual": "Detailed body visual in Vietnamese, pure visual only",
-    "voice": "Natural body voice line in ${options.language}",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short body text in ${options.language}",
-    "viTranslation": "Vietnamese translation of body voice + text"
+    "viTranslation": "Vietnamese translation of body speech/voiceover + text"
   },
   "cta": {
     "visual": "Detailed CTA visual in Vietnamese, pure visual only",
-    "voice": "Natural CTA line in ${options.language}",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short CTA text in ${options.language}",
-    "viTranslation": "Vietnamese translation of CTA voice + text",
+    "viTranslation": "Vietnamese translation of CTA speech/voiceover + text",
     "endCard": "${options.appName} + short tagline"
   }
 }]
@@ -328,11 +394,14 @@ ${selectedFiltersBlock}  "framework": {
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - meta.hookPrimary must stay under 12 words.
 - meta.hookAlt1 and meta.hookAlt2 must not be paraphrases of meta.hookPrimary.
-- hook/body/cta.visual must stay visual-only. Do not mix voice or textOverlay into visual.
+- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
+- hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
 - hook.visual must make the selected pain point and selected angle visible through the first object, first action, or first contrast. Avoid generic one-line visuals.
-- hook.voice and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
-- hook.voice + body.voice + cta.voice together must stay speakable within ${options.duration}, with hook.voice staying short.
-- voice must sound native to the chosen market and natural to a real person.
+- If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
+- Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
+- hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
+- characterSpeech + voiceover across hook/body/cta must stay speakable within ${options.duration}, with hook speech staying short.
+- Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
 - Respect the selected language for voice and textOverlay, while strategy fields stay in Vietnamese.
 - Keep the response machine-parseable.`;
@@ -359,10 +428,13 @@ Return ${quantityLabel} objects in this exact schema:
     "dontDo": "1 specific thing not to do"
   },
   "hook": {
+    "durationSeconds": 4,
     "visual": "Detailed hook-only visual in Vietnamese",
-    "voice": "Natural hook voice in ${options.language} aligned with meta.hookPrimary",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short on-screen text in ${options.language} aligned with meta.hookPrimary",
-    "viTranslation": "Vietnamese translation of hook voice + text",
+    "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
     "viewerEmotion": "Vietnamese description of what the viewer feels",
     "painpointImpact": "Vietnamese description of why this pain lands",
     "whyTheyStopScrolling": "1 Vietnamese sentence explaining the stop-scroll reason"
@@ -372,6 +444,9 @@ Return ${quantityLabel} objects in this exact schema:
 ## OUTPUT RULES
 - Focus on the first 3-5 seconds only.
 - Keep the winning hook DNA unless the user explicitly asks to change it.
+- hook.durationSeconds must estimate the actual hook runtime as an integer second count.
+- For UGC/POV/Reaction/Interview, split on-camera talent speech into characterSpeech and off-camera narrator/video voice into voiceover.
+- visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - The variation must be visually distinct, not just paraphrased text.`;
 }
@@ -502,7 +577,7 @@ export function normalizeIdeaOutput(
       psp: readText(framework.psp, defaults.appName),
     },
     explanation: readText(item.explanation),
-    hook: normalizeSection(item.hook, { includeViewerFields: true }),
+    hook: normalizeSection(item.hook, { includeViewerFields: true, includeDurationSeconds: true }),
     body: normalizeSection(item.body),
     cta: normalizeSection(item.cta, { includeEndCard: true }),
   };
@@ -515,6 +590,6 @@ export function normalizeHookOutput(input: unknown): Record<string, unknown> {
     title: readText(item.title, 'Bien the hook'),
     explanation: readText(item.explanation),
     meta: normalizeMeta(item.meta),
-    hook: normalizeSection(item.hook, { includeViewerFields: true }),
+    hook: normalizeSection(item.hook, { includeViewerFields: true, includeDurationSeconds: true }),
   };
 }

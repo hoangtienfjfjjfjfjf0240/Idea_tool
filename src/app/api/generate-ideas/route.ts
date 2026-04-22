@@ -5,6 +5,7 @@ import {
   buildIdeaOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
+  estimateHookDurationSeconds,
   normalizeIdeaOutput,
   parseJsonLoose,
   TOOL_COMPATIBILITY_GUARDRAILS,
@@ -84,7 +85,17 @@ function totalVoiceWords(item: Record<string, unknown>): number {
   const hook = asRecord(item.hook);
   const body = asRecord(item.body);
   const cta = asRecord(item.cta);
-  return countWords([asText(hook.voice), asText(body.voice), asText(cta.voice)].filter(Boolean).join(' '));
+  return countWords([
+    asText(hook.characterSpeech),
+    asText(hook.voiceover),
+    asText(hook.voice),
+    asText(body.characterSpeech),
+    asText(body.voiceover),
+    asText(body.voice),
+    asText(cta.characterSpeech),
+    asText(cta.voiceover),
+    asText(cta.voice),
+  ].filter(Boolean).join(' '));
 }
 
 function repairIdeaTrackingFields(
@@ -115,7 +126,7 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   const hookAlt1 = asText(meta.hookAlt1);
   const hookAlt2 = asText(meta.hookAlt2);
   const hookVisual = asText(hook.visual) || asText(hook.script);
-  const hookVoice = asText(hook.voice);
+  const hookVoice = [asText(hook.characterSpeech), asText(hook.voiceover), asText(hook.voice)].filter(Boolean).join(' ');
   const hookTextOverlay = asText(hook.textOverlay) || asText(hook.text);
   const dontDo = asText(meta.dontDo);
 
@@ -144,10 +155,10 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
     hookVoice,
     hookTextOverlay,
     asText(body.visual) || asText(body.script),
-    asText(body.voice),
+    [asText(body.characterSpeech), asText(body.voiceover), asText(body.voice)].filter(Boolean).join(' '),
     asText(body.textOverlay) || asText(body.text),
     asText(cta.visual) || asText(cta.script),
-    asText(cta.voice),
+    [asText(cta.characterSpeech), asText(cta.voiceover), asText(cta.voice)].filter(Boolean).join(' '),
     asText(cta.textOverlay) || asText(cta.text),
   ]
     .filter(Boolean)
@@ -411,9 +422,14 @@ function ideaSignature(idea: Record<string, unknown>): string {
     asText(idea.title),
     asText(idea.creativeType),
     asText(hook.visual),
+    asText(hook.characterSpeech),
+    asText(hook.voiceover),
     asText(hook.voice),
     asText(hook.textOverlay),
     asText(body.visual),
+    asText(body.characterSpeech),
+    asText(body.voiceover),
+    asText(body.voice),
   ].filter(Boolean).join(' ');
 }
 
@@ -459,7 +475,7 @@ function jaccardSimilarity(a: string, b: string): number {
 function hasNearDuplicateIdeas(ideas: Record<string, unknown>[]): boolean {
   for (let i = 0; i < ideas.length; i++) {
     for (let j = i + 1; j < ideas.length; j++) {
-      if (jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.62) {
+      if (jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.82) {
         return true;
       }
     }
@@ -480,18 +496,16 @@ function dedupeIdeas(candidates: Record<string, unknown>[], existing: Record<str
   const unique: Record<string, unknown>[] = [];
   const creativeCounts = countCreativeTypes(existing);
   const maxPovPerRequest = 1;
-  const maxPerCreativeType = Math.max(2, Math.ceil((existing.length + candidates.length) / 4));
 
   for (const candidate of candidates) {
     const signature = ideaSignature(candidate);
     const creativeKey = creativeTypeKey(candidate);
     const isOverusedPov = creativeKey === 'pov' && (creativeCounts.pov || 0) >= maxPovPerRequest;
-    const isOverusedCreativeType = creativeKey !== 'pov' && (creativeCounts[creativeKey] || 0) >= maxPerCreativeType;
     const isUnique = [...existing, ...unique].every(item => (
-      jaccardSimilarity(signature, ideaSignature(item)) < 0.62
+      jaccardSimilarity(signature, ideaSignature(item)) < 0.82
     ));
 
-    if (isUnique && !isOverusedPov && !isOverusedCreativeType) {
+    if (isUnique && !isOverusedPov) {
       unique.push(candidate);
       creativeCounts[creativeKey] = (creativeCounts[creativeKey] || 0) + 1;
     }
@@ -733,6 +747,11 @@ function buildFallbackIdeasForFilters(options: {
       },
       explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
       hook: {
+        durationSeconds: estimateHookDurationSeconds({
+          visual: `Open with ${pattern.scene}. The first frame clearly shows "${painpoint}" for ${coreUser}, in a ${targetMarket} context, before any app UI appears.`,
+          voice: pattern.hookVoice,
+          textOverlay: pattern.hookPrimary,
+        }),
         visual: `Open with ${pattern.scene}. The first frame clearly shows "${painpoint}" for ${coreUser}, in a ${targetMarket} context, before any app UI appears.`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
@@ -1146,41 +1165,12 @@ ${retryNotes.join('\n\n')}`, {
 
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
-      let fallbackCount = 0;
 
       for (const plan of batchPlans) {
         try {
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
-            const missingCount = plan.batchQuantity - batchIdeas.length;
-            const fallbackIdeas = buildFallbackIdeasForFilters({
-              appName,
-              filters,
-              quantity: missingCount + 10,
-              duration,
-              startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
-              angleIndex,
-              ideaDescription: config?.ideaDescription,
-            });
-            const uniqueFallback = dedupeIdeas(fallbackIdeas, [...aggregatedIdeas, ...batchIdeas]).slice(0, missingCount);
-            batchIdeas.push(...uniqueFallback);
-
-            if (batchIdeas.length < plan.batchQuantity) {
-              batchIdeas.push(...buildFallbackIdeasForFilters({
-                appName,
-                filters,
-                quantity: plan.batchQuantity - batchIdeas.length,
-                duration,
-                startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
-                angleIndex,
-                ideaDescription: config?.ideaDescription,
-              }));
-            }
-
-            fallbackCount += missingCount;
-            batchErrors.push(
-              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few valid unique ideas, topped up ${missingCount}.`
-            );
+            throw new Error(`AI chỉ trả ${batchIdeas.length}/${plan.batchQuantity} idea hợp lệ. Không dùng fallback template.`);
           }
           aggregatedIdeas.push(...batchIdeas.slice(0, plan.batchQuantity));
         } catch (batchError) {
@@ -1191,18 +1181,11 @@ ${retryNotes.join('\n\n')}`, {
               ? `${rangeLabel}: ${batchError.message}`
               : `${rangeLabel}: Unknown batch error`
           );
-
-          const fallbackIdeas = buildFallbackIdeasForFilters({
-            appName,
-            filters,
-            quantity: plan.batchQuantity,
-            duration,
-            startIndex: requestStartIndex + plan.batchStartIndex,
-            angleIndex,
-            ideaDescription: config?.ideaDescription,
-          });
-          aggregatedIdeas.push(...fallbackIdeas);
-          fallbackCount += fallbackIdeas.length;
+          return NextResponse.json({
+            success: false,
+            error: `API chưa tạo đủ idea hợp lệ cho batch ${rangeLabel}. Hãy bấm tạo lại.`,
+            meta: { warnings: batchErrors },
+          }, { status: 502 });
         }
       }
 
@@ -1211,19 +1194,11 @@ ${retryNotes.join('\n\n')}`, {
       }
 
       if (aggregatedIdeas.length < requestedQuantity) {
-        const missingCount = requestedQuantity - aggregatedIdeas.length;
-        const finalTopUp = buildFallbackIdeasForFilters({
-          appName,
-          filters,
-          quantity: missingCount,
-          duration,
-          startIndex: requestStartIndex + aggregatedIdeas.length,
-          angleIndex,
-          ideaDescription: config?.ideaDescription,
-        });
-        aggregatedIdeas.push(...finalTopUp);
-        fallbackCount += finalTopUp.length;
-        batchErrors.push(`Final top-up added ${missingCount} fallback ideas to satisfy requested quantity.`);
+        return NextResponse.json({
+          success: false,
+          error: `API chỉ tạo ${aggregatedIdeas.length}/${requestedQuantity} idea hợp lệ. Không dùng fallback template.`,
+          meta: { warnings: batchErrors },
+        }, { status: 502 });
       }
 
       const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity);
@@ -1235,7 +1210,7 @@ ${retryNotes.join('\n\n')}`, {
           generatedQuantity: finalIdeas.length,
           batchCount: batchPlans.length,
           partial: finalIdeas.length < requestedQuantity,
-          fallbackCount,
+          fallbackCount: 0,
           warnings: batchErrors.length > 0 ? batchErrors : undefined,
         },
       });

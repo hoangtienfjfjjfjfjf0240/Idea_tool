@@ -55,8 +55,19 @@ const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
 const MAX_IDEAS_PER_GENERATE_REQUEST = 5;
 
 type IdeaApiSection = {
+  durationSeconds?: number;
+  duration_seconds?: number | string;
+  hookDurationSeconds?: number;
+  hook_duration_seconds?: number | string;
   script?: string;
   visual?: string;
+  characterSpeech?: string;
+  character_speech?: string;
+  talentSpeech?: string;
+  talent_speech?: string;
+  voiceover?: string;
+  voiceOver?: string;
+  voice_over?: string;
   voice?: string;
   text?: string;
   textOverlay?: string;
@@ -703,9 +714,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         const c = idea.content;
         return `${i + 1}. "${idea.title}"
    Framework: CoreUser="${c?.framework?.coreUser || ''}", Painpoint="${c?.framework?.painpoint || ''}", Emotion="${c?.framework?.emotion || ''}", PSP="${c?.framework?.psp || ''}"
-   Hook: visual="${c?.hook?.visual || ''}", script="${c?.hook?.script || ''}", voice="${c?.hook?.voice || ''}"
-   Body: visual="${c?.body?.visual || ''}", voice="${c?.body?.voice || ''}"
-   CTA: "${c?.cta?.voice || ''}"`;
+   Hook: visual="${c?.hook?.visual || ''}", script="${c?.hook?.script || ''}", characterSpeech="${c?.hook?.characterSpeech || ''}", voiceover="${c?.hook?.voiceover || ''}", voice="${c?.hook?.voice || ''}"
+   Body: visual="${c?.body?.visual || ''}", characterSpeech="${c?.body?.characterSpeech || ''}", voiceover="${c?.body?.voiceover || ''}", voice="${c?.body?.voice || ''}"
+   CTA: characterSpeech="${c?.cta?.characterSpeech || ''}", voiceover="${c?.cta?.voiceover || ''}", voice="${c?.cta?.voice || ''}"`;
       }).join('\n');
 
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
@@ -831,10 +842,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
             hook: {
+              durationSeconds: getHookDurationSeconds(item.hook),
               script: item.hook?.script || item.hook?.visual || '',
               textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
               visual: item.hook?.visual || item.hook?.script || '',
               text: item.hook?.textOverlay || item.hook?.text_overlay || item.hook?.text || '',
+              characterSpeech: getSectionCharacterSpeech(item.hook),
+              voiceover: getSectionVoiceover(item.hook),
               voice: item.hook?.voice || '',
             },
             body: {
@@ -842,11 +856,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               textOverlay: item.body?.textOverlay || item.body?.text_overlay || '',
               visual: item.body?.visual || item.body?.script || '',
               text: item.body?.textOverlay || item.body?.text_overlay || item.body?.text || '',
+              characterSpeech: getSectionCharacterSpeech(item.body),
+              voiceover: getSectionVoiceover(item.body),
               voice: item.body?.voice || '',
             },
             cta: {
               script: item.cta?.script || item.cta?.visual || '',
               visual: item.cta?.visual || item.cta?.script || '',
+              characterSpeech: getSectionCharacterSpeech(item.cta),
+              voiceover: getSectionVoiceover(item.cta),
               voice: item.cta?.voice || '',
               text: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
               textOverlay: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
@@ -943,6 +961,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const hookVisual = content.hook?.visual || content.hook?.script || '';
     const bodyVisual = content.body?.visual || content.body?.script || '';
     const ctaVisual = content.cta?.visual || content.cta?.script || '';
+    const hookSpeech = getSectionSpokenLines(content.hook);
+    const bodySpeech = getSectionSpokenLines(content.body);
+    const ctaSpeech = getSectionSpokenLines(content.cta);
     const primaryHook = meta?.hookPrimary || '';
     const sections = [
       `TIÊU ĐỀ: ${idea.title}`,
@@ -961,19 +982,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             '',
           ]
         : []),
-      'HOOK (3-5s)',
+      `HOOK (${getHookDurationSeconds(content.hook)}s)`,
       `[VISUAL] ${hookVisual}`,
-      `[VOICE] ${content.hook?.voice || ''}`,
+      `[NHAN VAT NOI] ${hookSpeech.characterSpeech || ''}`,
+      `[VOICE VIDEO] ${hookSpeech.voiceover || ''}`,
+      ...(hookSpeech.legacyVoice ? [`[VOICE] ${hookSpeech.legacyVoice}`] : []),
       `[TEXT OVERLAY] ${content.hook?.textOverlay || content.hook?.text || ''}`,
       '',
       'BODY (10-25s)',
       `[VISUAL] ${bodyVisual}`,
-      `[VOICE] ${content.body?.voice || ''}`,
+      `[NHAN VAT NOI] ${bodySpeech.characterSpeech || ''}`,
+      `[VOICE VIDEO] ${bodySpeech.voiceover || ''}`,
+      ...(bodySpeech.legacyVoice ? [`[VOICE] ${bodySpeech.legacyVoice}`] : []),
       `[TEXT OVERLAY] ${content.body?.textOverlay || content.body?.text || ''}`,
       '',
       'CTA (3-5s)',
       `[VISUAL] ${ctaVisual}`,
-      `[VOICE] ${content.cta?.voice || ''}`,
+      `[NHAN VAT NOI] ${ctaSpeech.characterSpeech || ''}`,
+      `[VOICE VIDEO] ${ctaSpeech.voiceover || ''}`,
+      ...(ctaSpeech.legacyVoice ? [`[VOICE] ${ctaSpeech.legacyVoice}`] : []),
       `[TEXT OVERLAY] ${content.cta?.textOverlay || content.cta?.text || ''}`,
       `End Card: ${content.cta?.endCard || ''}`,
     ];
@@ -987,6 +1014,59 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const text = cleanPreviewText(value);
     if (text.length <= limit) return text;
     return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const getSectionCharacterSpeech = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
+    const raw = (section || {}) as Record<string, unknown> & IdeaApiSection;
+    return cleanPreviewText(raw.characterSpeech ?? raw.character_speech ?? raw.talentSpeech ?? raw.talent_speech);
+  };
+
+  const getSectionVoiceover = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
+    const raw = (section || {}) as Record<string, unknown> & IdeaApiSection;
+    return cleanPreviewText(raw.voiceover ?? raw.voiceOver ?? raw.voice_over);
+  };
+
+  const getSectionLegacyVoice = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
+    const raw = (section || {}) as Record<string, unknown>;
+    const voice = cleanPreviewText(raw.voice);
+    const characterSpeech = getSectionCharacterSpeech(raw);
+    const voiceover = getSectionVoiceover(raw);
+    return voice && voice !== characterSpeech && voice !== voiceover ? voice : '';
+  };
+
+  const getSectionSpokenLines = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined) => {
+    const characterSpeech = getSectionCharacterSpeech(section);
+    const voiceover = getSectionVoiceover(section);
+    const legacyVoice = getSectionLegacyVoice(section);
+    return {
+      characterSpeech,
+      voiceover: voiceover || (!characterSpeech ? legacyVoice : ''),
+      legacyVoice: characterSpeech ? legacyVoice : '',
+    };
+  };
+
+  const getHookDurationSeconds = (hook: Partial<IdeaContent['hook']> | IdeaApiSection | Record<string, unknown> | undefined): number => {
+    const rawHook = (hook || {}) as Record<string, unknown> & IdeaApiSection;
+    const rawDuration = rawHook.durationSeconds ?? rawHook.duration_seconds ?? rawHook.hookDurationSeconds ?? rawHook.hook_duration_seconds;
+    const parsedDuration = typeof rawDuration === 'number'
+      ? rawDuration
+      : typeof rawDuration === 'string'
+        ? Number(rawDuration.match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(',', '.'))
+        : NaN;
+    if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
+      return Math.min(8, Math.max(2, Math.round(parsedDuration)));
+    }
+
+    const characterSpeech = getSectionCharacterSpeech(rawHook);
+    const voiceover = getSectionVoiceover(rawHook);
+    const voice = cleanPreviewText(rawHook.voice);
+    const textOverlay = cleanPreviewText(rawHook.textOverlay ?? rawHook.text_overlay ?? rawHook.text);
+    const visual = cleanPreviewText(rawHook.visual ?? rawHook.script);
+    const timingText = [characterSpeech, voiceover || voice, textOverlay].filter(Boolean).join(' ') || visual;
+    const words = timingText.split(/\s+/).map(word => word.trim()).filter(Boolean).length;
+    if (words === 0) return 3;
+    const hasSpokenHook = Boolean(characterSpeech || voiceover || voice || textOverlay);
+    return Math.min(8, Math.max(2, Math.ceil(hasSpokenHook ? 1 + words / 2.7 : 2 + words / 5.2)));
   };
 
   const toggleIdeaSet = (
@@ -1007,20 +1087,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer({
       title: idea.title,
       explanation: c.explanation || '',
-      hook: { script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', visual: c.hook?.visual || '', text: c.hook?.text || '', voice: c.hook?.voice || '' },
-      body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', visual: c.body?.visual || '', text: c.body?.text || '', voice: c.body?.voice || '' },
-      cta: { script: c.cta?.script || '', visual: c.cta?.visual || '', voice: c.cta?.voice || '', text: c.cta?.text || '', textOverlay: c.cta?.textOverlay || '', endCard: c.cta?.endCard || '' },
+      hook: { durationSeconds: getHookDurationSeconds(c.hook), script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', visual: c.hook?.visual || '', text: c.hook?.text || '', characterSpeech: getSectionCharacterSpeech(c.hook), voiceover: getSectionVoiceover(c.hook), voice: c.hook?.voice || '' },
+      body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', visual: c.body?.visual || '', text: c.body?.text || '', characterSpeech: getSectionCharacterSpeech(c.body), voiceover: getSectionVoiceover(c.body), voice: c.body?.voice || '' },
+      cta: { script: c.cta?.script || '', visual: c.cta?.visual || '', characterSpeech: getSectionCharacterSpeech(c.cta), voiceover: getSectionVoiceover(c.cta), voice: c.cta?.voice || '', text: c.cta?.text || '', textOverlay: c.cta?.textOverlay || '', endCard: c.cta?.endCard || '' },
     });
   };
 
   const saveEditIdea = async (idea: GeneratedIdea) => {
     if (!editBuffer) return;
-    const newContent = {
+    const normalizeEditedSection = (section: Record<string, unknown>) => ({
+      ...section,
+      voice: cleanPreviewText(section.voice) || cleanPreviewText(section.voiceover) || cleanPreviewText(section.characterSpeech),
+    });
+    const newContent: IdeaContent = {
       ...idea.content,
       explanation: editBuffer.explanation,
-      hook: editBuffer.hook,
-      body: editBuffer.body,
-      cta: editBuffer.cta,
+      hook: { ...normalizeEditedSection(editBuffer.hook), durationSeconds: getHookDurationSeconds(editBuffer.hook) } as IdeaContent['hook'],
+      body: normalizeEditedSection(editBuffer.body) as IdeaContent['body'],
+      cta: normalizeEditedSection(editBuffer.cta) as IdeaContent['cta'],
     };
     await dbService.updateIdeaContent(idea.id, editBuffer.title, newContent);
     // Update local state
@@ -1678,7 +1762,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
             const angleTag = Array.isArray(idea.filters_snapshot?.angle) ? idea.filters_snapshot?.angle?.[0] : '';
             const hookVisual = hookData?.visual || hookData?.script || '';
-            const hookVoice = hookData?.voice || '';
+            const hookDuration = getHookDurationSeconds(hookData);
+            const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
             const primaryHook = c?.meta?.hookPrimary || '';
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
@@ -1727,25 +1812,31 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   </div>
 
                   <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-2">
-                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-3">Hook (3-5s)</span>
+                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-3">Hook ({hookDuration}s)</span>
                     {isEditing ? (
                       <div className="space-y-3">
                         <textarea value={hookData?.visual || hookData?.script || ''}
                           onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, visual: e.target.value, script: e.target.value } })}
                           className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-24 bg-white"
                           placeholder="Mô tả cảnh quay / hành động / camera" />
-                        <textarea value={hookData?.voice || ''}
-                          onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, voice: e.target.value } })}
+                        <textarea value={hookData?.characterSpeech || ''}
+                          onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, characterSpeech: e.target.value, voice: hookData?.voiceover || e.target.value } })}
                           className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-20 bg-white"
-                          placeholder="Lời nhân vật nói" />
+                          placeholder="Nhân vật nói trực tiếp trước camera" />
+                        <textarea value={hookData?.voiceover || ''}
+                          onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, voiceover: e.target.value, voice: e.target.value || hookData?.characterSpeech || '' } })}
+                          className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-red-200 resize-none h-20 bg-white"
+                          placeholder="Voice video / narrator ngoài khung hình" />
                         <input value={hookData?.textOverlay || hookData?.text || ''}
                           onChange={e => setEditBuffer({ ...editBuffer, hook: { ...editBuffer.hook, textOverlay: e.target.value, text: e.target.value } })}
                           className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-red-200 bg-white" />
                       </div>
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                        <p className="whitespace-pre-line">{hookVisual || 'Hook visual will appear here.'}</p>
-                        <p className="mt-1 text-gray-800">[VOICE] {hookVoice || '—'}</p>
+                        <p className="whitespace-pre-line">[VISUAL] {hookVisual || 'Hook visual will appear here.'}</p>
+                        <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {hookSpeech.characterSpeech || '—'}</p>
+                        <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover || '—'}</p>
+                        {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
                         <p className="text-gray-800">[TEXT OVERLAY] {hookText || '—'}</p>
                         {primaryHook && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>
@@ -1800,9 +1891,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                                 meta: refined.meta || (idea.content as any).meta,
                                 framework: refined.framework || (idea.content as any).framework,
                                 explanation: refined.explanation || (idea.content as any).explanation,
-                                hook: refined.hook ? { script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', voice: refined.hook.voice || '', viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
-                                body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', voice: refined.body.voice || '', viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
-                                cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', voice: refined.cta.voice || '', text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
+                                hook: refined.hook ? { durationSeconds: getHookDurationSeconds(refined.hook), script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.hook), voiceover: getSectionVoiceover(refined.hook), voice: refined.hook.voice || getSectionVoiceover(refined.hook) || getSectionCharacterSpeech(refined.hook), viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
+                                body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.body), voiceover: getSectionVoiceover(refined.body), voice: refined.body.voice || getSectionVoiceover(refined.body) || getSectionCharacterSpeech(refined.body), viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
+                                cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', characterSpeech: getSectionCharacterSpeech(refined.cta), voiceover: getSectionVoiceover(refined.cta), voice: refined.cta.voice || getSectionVoiceover(refined.cta) || getSectionCharacterSpeech(refined.cta), text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
                               };
                               const newTitle = refined.title || idea.title;
                                await dbService.updateIdeaContent(idea.id, newTitle, newContent);
@@ -1839,7 +1930,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   ].map(sec => {
                     const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
                     const visualContent = secData?.visual || secData?.script || '';
-                    const voiceContent = secData?.voice || '';
+                    const spokenLines = getSectionSpokenLines(secData);
                     const textOverlay = secData?.textOverlay || secData?.text || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
                     return (
@@ -1852,10 +1943,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                               onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], visual: e.target.value, script: e.target.value } })}
                               className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-28 bg-white"
                               placeholder="Mô tả cảnh quay / thao tác / diễn biến" />
-                            <textarea value={secData?.voice || ''}
-                              onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], voice: e.target.value } })}
+                            <textarea value={secData?.characterSpeech || ''}
+                              onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], characterSpeech: e.target.value, voice: secData?.voiceover || e.target.value } })}
                               className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white"
-                              placeholder="Lời nhân vật nói / CTA voice" />
+                              placeholder="Nhân vật nói trực tiếp trước camera" />
+                            <textarea value={secData?.voiceover || ''}
+                              onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], voiceover: e.target.value, voice: e.target.value || secData?.characterSpeech || '' } })}
+                              className="w-full text-sm border rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none h-20 bg-white"
+                              placeholder="Voice video / narrator ngoài khung hình" />
                             <input value={secData?.textOverlay || secData?.text || ''}
                               onChange={e => setEditBuffer({ ...editBuffer, [sec.key]: { ...editBuffer[sec.key], textOverlay: e.target.value, text: e.target.value } })}
                               className="w-full text-sm border rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-200 bg-white" />
@@ -1868,8 +1963,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                           </div>
                         ) : (
                           <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                            <p className="whitespace-pre-line">{visualContent || '—'}</p>
-                            <p className="mt-1 text-gray-800 whitespace-pre-line">[VOICE] {voiceContent || '—'}</p>
+                            <p className="whitespace-pre-line">[VISUAL] {visualContent || '—'}</p>
+                            <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {spokenLines.characterSpeech || '—'}</p>
+                            <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover || '—'}</p>
+                            {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {spokenLines.legacyVoice}</p>}
                             <p className="text-gray-800">[TEXT OVERLAY] {textOverlay || '—'}</p>
                             {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
                             {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}

@@ -5,6 +5,7 @@ import {
   buildIdeaOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
+  estimateHookDurationSeconds,
   normalizeIdeaOutput,
   parseJsonLoose,
   TOOL_COMPATIBILITY_GUARDRAILS,
@@ -104,7 +105,17 @@ function totalVoiceWords(item: Record<string, unknown>): number {
   const hook = asRecord(item.hook);
   const body = asRecord(item.body);
   const cta = asRecord(item.cta);
-  return countWords([asText(hook.voice), asText(body.voice), asText(cta.voice)].filter(Boolean).join(' '));
+  return countWords([
+    asText(hook.characterSpeech),
+    asText(hook.voiceover),
+    asText(hook.voice),
+    asText(body.characterSpeech),
+    asText(body.voiceover),
+    asText(body.voice),
+    asText(cta.characterSpeech),
+    asText(cta.voiceover),
+    asText(cta.voice),
+  ].filter(Boolean).join(' '));
 }
 
 function repairIdeaTrackingFields(
@@ -136,13 +147,13 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   const hookAlt1 = asText(meta.hookAlt1);
   const hookAlt2 = asText(meta.hookAlt2);
   const hookVisual = asText(hook.visual) || asText(hook.script);
-  const hookVoice = asText(hook.voice);
+  const hookVoice = [asText(hook.characterSpeech), asText(hook.voiceover), asText(hook.voice)].filter(Boolean).join(' ');
   const hookTextOverlay = asText(hook.textOverlay) || asText(hook.text);
   const bodyVisual = asText(body.visual) || asText(body.script);
-  const bodyVoice = asText(body.voice);
+  const bodyVoice = [asText(body.characterSpeech), asText(body.voiceover), asText(body.voice)].filter(Boolean).join(' ');
   const bodyTextOverlay = asText(body.textOverlay) || asText(body.text);
   const ctaVisual = asText(cta.visual) || asText(cta.script);
-  const ctaVoice = asText(cta.voice);
+  const ctaVoice = [asText(cta.characterSpeech), asText(cta.voiceover), asText(cta.voice)].filter(Boolean).join(' ');
   const ctaTextOverlay = asText(cta.textOverlay) || asText(cta.text);
   const ctaEndCard = asText(cta.endCard);
   const dontDo = asText(meta.dontDo);
@@ -231,10 +242,17 @@ function buildIdeaFingerprint(item: Record<string, unknown>) {
 
   return [
     asText(meta.hookPrimary),
+    asText(hook.characterSpeech),
+    asText(hook.voiceover),
     asText(hook.voice),
     asText(hook.textOverlay) || asText(hook.text),
     asText(hook.visual) || asText(hook.script),
     asText(body.visual) || asText(body.script),
+    asText(body.characterSpeech),
+    asText(body.voiceover),
+    asText(body.voice),
+    asText(cta.characterSpeech),
+    asText(cta.voiceover),
     asText(cta.voice),
     asText(cta.textOverlay) || asText(cta.text),
   ]
@@ -251,7 +269,7 @@ function dedupeIdeas(
   for (const candidate of candidates) {
     const candidateFingerprint = buildIdeaFingerprint(candidate);
     const isUnique = [...existing, ...unique].every(item => (
-      jaccardSimilarity(candidateFingerprint, buildIdeaFingerprint(item)) < 0.74
+      jaccardSimilarity(candidateFingerprint, buildIdeaFingerprint(item)) < 0.82
     ));
 
     if (isUnique) unique.push(candidate);
@@ -367,6 +385,11 @@ function buildFallbackIdeasFromHook(
       },
       explanation: `Expand the winning hook into a full brief that keeps the pain point "${painpoint}" and pushes direction "${directionHint}".`,
       hook: {
+        durationSeconds: estimateHookDurationSeconds({
+          visual: `${visualBase} Reframe the opening around ${pattern.angle} so "${directionHint}" is visible immediately in the first action.`,
+          voice: pattern.hookVoice,
+          textOverlay: pattern.hookPrimary,
+        }),
         visual: `${visualBase} Reframe the opening around ${pattern.angle} so "${directionHint}" is visible immediately in the first action.`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
@@ -492,29 +515,21 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       if (!text) {
         console.error('[generate-ideas-from-hook] AI returned null for batch', plan);
-        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: AI returned null, used fallback.`);
-        aggregatedIdeas.push(...normalizeFallbackIdeasFromHook(hook, {
-          quantity: plan.batchQuantity,
-          startIndex: aggregatedIdeas.length,
-          duration,
-          appName,
-          ideaDirection,
-        }));
-        continue;
+        return NextResponse.json({
+          success: false,
+          error: 'AI không phản hồi cho batch này. Không dùng fallback template, hãy bấm tạo lại.',
+          meta: { warnings },
+        }, { status: 502 });
       }
 
       const parsed = parseJson(text);
       if (!parsed) {
         console.error('[generate-ideas-from-hook] Failed to parse batch:', text.substring(0, 300));
-        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: parse failed, used fallback.`);
-        aggregatedIdeas.push(...normalizeFallbackIdeasFromHook(hook, {
-          quantity: plan.batchQuantity,
-          startIndex: aggregatedIdeas.length,
-          duration,
-          appName,
-          ideaDirection,
-        }));
-        continue;
+        return NextResponse.json({
+          success: false,
+          error: 'AI trả về format không parse được. Không dùng fallback template, hãy bấm tạo lại.',
+          meta: { warnings },
+        }, { status: 502 });
       }
 
       const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -533,14 +548,12 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       aggregatedIdeas.push(...dedupedBatch);
 
       if (dedupedBatch.length < plan.batchQuantity) {
-        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: only ${dedupedBatch.length}/${plan.batchQuantity} valid unique ideas, topped up with fallback.`);
-        aggregatedIdeas.push(...normalizeFallbackIdeasFromHook(hook, {
-          quantity: plan.batchQuantity - dedupedBatch.length,
-          startIndex: aggregatedIdeas.length,
-          duration,
-          appName,
-          ideaDirection,
-        }));
+        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: only ${dedupedBatch.length}/${plan.batchQuantity} valid unique ideas.`);
+        return NextResponse.json({
+          success: false,
+          error: `AI chỉ tạo ${dedupedBatch.length}/${plan.batchQuantity} idea hợp lệ cho batch này. Không dùng fallback template, hãy bấm tạo lại.`,
+          meta: { warnings },
+        }, { status: 502 });
       }
     }
 

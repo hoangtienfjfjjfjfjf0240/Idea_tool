@@ -17,10 +17,13 @@ interface HookIdea {
   title: string;
   explanation: string;
   hook: {
+    durationSeconds?: number;
     script?: string;
     textOverlay?: string;
     visual: string;
     text: string;
+    characterSpeech?: string;
+    voiceover?: string;
     voice: string;
     imageUrl?: string;
     viTranslation?: string;
@@ -47,7 +50,7 @@ interface FullIdea {
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const FULL_IDEA_SECTIONS = [
-  { key: 'hook', label: '🎣 HOOK (3-5s)', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
+  { key: 'hook', label: '🎣 HOOK', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
   { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
 ] as const;
@@ -345,7 +348,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const handleCopy = (idea: HookIdea) => {
     const scriptContent = idea.hook.script
-      || [idea.hook.visual ? `[VISUAL] ${idea.hook.visual}` : '', idea.hook.voice ? `[VOICE] ${idea.hook.voice}` : '']
+      || [
+        idea.hook.visual ? `[VISUAL] ${idea.hook.visual}` : '',
+        idea.hook.characterSpeech ? `[NHAN VAT NOI] ${idea.hook.characterSpeech}` : '',
+        idea.hook.voiceover ? `[VOICE VIDEO] ${idea.hook.voiceover}` : '',
+        !idea.hook.characterSpeech && !idea.hook.voiceover && idea.hook.voice ? `[VOICE] ${idea.hook.voice}` : '',
+      ]
         .filter(Boolean)
         .join('\n');
     const text = `HOOK: ${idea.title}\nSCENARIO: ${idea.explanation}\n\n${scriptContent}\n\n[TEXT OVERLAY] ${idea.hook.textOverlay || idea.hook.text}`;
@@ -355,19 +363,62 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const readText = (value: unknown, fallback = '') =>
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 
+  const readNumber = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'string') return null;
+    const match = value.match(/\d+(?:[.,]\d+)?/);
+    return match ? Number(match[0].replace(',', '.')) : null;
+  };
+
+  const getSectionCharacterSpeech = (section?: Record<string, unknown>) =>
+    readText(section?.characterSpeech, readText(section?.character_speech, readText(section?.talentSpeech, readText(section?.talent_speech))));
+
+  const getSectionVoiceover = (section?: Record<string, unknown>) =>
+    readText(section?.voiceover, readText(section?.voiceOver, readText(section?.voice_over)));
+
+  const getSectionLegacyVoice = (section?: Record<string, unknown>) => {
+    const voice = readText(section?.voice);
+    const characterSpeech = getSectionCharacterSpeech(section);
+    const voiceover = getSectionVoiceover(section);
+    return voice && voice !== characterSpeech && voice !== voiceover ? voice : '';
+  };
+
+  const estimateSectionDurationSeconds = (section?: Record<string, unknown>) => {
+    const rawDuration = readNumber(section?.durationSeconds ?? section?.duration_seconds ?? section?.hookDurationSeconds ?? section?.hook_duration_seconds);
+    if (rawDuration && rawDuration > 0) return Math.min(8, Math.max(2, Math.round(rawDuration)));
+
+    const speech = [
+      getSectionCharacterSpeech(section),
+      getSectionVoiceover(section) || readText(section?.voice),
+      readText(section?.textOverlay, readText(section?.text)),
+    ].filter(Boolean).join(' ');
+    const visual = readText(section?.visual, readText(section?.script));
+    const timingText = speech || visual;
+    const words = timingText.split(/\s+/).filter(Boolean).length;
+    if (words === 0) return 3;
+    return Math.min(8, Math.max(2, Math.ceil(speech ? 1 + words / 2.7 : 2 + words / 5.2)));
+  };
+
   const buildIdeaSectionScript = (
     section?: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']>
   ) => {
-    const script = readText(section?.script);
-    if (script) return script;
-
+    const rawSection = (section || {}) as Record<string, unknown>;
     const visual = readText(section?.visual);
-    const voice = readText(section?.voice);
+    const characterSpeech = getSectionCharacterSpeech(rawSection);
+    const voiceover = getSectionVoiceover(rawSection);
+    const legacyVoice = getSectionLegacyVoice(rawSection);
     const textOverlay = readText(section?.textOverlay, readText(section?.text));
+    const hasStructuredParts = Boolean(visual || characterSpeech || voiceover || legacyVoice || textOverlay);
+
+    if (!hasStructuredParts) {
+      return readText(section?.script);
+    }
 
     return [
       visual ? `[VISUAL] ${visual}` : '',
-      voice ? `[VOICE] ${voice}` : '',
+      characterSpeech ? `[NHAN VAT NOI] ${characterSpeech}` : '',
+      voiceover ? `[VOICE VIDEO] ${voiceover}` : '',
+      legacyVoice ? `[VOICE] ${legacyVoice}` : '',
       textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
     ]
       .filter(Boolean)
@@ -388,10 +439,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       title: normalizeDisplayedHookTitle(readText(idea.title, readText(content.meta?.hookPrimary, 'Modified Hook'))),
       explanation: readText(content.explanation, 'Modified hook from history'),
       hook: {
+        durationSeconds: readNumber(content.hook?.durationSeconds) || undefined,
         script: readText(content.hook?.script, readText(content.hook?.voice, readText(content.hook?.visual))),
         textOverlay: readText(content.hook?.textOverlay, readText(content.hook?.text)),
         visual: readText(content.hook?.visual),
         text: readText(content.hook?.text),
+        characterSpeech: readText(content.hook?.characterSpeech),
+        voiceover: readText(content.hook?.voiceover),
         voice: readText(content.hook?.voice),
         viTranslation: readText(content.hook?.viTranslation),
         viewerEmotion: readText(content.hook?.viewerEmotion),
@@ -656,11 +710,14 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       },
       explanation: readText(idea.explanation),
       hook: {
+        durationSeconds: estimateSectionDurationSeconds(hook as Record<string, unknown>),
         script: readText(hook.script, readText(hook.visual)),
         textOverlay: readText(hook.textOverlay, readText(hook.text)),
         visual: readText(hook.visual, readText(hook.script)),
         text: readText(hook.text, readText(hook.textOverlay)),
-        voice: readText(hook.voice),
+        characterSpeech: getSectionCharacterSpeech(hook as Record<string, unknown>),
+        voiceover: getSectionVoiceover(hook as Record<string, unknown>),
+        voice: readText(hook.voice, getSectionVoiceover(hook as Record<string, unknown>) || getSectionCharacterSpeech(hook as Record<string, unknown>)),
         viTranslation: readText(hook.viTranslation),
         viewerProfile: readText(hook.viewerProfile),
         viewerEmotion: readText(hook.viewerEmotion),
@@ -672,13 +729,17 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         textOverlay: readText(body.textOverlay, readText(body.text)),
         visual: readText(body.visual, readText(body.script)),
         text: readText(body.text, readText(body.textOverlay)),
-        voice: readText(body.voice),
+        characterSpeech: getSectionCharacterSpeech(body as Record<string, unknown>),
+        voiceover: getSectionVoiceover(body as Record<string, unknown>),
+        voice: readText(body.voice, getSectionVoiceover(body as Record<string, unknown>) || getSectionCharacterSpeech(body as Record<string, unknown>)),
         viTranslation: readText(body.viTranslation),
       },
       cta: {
         script: readText(cta.script, readText(cta.visual)),
         visual: readText(cta.visual, readText(cta.script)),
-        voice: readText(cta.voice),
+        characterSpeech: getSectionCharacterSpeech(cta as Record<string, unknown>),
+        voiceover: getSectionVoiceover(cta as Record<string, unknown>),
+        voice: readText(cta.voice, getSectionVoiceover(cta as Record<string, unknown>) || getSectionCharacterSpeech(cta as Record<string, unknown>)),
         text: readText(cta.text, readText(cta.textOverlay)),
         textOverlay: readText(cta.textOverlay, readText(cta.text)),
         endCard: readText(cta.endCard),
@@ -712,11 +773,14 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       },
       explanation: readText(idea.explanation, `Modified hook generated from "${sourceHook.title}"`),
       hook: {
+        durationSeconds: estimateSectionDurationSeconds(hook as Record<string, unknown>),
         script: readText(hook.script, readText(hook.visual)),
         textOverlay: readText(hook.textOverlay, readText(hook.text)),
         visual: readText(hook.visual, readText(hook.script)),
         text: readText(hook.text, readText(hook.textOverlay)),
-        voice: readText(hook.voice),
+        characterSpeech: getSectionCharacterSpeech(hook as Record<string, unknown>),
+        voiceover: getSectionVoiceover(hook as Record<string, unknown>),
+        voice: readText(hook.voice, getSectionVoiceover(hook as Record<string, unknown>) || getSectionCharacterSpeech(hook as Record<string, unknown>)),
         viTranslation: readText(hook.viTranslation),
         viewerEmotion: readText(hook.viewerEmotion),
         painpointImpact: readText(hook.painpointImpact),
@@ -1691,10 +1755,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                           const scriptContent = buildIdeaSectionScript(secData);
                           const textOverlay = readText(secData?.textOverlay, readText(secData?.text));
                           const endCard = sec.key === 'cta' ? readText(idea.cta?.endCard) : '';
+                          const sectionLabel = sec.key === 'hook'
+                            ? `${sec.label} (${estimateSectionDurationSeconds(secData as Record<string, unknown>)}s)`
+                            : sec.label;
 
                           return (
                             <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
-                              <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
+                              <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sectionLabel}</span>
                               <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
 
                               <div className="flex gap-3">
@@ -1931,15 +1998,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           ) : generatedIdeas.length > 0 ? (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {generatedIdeas.map((idea, idx) => {
-                const hookContent = idea.hook.script
-                  || [idea.hook.visual ? `[VISUAL] ${idea.hook.visual}` : '', idea.hook.voice ? `[VOICE] ${idea.hook.voice}` : '']
-                    .filter(Boolean)
-                    .join('\n')
+                const hookContent = buildIdeaSectionScript(idea.hook)
                   || idea.hook.textOverlay
                   || idea.hook.text
                   || idea.explanation
                   || '';
                 const textOverlay = idea.hook.textOverlay || idea.hook.text;
+                const hookDuration = estimateSectionDurationSeconds(idea.hook as unknown as Record<string, unknown>);
                 return (
                 <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-sm transition-all group">
                   <div className="p-4">
@@ -1957,7 +2022,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"><Copy size={14} /></button>
                     </div>
                     <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3">
-                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Hook</span>
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Hook ({hookDuration}s)</span>
                       <p className="mt-1 text-sm text-gray-900 font-semibold leading-relaxed whitespace-pre-line">
                         {hookContent || 'Hook sẽ hiển thị tại đây.'}
                       </p>
