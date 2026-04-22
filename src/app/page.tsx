@@ -12,14 +12,53 @@ import { ChatAgent } from '@/components/ChatAgent';
 
 import { supabase } from '@/lib/supabase';
 import type { AppProject, FilterState, ScreenType } from '@/types/database';
-import { getHooks, getFilterOptions, getFeatures, getIdeas } from '@/lib/db';
+import { getApp, getHooks, getFilterOptions, getFeatures, getIdeas } from '@/lib/db';
 import { Loader2 } from 'lucide-react';
 
+const NAV_STATE_KEY = 'ideagen_nav_state';
+const SCREEN_VALUES: ScreenType[] = ['f1', 'f2', 'f2.1', 'f2.1.1', 'f2.1.2', 'f2.2', 'f2.2.1', 'f2.2.2', 'f2.3', 'f2.4'];
+
+type NavState = {
+  screen: ScreenType;
+  appId: string | null;
+};
+
+function isScreenType(value: string | null | undefined): value is ScreenType {
+  return Boolean(value && SCREEN_VALUES.includes(value as ScreenType));
+}
+
+function readSavedNavState(): NavState {
+  if (typeof window === 'undefined') return { screen: 'f1', appId: null };
+
+  const params = new URLSearchParams(window.location.search);
+  const urlScreen = params.get('screen');
+  const urlAppId = params.get('app');
+
+  let savedScreen: ScreenType = 'f1';
+  let savedAppId: string | null = null;
+
+  try {
+    const raw = window.localStorage.getItem(NAV_STATE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Partial<NavState> : null;
+    if (isScreenType(parsed?.screen)) savedScreen = parsed.screen;
+    if (typeof parsed?.appId === 'string' && parsed.appId.trim()) savedAppId = parsed.appId;
+  } catch {
+    // Ignore corrupt saved navigation state.
+  }
+
+  const screen = isScreenType(urlScreen) ? urlScreen : savedScreen;
+  const appId = urlAppId || savedAppId;
+  return screen === 'f1' ? { screen, appId: null } : { screen, appId };
+}
+
 export default function Home() {
+  const [initialNavState] = useState<NavState>(() => readSavedNavState());
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('');
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('f1');
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialNavState.screen);
   const [selectedApp, setSelectedApp] = useState<AppProject | null>(null);
+  const [pendingAppId, setPendingAppId] = useState<string | null>(initialNavState.appId);
+  const [restoringNav, setRestoringNav] = useState(Boolean(initialNavState.appId && initialNavState.screen !== 'f1'));
   const [prefillFilters, setPrefillFilters] = useState<Partial<FilterState> | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
@@ -62,11 +101,70 @@ export default function Home() {
         setIsLoggedIn(false);
         setUserName('');
         setCurrentScreen('f1');
+        setSelectedApp(null);
+        setPendingAppId(null);
+        window.localStorage.removeItem(NAV_STATE_KEY);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreSelectedApp = async () => {
+      if (currentScreen === 'f1' || !pendingAppId) {
+        setRestoringNav(false);
+        return;
+      }
+
+      if (selectedApp?.id === pendingAppId) {
+        setRestoringNav(false);
+        return;
+      }
+
+      setRestoringNav(true);
+      const app = await getApp(pendingAppId);
+      if (cancelled) return;
+
+      if (app) {
+        setSelectedApp(app);
+      } else {
+        setCurrentScreen('f1');
+        setPendingAppId(null);
+      }
+      setRestoringNav(false);
+    };
+
+    restoreSelectedApp();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentScreen, pendingAppId, selectedApp?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || restoringNav) return;
+
+    const navState: NavState = {
+      screen: currentScreen,
+      appId: currentScreen === 'f1' ? null : selectedApp?.id || pendingAppId || null,
+    };
+
+    window.localStorage.setItem(NAV_STATE_KEY, JSON.stringify(navState));
+
+    const url = new URL(window.location.href);
+    if (navState.screen === 'f1') {
+      url.searchParams.delete('screen');
+      url.searchParams.delete('app');
+    } else {
+      url.searchParams.set('screen', navState.screen);
+      if (navState.appId) url.searchParams.set('app', navState.appId);
+      else url.searchParams.delete('app');
+    }
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [currentScreen, pendingAppId, restoringNav, selectedApp?.id]);
 
   // Load ChatAgent context when app is selected
   useEffect(() => {
@@ -96,10 +194,13 @@ export default function Home() {
     setUserName('');
     setCurrentScreen('f1');
     setSelectedApp(null);
+    setPendingAppId(null);
+    localStorage.removeItem(NAV_STATE_KEY);
   };
 
   const handleAppSelect = (app: AppProject) => {
     setSelectedApp(app);
+    setPendingAppId(app.id);
     setCurrentScreen('f2');
   };
 
@@ -108,7 +209,7 @@ export default function Home() {
   };
 
   // Skip auth - go straight to app
-  if (checkingAuth) {
+  if (checkingAuth || restoringNav) {
     // Still check in background for user name display
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
