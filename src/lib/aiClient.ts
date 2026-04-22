@@ -174,7 +174,7 @@ export async function callAI(
   }
 
   const {
-    model = 'google/gemini-2.5-pro',
+    model = 'gemini/gemini-2.5-pro',
     temperature = 0.7,
     max_tokens = 8192,
     useCreativePersona = true,

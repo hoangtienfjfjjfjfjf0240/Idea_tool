@@ -11,7 +11,7 @@ export const maxDuration = 60;
 const MAX_HOOK_VARIATIONS = 20;
 const HOOK_MODEL_TIMEOUT_MS = 30000;
 const HOOK_FALLBACK_TIMEOUT_MS = 20000;
-const FAST_HOOK_MODELS = ['google/gemini-3-flash', 'google/gemini-2.5-flash'];
+const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
 
 function toPositiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
@@ -330,9 +330,9 @@ function buildBetterFallbackHookVariations(
 
 function resolveHookModels(selected?: string): string[] {
   const map: Record<string, string> = {
-    'gemini-2.5-flash': 'google/gemini-2.5-flash',
-    'gemini-2.5-pro': 'google/gemini-2.5-pro',
-    'gemini-3-pro': 'google/gemini-3-pro-preview',
+    'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
     'gpt-5.4': 'openai/gpt-5.4',
     'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
     'gpt-5.4-mini': 'openai/gpt-5.4-mini',

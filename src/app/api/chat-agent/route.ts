@@ -12,15 +12,15 @@ export const maxDuration = 120;
 
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
-    'gemini-2.5-pro': 'google/gemini-2.5-pro',
-    'gemini-3-pro': 'google/gemini-3-pro-preview',
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
     'gpt-5.4': 'openai/gpt-5.4',
     'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
     'gpt-5.4-mini': 'openai/gpt-5.4-mini',
     'gpt-4.1': 'openai/gpt-4.1',
     'o4-mini': 'openai/o4-mini',
   };
-  return map[selected || ''] || 'google/gemini-3-pro-preview';
+  return map[selected || ''] || 'gemini/gemini-3-pro-preview';
 }
 
 function asList(value: unknown): string[] {

@@ -28,7 +28,7 @@ const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 14000;
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 8000;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
-const IDEA_FAST_GEMINI_MODELS = ['google/gemini-3-flash', 'google/gemini-2.5-flash'];
+const IDEA_FAST_GEMINI_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
 const IDEA_FAST_OPENAI_MODELS = ['openai/gpt-5.4-mini', 'openai/gpt-4.1'];
 
 type IdeaBatchPlan = {
@@ -216,8 +216,9 @@ function detectLang(coreUsers: string[]): string {
 // Map frontend model names to gateway model identifiers
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
-    'gemini-2.5-pro': 'google/gemini-2.5-pro',
-    'gemini-3-pro': 'google/gemini-3-pro-preview',
+    'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
     'gpt-5.4': 'openai/gpt-5.4',
     'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
     'gpt-5.4-mini': 'openai/gpt-5.4-mini',
@@ -229,7 +230,7 @@ function resolveModel(selected?: string): string {
 
 function resolveIdeaModels(selected?: string): string[] {
   const primary = resolveModel(selected);
-  const fastFallbacks = primary.startsWith('google/gemini')
+  const fastFallbacks = primary.startsWith('gemini/')
     ? IDEA_FAST_GEMINI_MODELS
     : IDEA_FAST_OPENAI_MODELS;
 
