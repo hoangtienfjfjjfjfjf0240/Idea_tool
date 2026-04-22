@@ -440,6 +440,7 @@ export async function POST(request: NextRequest) {
     const batchPlans = buildIdeaBatchPlans(requestedQty);
     const aggregatedIdeas: Record<string, unknown>[] = [];
     const warnings: string[] = [];
+    let fallbackCount = 0;
 
     for (const plan of batchPlans) {
       const frameworkInjection = buildFrameworkInjection({
@@ -505,21 +506,33 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       if (!text) {
         console.error('[generate-ideas-from-hook] AI returned null for batch', plan);
-        return NextResponse.json({
-          success: false,
-          error: 'AI không phản hồi cho batch này. Không dùng fallback template, hãy bấm tạo lại.',
-          meta: { warnings },
-        }, { status: 502 });
+        const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
+          quantity: plan.batchQuantity,
+          startIndex: aggregatedIdeas.length,
+          duration,
+          appName,
+          ideaDirection,
+        });
+        aggregatedIdeas.push(...fallbackIdeas);
+        fallbackCount += fallbackIdeas.length;
+        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: AI returned null; backend used schema-safe fallback.`);
+        continue;
       }
 
       const parsed = parseJson(text);
       if (!parsed) {
         console.error('[generate-ideas-from-hook] Failed to parse batch:', text.substring(0, 300));
-        return NextResponse.json({
-          success: false,
-          error: 'AI trả về format không parse được. Không dùng fallback template, hãy bấm tạo lại.',
-          meta: { warnings },
-        }, { status: 502 });
+        const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
+          quantity: plan.batchQuantity,
+          startIndex: aggregatedIdeas.length,
+          duration,
+          appName,
+          ideaDirection,
+        });
+        aggregatedIdeas.push(...fallbackIdeas);
+        fallbackCount += fallbackIdeas.length;
+        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: parse failed; backend used schema-safe fallback.`);
+        continue;
       }
 
       const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -539,22 +552,49 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       if (dedupedBatch.length < plan.batchQuantity) {
         warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: only ${dedupedBatch.length}/${plan.batchQuantity} valid unique ideas.`);
-        return NextResponse.json({
-          success: false,
-          error: `AI chỉ tạo ${dedupedBatch.length}/${plan.batchQuantity} idea hợp lệ cho batch này. Không dùng fallback template, hãy bấm tạo lại.`,
-          meta: { warnings },
-        }, { status: 502 });
+        const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
+          quantity: plan.batchQuantity - dedupedBatch.length,
+          startIndex: aggregatedIdeas.length,
+          duration,
+          appName,
+          ideaDirection,
+        });
+        aggregatedIdeas.push(...fallbackIdeas);
+        fallbackCount += fallbackIdeas.length;
       }
     }
 
+    if (aggregatedIdeas.length < requestedQty) {
+      const missingCount = requestedQty - aggregatedIdeas.length;
+      const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
+        quantity: missingCount,
+        startIndex: aggregatedIdeas.length,
+        duration,
+        appName,
+        ideaDirection,
+      });
+      aggregatedIdeas.push(...fallbackIdeas);
+      fallbackCount += fallbackIdeas.length;
+      warnings.push(`Backend final top-up added ${missingCount} schema-safe ideas.`);
+    }
+
     if (aggregatedIdeas.length === 0) {
-      return NextResponse.json({ error: 'AI tra ve format sai.' }, { status: 500 });
+      const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
+        quantity: requestedQty,
+        startIndex: 0,
+        duration,
+        appName,
+        ideaDirection,
+      });
+      aggregatedIdeas.push(...fallbackIdeas);
+      fallbackCount += fallbackIdeas.length;
+      warnings.push('AI returned no usable ideas; backend generated schema-safe fallback ideas.');
     }
 
     return NextResponse.json({
       success: true,
       data: aggregatedIdeas.slice(0, requestedQty),
-      meta: { warnings },
+      meta: { warnings, fallbackCount },
     });
   } catch (err) {
     console.error('[generate-ideas-from-hook] Exception:', err);

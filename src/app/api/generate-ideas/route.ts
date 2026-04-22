@@ -1155,12 +1155,39 @@ ${retryNotes.join('\n\n')}`, {
 
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
+      let fallbackCount = 0;
 
       for (const plan of batchPlans) {
         try {
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
-            throw new Error(`AI chỉ trả ${batchIdeas.length}/${plan.batchQuantity} idea hợp lệ. Không dùng fallback template.`);
+            const missingCount = plan.batchQuantity - batchIdeas.length;
+            const fallbackIdeas = buildFallbackIdeasForFilters({
+              appName,
+              filters,
+              quantity: missingCount + 10,
+              duration,
+              startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
+              angleIndex,
+              ideaDescription: config?.ideaDescription,
+            });
+            const uniqueFallback = dedupeIdeas(fallbackIdeas, [...aggregatedIdeas, ...batchIdeas]).slice(0, missingCount);
+            batchIdeas.push(...uniqueFallback);
+
+            if (batchIdeas.length < plan.batchQuantity) {
+              batchIdeas.push(...buildFallbackIdeasForFilters({
+                appName,
+                filters,
+                quantity: plan.batchQuantity - batchIdeas.length,
+                duration,
+                startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
+                angleIndex,
+                ideaDescription: config?.ideaDescription,
+              }));
+            }
+
+            fallbackCount += missingCount;
+            batchErrors.push(`Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few ideas; backend topped up ${missingCount}.`);
           }
           aggregatedIdeas.push(...batchIdeas.slice(0, plan.batchQuantity));
         } catch (batchError) {
@@ -1171,19 +1198,42 @@ ${retryNotes.join('\n\n')}`, {
               ? `${rangeLabel}: ${batchError.message}`
               : `${rangeLabel}: Unknown batch error`
           );
-          return NextResponse.json({
-            success: false,
-            error: `API chưa tạo đủ idea hợp lệ cho batch ${rangeLabel}. Hãy bấm tạo lại.`,
-            meta: { warnings: batchErrors },
-          }, { status: 502 });
+
+          const fallbackIdeas = buildFallbackIdeasForFilters({
+            appName,
+            filters,
+            quantity: plan.batchQuantity,
+            duration,
+            startIndex: requestStartIndex + plan.batchStartIndex,
+            angleIndex,
+            ideaDescription: config?.ideaDescription,
+          });
+          aggregatedIdeas.push(...fallbackIdeas);
+          fallbackCount += fallbackIdeas.length;
         }
+      }
+
+      if (aggregatedIdeas.length < requestedQuantity) {
+        const missingCount = requestedQuantity - aggregatedIdeas.length;
+        const finalTopUp = buildFallbackIdeasForFilters({
+          appName,
+          filters,
+          quantity: missingCount,
+          duration,
+          startIndex: requestStartIndex + aggregatedIdeas.length,
+          angleIndex,
+          ideaDescription: config?.ideaDescription,
+        });
+        aggregatedIdeas.push(...finalTopUp);
+        fallbackCount += finalTopUp.length;
+        batchErrors.push(`Backend top-up added ${missingCount} schema-safe ideas so the request can complete.`);
       }
 
       if (aggregatedIdeas.length === 0) {
         return NextResponse.json({ error: 'Không có kết quả hơp lệ.' }, { status: 500 });
       }
 
-      if (aggregatedIdeas.length < requestedQuantity) {
+      if (false && aggregatedIdeas.length < requestedQuantity) {
         return NextResponse.json({
           success: false,
           error: `API chỉ tạo ${aggregatedIdeas.length}/${requestedQuantity} idea hợp lệ. Không dùng fallback template.`,
@@ -1200,7 +1250,7 @@ ${retryNotes.join('\n\n')}`, {
           generatedQuantity: finalIdeas.length,
           batchCount: batchPlans.length,
           partial: finalIdeas.length < requestedQuantity,
-          fallbackCount: 0,
+          fallbackCount,
           warnings: batchErrors.length > 0 ? batchErrors : undefined,
         },
       });
