@@ -87,7 +87,7 @@ YOUR TASK:
 OUTPUT JSON ONLY (no markdown, no explanation):
 {"name":"...","category":"...","features":[{"name":"Feature (Vietnamese)","desc":"Short desc (Vietnamese)"}]}`;
 
-  const models = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.5-pro', 'gemini/gemini-2.0-flash'];
+  const models = ['google/gemini-3-flash', 'google/gemini-2.5-flash', 'google/gemini-2.5-pro'];
 
   for (const model of models) {
     try {

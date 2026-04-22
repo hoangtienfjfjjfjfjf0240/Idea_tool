@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { askAI } from '@/lib/aiClient';
+import { askAI, getAIApiKey, getAIChatCompletionsUrl } from '@/lib/aiClient';
 import {
   buildFrameworkInjection,
   buildIdeaOutputSpec,
@@ -24,11 +24,11 @@ const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 const MAX_IDEAS_PER_AI_BATCH = 3;
 const MAX_IDEAS_PER_REQUEST = 10;
-const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 40000;
-const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 20000;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 14000;
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 8000;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
-const IDEA_FAST_GEMINI_MODELS = ['gemini/gemini-2.5-flash'];
+const IDEA_FAST_GEMINI_MODELS = ['google/gemini-3-flash', 'google/gemini-2.5-flash'];
 const IDEA_FAST_OPENAI_MODELS = ['openai/gpt-5.4-mini', 'openai/gpt-4.1'];
 
 type IdeaBatchPlan = {
@@ -216,8 +216,8 @@ function detectLang(coreUsers: string[]): string {
 // Map frontend model names to gateway model identifiers
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
-    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
-    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
+    'gemini-2.5-pro': 'google/gemini-2.5-pro',
+    'gemini-3-pro': 'google/gemini-3-pro-preview',
     'gpt-5.4': 'openai/gpt-5.4',
     'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
     'gpt-5.4-mini': 'openai/gpt-5.4-mini',
@@ -229,7 +229,7 @@ function resolveModel(selected?: string): string {
 
 function resolveIdeaModels(selected?: string): string[] {
   const primary = resolveModel(selected);
-  const fastFallbacks = primary.startsWith('gemini/')
+  const fastFallbacks = primary.startsWith('google/gemini')
     ? IDEA_FAST_GEMINI_MODELS
     : IDEA_FAST_OPENAI_MODELS;
 
@@ -960,11 +960,11 @@ Trả JSON array of strings. KHÔNG markdown.`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
 
-        const res = await fetch(`${process.env.AI_BASE_URL}/v1/chat/completions`, {
+        const res = await fetch(getAIChatCompletionsUrl(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.AI_API_KEY}`,
+            'Authorization': `Bearer ${getAIApiKey()}`,
           },
           body: JSON.stringify({
             model: 'openai/gpt-5.4',
@@ -1054,6 +1054,12 @@ Trả JSON array of strings. KHÔNG markdown.`;
         priorGeneratedIdeas: Record<string, unknown>[],
         reasonLabel: string
       ) => {
+        void missingCount;
+        void batchStartIndex;
+        void priorGeneratedIdeas;
+        void reasonLabel;
+        return [];
+        /*
         const recovered: Record<string, unknown>[] = [];
 
         for (let offset = 0; offset < missingCount; offset += 1) {
@@ -1082,6 +1088,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
         }
 
         return recovered;
+        */
       };
 
       const runGenerationBatch = async (

@@ -1,7 +1,19 @@
 // Centralized AI client using OpenAI-compatible API (internal gateway)
 
 const AI_BASE_URL = process.env.AI_BASE_URL || '';
-const AI_API_KEY = process.env.AI_API_KEY || '';
+const AI_API_KEY = process.env.AI_API_KEY || process.env.AI_GATEWAY_API_KEY || '';
+
+export function getAIChatCompletionsUrl(baseUrl = AI_BASE_URL): string {
+  const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
+  if (!normalizedBase) return '';
+  return normalizedBase.endsWith('/v1')
+    ? `${normalizedBase}/chat/completions`
+    : `${normalizedBase}/v1/chat/completions`;
+}
+
+export function getAIApiKey(): string {
+  return AI_API_KEY;
+}
 
 // Senior Creative Strategist persona - Meta Video Creative Framework
 export const CREATIVE_SYSTEM_PROMPT = `Bạn là Senior Creative Strategist với 10 năm kinh nghiệm chuyên sâu về Performance Marketing cho Mobile App trên Meta (Facebook/Instagram).
@@ -161,7 +173,7 @@ export async function callAI(
   }
 
   const {
-    model = 'gemini/gemini-2.5-pro',
+    model = 'google/gemini-2.5-pro',
     temperature = 0.7,
     max_tokens = 8192,
     useCreativePersona = true,
@@ -180,7 +192,7 @@ export async function callAI(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const res = await fetch(`${AI_BASE_URL}/v1/chat/completions`, {
+    const res = await fetch(getAIChatCompletionsUrl(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

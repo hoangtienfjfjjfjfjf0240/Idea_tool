@@ -49,7 +49,7 @@ OUTPUT JSON ONLY (no markdown):
 {"coreUser":["..."],"painPoint":["..."],"emotion":["..."]}`;
 
     const text = await askAI(prompt, {
-      model: 'gemini/gemini-2.5-flash',
+      model: 'google/gemini-2.5-flash',
       temperature: 0.5,
       useCreativePersona: false,
     });
