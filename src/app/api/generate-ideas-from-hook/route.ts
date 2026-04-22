@@ -433,8 +433,16 @@ function resolveModel(selected?: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  let requestBody: any = {};
   try {
-    const { hook, quantity = 3, duration = 'Short social-first runtime', appName, appCategory, ideaDirection, selectedModel } = await request.json();
+    requestBody = asRecord(await request.json());
+    const hook = asRecord(requestBody.hook);
+    const quantity = requestBody.quantity ?? 3;
+    const duration = requestBody.duration ?? 'Short social-first runtime';
+    const appName = requestBody.appName;
+    const appCategory = requestBody.appCategory;
+    const ideaDirection = requestBody.ideaDirection;
+    const selectedModel = requestBody.selectedModel;
     const requestedQty = Math.min(toPositiveInt(quantity, 3), MAX_IDEAS_PER_REQUEST);
     const targetLanguage = 'English';
     const batchPlans = buildIdeaBatchPlans(requestedQty);
@@ -446,11 +454,11 @@ export async function POST(request: NextRequest) {
       const frameworkInjection = buildFrameworkInjection({
         appName,
         category: appCategory || 'General',
-        coreUsers: [hook.core_user || ''].filter(Boolean),
-        primaryEmotion: hook.emotion || 'Curiosity',
-        visualTheme: `${hook.creative_type || hook.subtitle || 'UGC'}; use the winning hook as DNA, then expand it into a full brief.`,
-        psp: hook.hook_concept || hook.description || appName,
-        pillars: [hook.painpoint || 'General user friction'].filter(Boolean),
+        coreUsers: [asText(hook.core_user)].filter(Boolean),
+        primaryEmotion: asText(hook.emotion) || 'Curiosity',
+        visualTheme: `${asText(hook.creative_type) || asText(hook.subtitle) || 'UGC'}; use the winning hook as DNA, then expand it into a full brief.`,
+        psp: asText(hook.hook_concept) || asText(hook.description) || appName,
+        pillars: [asText(hook.painpoint) || 'General user friction'].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: plan.batchQuantity,
         language: `Vietnamese strategy notes + ${targetLanguage} copy`,
@@ -539,7 +547,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       const validation = normalizeAndValidateIdeas(arr, {
         duration,
         appName,
-        pillar: hook.painpoint || 'General user friction',
+        pillar: asText(hook.painpoint) || 'General user friction',
         batchStartIndex: plan.batchStartIndex,
       });
 
@@ -598,6 +606,27 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
     });
   } catch (err) {
     console.error('[generate-ideas-from-hook] Exception:', err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const fallbackHook = asRecord(requestBody.hook);
+    const fallbackQuantity = Math.min(toPositiveInt(requestBody.quantity, 3), MAX_IDEAS_PER_REQUEST);
+    const fallbackDuration = asText(requestBody.duration) || 'Short social-first runtime';
+    const fallbackAppName = asText(requestBody.appName) || 'App';
+    const fallbackIdeaDirection = asText(requestBody.ideaDirection) || undefined;
+    const fallbackIdeas = normalizeFallbackIdeasFromHook(fallbackHook, {
+      quantity: fallbackQuantity,
+      startIndex: 0,
+      duration: fallbackDuration,
+      appName: fallbackAppName,
+      ideaDirection: fallbackIdeaDirection,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: fallbackIdeas,
+      meta: {
+        warnings: [`Generate ideas from hook exception: ${message}. Backend returned schema-safe fallback ideas.`],
+        fallbackCount: fallbackIdeas.length,
+      },
+    });
   }
 }

@@ -223,6 +223,42 @@ function resolveModel(selected?: string): string {
   return map[selected || ''] || 'openai/gpt-4.1';
 }
 
+function buildGenerateIdeasEmergencyFallback(payload: Record<string, unknown>) {
+  const config = asRecord(payload.config);
+  const quantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
+  return buildFallbackIdeasForFilters({
+    appName: asText(payload.appName) || 'App',
+    filters: payload.filters,
+    quantity,
+    duration: asText(config.duration) || 'Short social-first runtime',
+    startIndex: Math.max(0, Number(config.startIndex || 0) || 0),
+    angleIndex: Math.max(1, Number(config.angleIndex || 1) || 1),
+    ideaDescription: config.ideaDescription,
+  });
+}
+
+function buildRefineEmergencyFallback(payload: Record<string, unknown>) {
+  const originalIdea = asRecord(payload.originalIdea);
+  const originalFramework = asRecord(originalIdea.framework);
+  return normalizeIdeaOutput(originalIdea, {
+    duration: asText(originalIdea.duration) || '30s',
+    appName: asText(payload.appName) || 'App',
+    pillar: asText(originalFramework.painpoint) || asText(asRecord(originalIdea.meta).pillar) || 'General user friction',
+  });
+}
+
+function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
+  const painpoints = Array.isArray(payload.painpoints)
+    ? payload.painpoints.map(asText).filter(Boolean)
+    : [];
+  const seeds = painpoints.length > 0 ? painpoints : ['pain point hiện tại'];
+  return seeds.flatMap((pp: string) => [
+    `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
+    `${pp} và mỗi lần thử lại càng rối hơn`,
+    `${pp} dù đã xem nhiều cách khác nhau`,
+  ]);
+}
+
 // Build culture/market context based on selected target market
 function buildMarketContext(targetMarket: string[]): string {
   const market = (targetMarket || []).join(', ').toLowerCase();
@@ -778,8 +814,10 @@ function buildFallbackIdeasForFilters(options: {
 }
 
 export async function POST(request: NextRequest) {
+  let requestBody: any = {};
   try {
-    const body = await request.json();
+    requestBody = asRecord(await request.json());
+    const body = requestBody;
 
     // === MODE: REFINE (AI chỉnh sửa idea có sẵn) ===
     if (body.mode === 'refine') {
@@ -835,9 +873,27 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         useCreativePersona: false,
         priority: 'high',
       });
-      if (!text) return NextResponse.json({ error: 'AI không phản hồi' }, { status: 500 });
+      if (!text) {
+        return NextResponse.json({
+          success: true,
+          data: buildRefineEmergencyFallback(body),
+          meta: {
+            warnings: ['Refine AI returned null; backend returned a schema-safe fallback using the current idea.'],
+            fallbackCount: 1,
+          },
+        });
+      }
       const parsed = parseJson(text);
-      if (!parsed) return NextResponse.json({ error: 'Không parse được' }, { status: 500 });
+      if (!parsed) {
+        return NextResponse.json({
+          success: true,
+          data: buildRefineEmergencyFallback(body),
+          meta: {
+            warnings: ['Refine AI returned non-JSON output; backend returned a schema-safe fallback using the current idea.'],
+            fallbackCount: 1,
+          },
+        });
+      }
       return NextResponse.json({
         success: true,
         data: normalizeIdeaOutput(parsed, {
@@ -1230,15 +1286,18 @@ ${retryNotes.join('\n\n')}`, {
       }
 
       if (aggregatedIdeas.length === 0) {
-        return NextResponse.json({ error: 'Không có kết quả hơp lệ.' }, { status: 500 });
-      }
-
-      if (false && aggregatedIdeas.length < requestedQuantity) {
-        return NextResponse.json({
-          success: false,
-          error: `API chỉ tạo ${aggregatedIdeas.length}/${requestedQuantity} idea hợp lệ. Không dùng fallback template.`,
-          meta: { warnings: batchErrors },
-        }, { status: 502 });
+        const emergencyIdeas = buildFallbackIdeasForFilters({
+          appName,
+          filters,
+          quantity: requestedQuantity,
+          duration,
+          startIndex: requestStartIndex,
+          angleIndex,
+          ideaDescription: config?.ideaDescription,
+        });
+        aggregatedIdeas.push(...emergencyIdeas);
+        fallbackCount += emergencyIdeas.length;
+        batchErrors.push('All AI batches failed; backend generated a full schema-safe fallback batch.');
       }
 
       const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity);
@@ -1375,14 +1434,38 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
     });
     if (!text) {
       console.error('[generate-ideas] AI returned null');
-      return NextResponse.json({ error: 'AI không phản hồi. Thử lại.' }, { status: 500 });
+      const fallbackIdeas = buildGenerateIdeasEmergencyFallback(body);
+      return NextResponse.json({
+        success: true,
+        data: fallbackIdeas,
+        meta: {
+          requestedQuantity: fallbackIdeas.length,
+          generatedQuantity: fallbackIdeas.length,
+          batchCount: 0,
+          partial: false,
+          fallbackCount: fallbackIdeas.length,
+          warnings: ['Legacy generate path received null from AI; backend returned schema-safe fallback ideas.'],
+        },
+      });
     }
     console.log('[generate-ideas] AI response length:', text.length, 'chars');
 
     let parsed = parseJson(text);
     if (!parsed) {
       console.error('[generate-ideas] Failed to parse:', text.substring(0, 300));
-      return NextResponse.json({ error: 'Không parse được response. Thử lại.' }, { status: 500 });
+      const fallbackIdeas = buildGenerateIdeasEmergencyFallback(body);
+      return NextResponse.json({
+        success: true,
+        data: fallbackIdeas,
+        meta: {
+          requestedQuantity: fallbackIdeas.length,
+          generatedQuantity: fallbackIdeas.length,
+          batchCount: 0,
+          partial: false,
+          fallbackCount: fallbackIdeas.length,
+          warnings: ['Legacy generate path could not parse AI output; backend returned schema-safe fallback ideas.'],
+        },
+      });
     }
 
     let arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -1489,12 +1572,61 @@ Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`
       if (validation.invalidReasons.length > 0) {
         console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
       }
-      return NextResponse.json({ error: 'AI trả về format sai. Thử lại.' }, { status: 500 });
+      const fallbackIdeas = buildGenerateIdeasEmergencyFallback(body);
+      return NextResponse.json({
+        success: true,
+        data: fallbackIdeas,
+        meta: {
+          requestedQuantity: fallbackIdeas.length,
+          generatedQuantity: fallbackIdeas.length,
+          batchCount: 0,
+          partial: false,
+          fallbackCount: fallbackIdeas.length,
+          warnings: ['Legacy generate path produced no valid ideas; backend returned schema-safe fallback ideas.'],
+        },
+      });
     }
 
     return NextResponse.json({ success: true, data: valid });
   } catch (err) {
     console.error('[generate-ideas] Exception:', err);
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const mode = asText(requestBody.mode);
+
+    if (mode === 'refine' && Object.keys(asRecord(requestBody.originalIdea)).length > 0) {
+      return NextResponse.json({
+        success: true,
+        data: buildRefineEmergencyFallback(requestBody),
+        meta: {
+          warnings: [`Refine route exception: ${message}. Backend returned the current idea as a schema-safe fallback.`],
+          fallbackCount: 1,
+        },
+      });
+    }
+
+    if (mode === 'generate-angles') {
+      return NextResponse.json({
+        success: true,
+        angles: buildAngleEmergencyFallback(requestBody),
+        meta: {
+          warnings: [`Angle route exception: ${message}. Backend returned local fallback angles.`],
+          fallbackCount: 1,
+        },
+      });
+    }
+
+    const fallbackIdeas = buildGenerateIdeasEmergencyFallback(requestBody);
+    return NextResponse.json({
+      success: true,
+      data: fallbackIdeas,
+      meta: {
+        requestedQuantity: fallbackIdeas.length,
+        generatedQuantity: fallbackIdeas.length,
+        batchCount: 0,
+        partial: false,
+        fallbackCount: fallbackIdeas.length,
+        warnings: [`Generate ideas exception: ${message}. Backend returned schema-safe fallback ideas.`],
+      },
+    });
   }
 }
