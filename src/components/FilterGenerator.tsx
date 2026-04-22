@@ -736,9 +736,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         : Math.min(2, Math.max(1, generationTasks.length));
 
       const requestAngleBatch = async (task: { selectedAngle: string | null; angleIndex: number; filtersSnapshot: FilterState }) => {
-        const requestAngleChunk = async (batchQuantity: number, startIndex: number, attempt = 1) => {
-          const rangeEnd = startIndex + batchQuantity;
-          setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${startIndex + 1}-${rangeEnd}/${quantity}...`);
+        const attemptRequest = async (attempt = 1) => {
+          setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, 1 request / ${quantity} idea...`);
 
           try {
             const res = await fetch('/api/generate-ideas', {
@@ -749,13 +748,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 appCategory: app.category,
                 filters: task.filtersSnapshot,
                 config: {
-                  quantity: batchQuantity,
+                  quantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
                   ideaDescription,
                   visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
                   seasonalVisualContext,
                   totalVariations: quantity,
-                  startIndex,
+                  startIndex: 0,
                   angleIndex: task.angleIndex + 1,
                   totalAngles: anglesToGenerate.length,
                   selectedAngle: task.selectedAngle,
@@ -774,16 +773,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const result = await res.json().catch(() => null) as GenerateIdeasApiResponse | null;
             const aiItems = res.ok && result?.success && Array.isArray(result.data) ? result.data : [];
             if (!res.ok || !result?.success || aiItems.length === 0) {
-              throw new Error(result?.error || `Angle ${task.angleIndex + 1}, idea ${startIndex + 1}-${rangeEnd} không có idea hợp lệ từ API.`);
+              throw new Error(result?.error || `Angle ${task.angleIndex + 1} không có idea hợp lệ từ API.`);
             }
 
             if (result.meta?.warnings?.length) {
               console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} warnings:`, result.meta.warnings);
             }
 
-            const completedItems = aiItems.slice(0, batchQuantity);
-            if (completedItems.length < batchQuantity) {
-              throw new Error(`Angle ${task.angleIndex + 1}, idea ${startIndex + 1}-${rangeEnd} chỉ trả ${completedItems.length}/${batchQuantity} idea. API chưa top-up đủ.`);
+            const completedItems = aiItems.slice(0, quantity);
+            if (completedItems.length < quantity) {
+              throw new Error(`Angle ${task.angleIndex + 1} chỉ trả ${completedItems.length}/${quantity} idea. Backend chưa top-up đủ.`);
             }
 
             return completedItems.map(item => ({
@@ -795,22 +794,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               throw error;
             }
 
-            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1}, chunk ${startIndex + 1}-${rangeEnd} request failed.`, error);
+            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed.`, error);
             if (attempt < 2) {
-              return requestAngleChunk(batchQuantity, startIndex, attempt + 1);
+              return attemptRequest(attempt + 1);
             }
 
             throw error instanceof Error ? error : new Error(`Angle ${task.angleIndex + 1} request failed.`);
           }
         };
 
-        const completed: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-        for (let startIndex = 0; startIndex < quantity; startIndex += MAX_IDEAS_PER_GENERATE_REQUEST) {
-          const batchQuantity = Math.min(MAX_IDEAS_PER_GENERATE_REQUEST, quantity - startIndex);
-          completed.push(...await requestAngleChunk(batchQuantity, startIndex));
-        }
-
-        return completed;
+        return attemptRequest();
       };
 
       for (let start = 0; start < generationTasks.length; start += maxConcurrent) {

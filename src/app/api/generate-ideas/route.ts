@@ -23,7 +23,7 @@ const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|
 const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 const MAX_IDEAS_PER_AI_BATCH = 3;
-const MAX_IDEAS_PER_REQUEST = 20;
+const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 45000;
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 25000;
 
@@ -1009,6 +1009,42 @@ Trả JSON array of strings. KHÔNG markdown.`;
         : '';
       const seasonalVisualBlock = buildSeasonalVisualBlock(config?.seasonalVisualContext);
 
+      const refillIdeasOneByOne = async (
+        missingCount: number,
+        batchStartIndex: number,
+        priorGeneratedIdeas: Record<string, unknown>[],
+        reasonLabel: string
+      ) => {
+        const recovered: Record<string, unknown>[] = [];
+
+        for (let offset = 0; offset < missingCount; offset += 1) {
+          const recoveryPlan: IdeaBatchPlan = {
+            batchQuantity: 1,
+            batchStartIndex: batchStartIndex + offset,
+          };
+
+          try {
+            const recoveredBatch = await runGenerationBatch(
+              recoveryPlan,
+              [...priorGeneratedIdeas, ...recovered]
+            );
+            if (recoveredBatch.length > 0) {
+              recovered.push(recoveredBatch[0]);
+            }
+          } catch (recoveryError) {
+            const slotLabel = requestStartIndex + recoveryPlan.batchStartIndex + 1;
+            console.error(`[generate-ideas] Recovery slot ${slotLabel}/${requestedQuantity} failed:`, recoveryError);
+            batchErrors.push(
+              recoveryError instanceof Error
+                ? `Recovery ${slotLabel}/${requestedQuantity} after ${reasonLabel} failed: ${recoveryError.message}`
+                : `Recovery ${slotLabel}/${requestedQuantity} after ${reasonLabel} failed: Unknown recovery error`
+            );
+          }
+        }
+
+        return recovered;
+      };
+
       const runGenerationBatch = async (
         plan: IdeaBatchPlan,
         priorGeneratedIdeas: Record<string, unknown>[]
@@ -1218,71 +1254,97 @@ ${retryNotes.join('\n\n')}`, {
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
             const missingCount = plan.batchQuantity - batchIdeas.length;
-            const fallbackIdeas = buildFallbackIdeasForFilters({
-              appName,
-              filters,
-              quantity: missingCount + 10,
-              duration,
-              startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
-              angleIndex,
-              ideaDescription: config?.ideaDescription,
-            });
-            const uniqueFallback = dedupeIdeas(fallbackIdeas, [...aggregatedIdeas, ...batchIdeas]).slice(0, missingCount);
-            batchIdeas.push(...uniqueFallback);
+            const recoveredIdeas = await refillIdeasOneByOne(
+              missingCount,
+              plan.batchStartIndex + batchIdeas.length,
+              [...aggregatedIdeas, ...batchIdeas],
+              `batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few ideas`
+            );
+            batchIdeas.push(...recoveredIdeas);
 
-            if (batchIdeas.length < plan.batchQuantity) {
-              batchIdeas.push(...buildFallbackIdeasForFilters({
+            const stillMissing = plan.batchQuantity - batchIdeas.length;
+            if (stillMissing > 0) {
+              const fallbackIdeas = buildFallbackIdeasForFilters({
                 appName,
                 filters,
-                quantity: plan.batchQuantity - batchIdeas.length,
+                quantity: stillMissing,
                 duration,
                 startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
                 angleIndex,
                 ideaDescription: config?.ideaDescription,
-              }));
+              });
+              batchIdeas.push(...fallbackIdeas);
+              fallbackCount += fallbackIdeas.length;
             }
 
-            fallbackCount += missingCount;
-            batchErrors.push(`Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few ideas; backend topped up ${missingCount}.`);
+            batchErrors.push(
+              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} was short; AI refill added ${recoveredIdeas.length}, fallback added ${Math.max(0, stillMissing)}.`
+            );
           }
           aggregatedIdeas.push(...batchIdeas.slice(0, plan.batchQuantity));
         } catch (batchError) {
           const rangeLabel = `${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`;
           console.error(`[generate-ideas] Batch ${rangeLabel} failed:`, batchError);
-          batchErrors.push(
-            batchError instanceof Error
-              ? `${rangeLabel}: ${batchError.message}`
-              : `${rangeLabel}: Unknown batch error`
+          const batchErrorMessage = batchError instanceof Error
+            ? batchError.message
+            : 'Unknown batch error';
+          const recoveredIdeas = await refillIdeasOneByOne(
+            plan.batchQuantity,
+            plan.batchStartIndex,
+            aggregatedIdeas,
+            rangeLabel
           );
+          aggregatedIdeas.push(...recoveredIdeas);
 
-          const fallbackIdeas = buildFallbackIdeasForFilters({
-            appName,
-            filters,
-            quantity: plan.batchQuantity,
-            duration,
-            startIndex: requestStartIndex + plan.batchStartIndex,
-            angleIndex,
-            ideaDescription: config?.ideaDescription,
-          });
-          aggregatedIdeas.push(...fallbackIdeas);
-          fallbackCount += fallbackIdeas.length;
+          const stillMissing = plan.batchQuantity - recoveredIdeas.length;
+          if (stillMissing > 0) {
+            const fallbackIdeas = buildFallbackIdeasForFilters({
+              appName,
+              filters,
+              quantity: stillMissing,
+              duration,
+              startIndex: requestStartIndex + plan.batchStartIndex + recoveredIdeas.length,
+              angleIndex,
+              ideaDescription: config?.ideaDescription,
+            });
+            aggregatedIdeas.push(...fallbackIdeas);
+            fallbackCount += fallbackIdeas.length;
+          }
+
+          batchErrors.push(
+            `${rangeLabel}: ${batchErrorMessage}. AI refill added ${recoveredIdeas.length}, fallback added ${Math.max(0, stillMissing)}.`
+          );
         }
       }
 
       if (aggregatedIdeas.length < requestedQuantity) {
         const missingCount = requestedQuantity - aggregatedIdeas.length;
-        const finalTopUp = buildFallbackIdeasForFilters({
-          appName,
-          filters,
-          quantity: missingCount,
-          duration,
-          startIndex: requestStartIndex + aggregatedIdeas.length,
-          angleIndex,
-          ideaDescription: config?.ideaDescription,
-        });
-        aggregatedIdeas.push(...finalTopUp);
-        fallbackCount += finalTopUp.length;
-        batchErrors.push(`Backend top-up added ${missingCount} schema-safe ideas so the request can complete.`);
+        const recoveredIdeas = await refillIdeasOneByOne(
+          missingCount,
+          aggregatedIdeas.length,
+          aggregatedIdeas,
+          'final top-up'
+        );
+        aggregatedIdeas.push(...recoveredIdeas);
+
+        const stillMissing = requestedQuantity - aggregatedIdeas.length;
+        if (stillMissing > 0) {
+          const finalTopUp = buildFallbackIdeasForFilters({
+            appName,
+            filters,
+            quantity: stillMissing,
+            duration,
+            startIndex: requestStartIndex + aggregatedIdeas.length,
+            angleIndex,
+            ideaDescription: config?.ideaDescription,
+          });
+          aggregatedIdeas.push(...finalTopUp);
+          fallbackCount += finalTopUp.length;
+        }
+
+        batchErrors.push(
+          `Backend final top-up: AI refill added ${recoveredIdeas.length}, fallback added ${Math.max(0, stillMissing)}.`
+        );
       }
 
       if (aggregatedIdeas.length === 0) {
