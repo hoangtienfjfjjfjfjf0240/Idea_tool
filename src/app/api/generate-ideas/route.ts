@@ -24,8 +24,12 @@ const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 const MAX_IDEAS_PER_AI_BATCH = 3;
 const MAX_IDEAS_PER_REQUEST = 10;
-const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 45000;
-const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 25000;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 40000;
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 20000;
+const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
+const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
+const IDEA_FAST_GEMINI_MODELS = ['gemini/gemini-2.5-flash'];
+const IDEA_FAST_OPENAI_MODELS = ['openai/gpt-5.4-mini', 'openai/gpt-4.1'];
 
 type IdeaBatchPlan = {
   batchQuantity: number;
@@ -221,6 +225,21 @@ function resolveModel(selected?: string): string {
     'o4-mini': 'openai/o4-mini',
   };
   return map[selected || ''] || 'openai/gpt-4.1';
+}
+
+function resolveIdeaModels(selected?: string): string[] {
+  const primary = resolveModel(selected);
+  const fastFallbacks = primary.startsWith('gemini/')
+    ? IDEA_FAST_GEMINI_MODELS
+    : IDEA_FAST_OPENAI_MODELS;
+
+  return Array.from(new Set([primary, ...fastFallbacks]));
+}
+
+function clampPromptContext(value: unknown, maxLength: number) {
+  const text = asText(value);
+  if (!text) return '';
+  return text.length > maxLength ? `${text.slice(0, maxLength)}\n[...truncated]` : text;
 }
 
 function buildGenerateIdeasEmergencyFallback(payload: Record<string, unknown>) {
@@ -565,7 +584,7 @@ function buildInRequestIdeaHistory(ideas: Record<string, unknown>[]) {
   if (ideas.length === 0) return '';
 
   return ideas
-    .slice(-8)
+    .slice(-4)
     .map((idea, index) => {
       const hook = asRecord(idea.hook);
       const body = asRecord(idea.body);
@@ -814,7 +833,7 @@ function buildFallbackIdeasForFilters(options: {
 }
 
 export async function POST(request: NextRequest) {
-  let requestBody: any = {};
+  let requestBody: Record<string, unknown> = {};
   try {
     requestBody = asRecord(await request.json());
     const body = requestBody;
@@ -984,16 +1003,16 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const totalAngles = Number(config?.totalAngles || 1);
       const requestStartIndex = Math.max(0, Number(config?.startIndex || 0) || 0);
       const totalVariations = Math.max(requestedQuantity, Number(config?.totalVariations || requestedQuantity) || requestedQuantity);
-      const resolvedModel = resolveModel(selectedModel);
+      const modelCandidates = resolveIdeaModels(selectedModel);
       const batchPlans = buildIdeaBatchPlans(requestedQuantity);
 
-      const rawKnowledge = appKnowledge || '';
-      const truncatedKnowledge = rawKnowledge.length > 3000 ? `${rawKnowledge.substring(0, 3000)}\n[...truncated]` : rawKnowledge;
+      const truncatedKnowledge = clampPromptContext(appKnowledge, GENERATE_IDEAS_CONTEXT_CHAR_LIMIT);
+      const truncatedPreviousIdeas = clampPromptContext(previousIdeas, GENERATE_IDEAS_HISTORY_CHAR_LIMIT);
       const knowledgeBlock = truncatedKnowledge
         ? `\n[APP BRAIN - learned context for "${appName}"]\n${truncatedKnowledge}\n`
         : '';
-      const recentIdeasBlock = previousIdeas
-        ? `\n[RECENT SAVED IDEAS - learn style, do not repeat]\n${previousIdeas}\n`
+      const recentIdeasBlock = truncatedPreviousIdeas
+        ? `\n[RECENT SAVED IDEAS - learn style, do not repeat]\n${truncatedPreviousIdeas}\n`
         : '';
       const trendingBlock = trendingTopics?.length
         ? `\n[TRENDING CONTEXT]\n${trendingTopics.join(', ')}\nUse trends only when they naturally fit the selected pain point and emotion.\n`
@@ -1002,7 +1021,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
         ? trendingStructures
             .map(item => String(item || '').trim())
             .filter(Boolean)
-            .slice(0, 6)
+            .slice(0, 4)
         : [];
       const importedTrendBlock = structuredTrendNotes.length
         ? `\n[IMPORTED VIDEO STRUCTURE]\n${structuredTrendNotes.join('\n')}\nLearn pacing and treatment, but do not copy the source structure verbatim.\n`
@@ -1075,10 +1094,10 @@ Trả JSON array of strings. KHÔNG markdown.`;
           pillars: filters?.painPoint?.length ? filters.painPoint : ['General user friction'],
           trendingHooks: trendingTopics || [],
           performanceData: [
-            rawKnowledge ? `AI Brain memory: ${truncatedKnowledge}` : 'No AI Brain memory yet',
-            previousIdeas ? `Recent idea history for anti-repeat:\n${previousIdeas}` : 'No recent saved ideas',
-            inRequestHistory ? `Ideas already generated in this request:\n${inRequestHistory}` : 'No earlier ideas inside this request',
-            structuredTrendNotes.length ? `Imported video structure:\n${structuredTrendNotes.join('\n')}` : 'No imported video structure',
+            truncatedKnowledge ? 'AI Brain memory block attached below in supporting context.' : 'No AI Brain memory yet',
+            truncatedPreviousIdeas ? 'Recent idea history block attached below in supporting context.' : 'No recent saved ideas',
+            inRequestHistory ? 'Earlier ideas in this request are attached below in supporting context.' : 'No earlier ideas inside this request',
+            structuredTrendNotes.length ? 'Imported video structure examples are attached below in supporting context.' : 'No imported video structure',
             angleContext ? `Angle focus: ${angleContext}` : 'No locked angle',
           ],
           doList: [
@@ -1132,7 +1151,7 @@ Generate ${plan.batchQuantity} production-ready full ideas for the selected filt
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
 - Creative type cap: output at most 1 POV idea in this batch. Use UGC, Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format for the rest.
 
-${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang })}
+${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang, compact: true })}
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
@@ -1143,23 +1162,41 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           'chars:',
           prompt.length,
           'model:',
-          selectedModel || 'gemini-2.5-pro'
+          modelCandidates[0]
         );
 
-        const text = await askAI(prompt, {
-          model: resolvedModel,
-          temperature: plan.batchQuantity > 1 ? 0.9 : 0.8,
-          max_tokens: 16384,
-          useCreativePersona: false,
-          priority: 'high',
-          timeoutMs: GENERATE_IDEAS_BATCH_TIMEOUT_MS,
-        });
+        const responseTokenBudget = Math.max(2600, plan.batchQuantity * 1500);
+        let text: string | null = null;
+        let parsed: unknown = null;
+        let modelUsed = modelCandidates[0];
+
+        for (const [candidateIndex, model] of modelCandidates.entries()) {
+          const candidateText = await askAI(prompt, {
+            model,
+            temperature: plan.batchQuantity > 1 ? 0.82 : 0.75,
+            max_tokens: responseTokenBudget,
+            useCreativePersona: false,
+            priority: 'high',
+            timeoutMs: candidateIndex === 0 ? GENERATE_IDEAS_BATCH_TIMEOUT_MS : GENERATE_IDEAS_RETRY_TIMEOUT_MS,
+          });
+
+          if (!candidateText) continue;
+
+          const candidateParsed = parseJson(candidateText);
+          if (candidateParsed !== null) {
+            text = candidateText;
+            parsed = candidateParsed;
+            modelUsed = model;
+            break;
+          }
+
+          console.warn('[generate-ideas] Parse failed for model candidate:', model);
+        }
 
         if (!text) {
           throw new Error('AI không phản hồi');
         }
 
-        const parsed = parseJson(text);
         if (!parsed) {
           console.error('[generate-ideas] Failed to parse:', text.substring(0, 300));
           throw new Error('Không parse được response. Thử lại.');
@@ -1201,9 +1238,9 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 [RETRY - INVALID OR TOO WEAK]
 Regenerate all ${plan.batchQuantity} ideas and obey the hard rules strictly.
 ${retryNotes.join('\n\n')}`, {
-            model: resolvedModel,
-            temperature: 0.95,
-            max_tokens: 16384,
+            model: modelUsed,
+            temperature: 0.9,
+            max_tokens: responseTokenBudget,
             useCreativePersona: false,
             priority: 'high',
             timeoutMs: GENERATE_IDEAS_RETRY_TIMEOUT_MS,

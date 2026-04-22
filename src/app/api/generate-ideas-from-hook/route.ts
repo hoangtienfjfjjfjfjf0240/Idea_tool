@@ -14,6 +14,10 @@ import {
 export const maxDuration = 120;
 const MAX_IDEAS_PER_AI_BATCH = 3;
 const MAX_IDEAS_PER_REQUEST = 10;
+const GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS = 35000;
+const GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS = 18000;
+const IDEA_FAST_GEMINI_MODELS = ['gemini/gemini-2.5-flash'];
+const IDEA_FAST_OPENAI_MODELS = ['openai/gpt-5.4-mini', 'openai/gpt-4.1'];
 const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
 const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|painful\b|awkward\b|annoying\b|sao\b|vẫn\b|đừng\b|không cần\b|thay vì|bao giờ|tệ nhất|mệt|phiền|khổ)/i;
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
@@ -432,8 +436,17 @@ function resolveModel(selected?: string): string {
   return map[selected || ''] || 'gemini/gemini-3-pro-preview';
 }
 
+function resolveIdeaModels(selected?: string): string[] {
+  const primary = resolveModel(selected);
+  const fastFallbacks = primary.startsWith('gemini/')
+    ? IDEA_FAST_GEMINI_MODELS
+    : IDEA_FAST_OPENAI_MODELS;
+
+  return Array.from(new Set([primary, ...fastFallbacks]));
+}
+
 export async function POST(request: NextRequest) {
-  let requestBody: any = {};
+  let requestBody: Record<string, unknown> = {};
   try {
     requestBody = asRecord(await request.json());
     const hook = asRecord(requestBody.hook);
@@ -499,18 +512,37 @@ Create ${plan.batchQuantity} full ideas inspired by the winning hook for batch $
 - Each output must include hook, body, and CTA, but keep runtime flexible and social-first instead of forcing a fixed 15s/30s/60s bucket.
 - If the user provided an idea direction, prioritize it without breaking the winning DNA.
 
-${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLanguage })}
+${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLanguage, compact: true })}
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
-      console.log('[generate-ideas-from-hook] Prompt length:', prompt.length, 'chars, model:', selectedModel || 'gemini-2.5-pro', 'batch:', plan);
-      const text = await askAI(prompt, {
-        model: resolveModel(selectedModel),
-        temperature: 0.8,
-        max_tokens: 16384,
-        useCreativePersona: false,
-      });
+      const modelCandidates = resolveIdeaModels(selectedModel);
+      console.log('[generate-ideas-from-hook] Prompt length:', prompt.length, 'chars, model:', modelCandidates[0], 'batch:', plan);
+      const responseTokenBudget = Math.max(2600, plan.batchQuantity * 1500);
+      let text: string | null = null;
+      let parsed: unknown = null;
+
+      for (const [candidateIndex, model] of modelCandidates.entries()) {
+        const candidateText = await askAI(prompt, {
+          model,
+          temperature: 0.8,
+          max_tokens: responseTokenBudget,
+          useCreativePersona: false,
+          timeoutMs: candidateIndex === 0 ? GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS : GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS,
+        });
+
+        if (!candidateText) continue;
+
+        const candidateParsed = parseJson(candidateText);
+        if (candidateParsed !== null) {
+          text = candidateText;
+          parsed = candidateParsed;
+          break;
+        }
+
+        console.warn('[generate-ideas-from-hook] Parse failed for model candidate:', model);
+      }
 
       if (!text) {
         console.error('[generate-ideas-from-hook] AI returned null for batch', plan);
@@ -527,7 +559,6 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         continue;
       }
 
-      const parsed = parseJson(text);
       if (!parsed) {
         console.error('[generate-ideas-from-hook] Failed to parse batch:', text.substring(0, 300));
         const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {

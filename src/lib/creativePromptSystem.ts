@@ -24,6 +24,7 @@ type IdeaOutputSpecOptions = {
   appName: string;
   language: string;
   includeSelectedFilters?: boolean;
+  compact?: boolean;
 };
 
 type HookOutputSpecOptions = {
@@ -310,6 +311,7 @@ ${extraContext.length ? `\n---\n## EXTRA CONTEXT\n${extraContext.map(line => `- 
 
 export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+  const compact = options.compact === true;
   const selectedFiltersBlock = options.includeSelectedFilters
     ? `  "selectedFilters": {
     "coreUser": ["..."],
@@ -322,6 +324,73 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   },
 `
     : '';
+  const hookBodyCtaBlock = compact
+    ? `  "hook": {
+    "durationSeconds": 4,
+    "visual": "Detailed opening visual in Vietnamese, 1-2 concise sentences covering camera, location, blocker, and visible painpoint clue",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary"
+  },
+  "body": {
+    "visual": "Detailed body visual in Vietnamese, 1-2 concise sentences",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "textOverlay": "Short body text in ${options.language}"
+  },
+  "cta": {
+    "visual": "Detailed CTA visual in Vietnamese, 1 concise sentence",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "textOverlay": "Short CTA text in ${options.language}",
+    "endCard": "${options.appName} + short tagline"
+  }`
+    : `  "hook": {
+    "durationSeconds": 4,
+    "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense sentences covering camera, location, blocker, and visible painpoint clue",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
+    "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
+    "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
+    "viewerProfile": "Vietnamese description of who stops scrolling",
+    "viewerEmotion": "Vietnamese description of what the viewer feels",
+    "painpointImpact": "Vietnamese description of why this pain lands",
+    "whyTheyStopScrolling": "1 Vietnamese sentence explaining the stop-scroll reason"
+  },
+  "body": {
+    "visual": "Detailed body visual in Vietnamese, pure visual only",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
+    "textOverlay": "Short body text in ${options.language}",
+    "viTranslation": "Vietnamese translation of body speech/voiceover + text"
+  },
+  "cta": {
+    "visual": "Detailed CTA visual in Vietnamese, pure visual only",
+    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
+    "textOverlay": "Short CTA text in ${options.language}",
+    "viTranslation": "Vietnamese translation of CTA speech/voiceover + text",
+    "endCard": "${options.appName} + short tagline"
+  }`;
+  const compactOutputRules = compact
+    ? `- Fill every field listed above.
+- Do not add server-derived legacy fields such as hook.voice, hook.text, viTranslation, viewerProfile, viewerEmotion, painpointImpact, whyTheyStopScrolling, or analogous body/cta legacy fields.
+- Keep explanation to 1 short sentence.
+- Keep hook/body/cta.visual concise: 1-2 short dense sentences, visual-only.
+- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
+- If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
+- characterSpeech + voiceover across hook/body/cta must stay speakable within ${options.duration}, with hook speech staying short.`
+    : `- Fill every field. Use "N/A" only when genuinely not applicable.
+- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
+- hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
+- hook.visual must make the selected pain point and selected angle visible through the first object, first action, or first contrast. Avoid generic one-line visuals.
+- If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
+- Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
+- hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
+- characterSpeech + voiceover across hook/body/cta must stay speakable within ${options.duration}, with hook speech staying short.`;
 
   return `## OUTPUT SPECIFICATION
 
@@ -357,50 +426,14 @@ ${selectedFiltersBlock}  "framework": {
     "psp": "Vietnamese explanation of the product solution"
   },
   "explanation": "Vietnamese explanation of why this idea works",
-  "hook": {
-    "durationSeconds": 4,
-    "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense sentences covering camera, location, blocker, and visible painpoint clue",
-    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
-    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
-    "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
-    "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
-    "viewerProfile": "Vietnamese description of who stops scrolling",
-    "viewerEmotion": "Vietnamese description of what the viewer feels",
-    "painpointImpact": "Vietnamese description of why this pain lands",
-    "whyTheyStopScrolling": "1 Vietnamese sentence explaining the stop-scroll reason"
-  },
-  "body": {
-    "visual": "Detailed body visual in Vietnamese, pure visual only",
-    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
-    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
-    "textOverlay": "Short body text in ${options.language}",
-    "viTranslation": "Vietnamese translation of body speech/voiceover + text"
-  },
-  "cta": {
-    "visual": "Detailed CTA visual in Vietnamese, pure visual only",
-    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
-    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
-    "textOverlay": "Short CTA text in ${options.language}",
-    "viTranslation": "Vietnamese translation of CTA speech/voiceover + text",
-    "endCard": "${options.appName} + short tagline"
-  }
+${hookBodyCtaBlock}
 }]
 
 ## OUTPUT RULES
-- Fill every field. Use "N/A" only when genuinely not applicable.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - meta.hookPrimary must stay under 12 words.
 - meta.hookAlt1 and meta.hookAlt2 must not be paraphrases of meta.hookPrimary.
-- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
-- hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
-- hook.visual must make the selected pain point and selected angle visible through the first object, first action, or first contrast. Avoid generic one-line visuals.
-- If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
-- Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
-- hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
-- characterSpeech + voiceover across hook/body/cta must stay speakable within ${options.duration}, with hook speech staying short.
+${compactOutputRules}
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
 - Respect the selected language for voice and textOverlay, while strategy fields stay in Vietnamese.
@@ -507,6 +540,165 @@ function extractBalancedJsonBlock(text: string): string | null {
   return null;
 }
 
+function tryParseJsonCandidate(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {}
+
+  if (text.startsWith('[') || text.startsWith('{')) {
+    try {
+      return Function(`"use strict"; return (${text});`)();
+    } catch {}
+  }
+
+  return null;
+}
+
+function findNextSignificantChar(text: string, startIndex: number): string | null {
+  for (let index = startIndex; index < text.length; index++) {
+    const char = text[index];
+    if (!/\s/.test(char)) return char;
+  }
+  return null;
+}
+
+function repairJsonLikeText(text: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+
+    if (!inString) {
+      if (char === '"' || char === '“' || char === '”') {
+        result += '"';
+        inString = true;
+        escaped = false;
+        continue;
+      }
+
+      if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(char)) {
+        continue;
+      }
+
+      result += char;
+      continue;
+    }
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      const next = text[index + 1] || '';
+      if (next && '\\"/bfnrtu'.includes(next)) {
+        result += '\\';
+        escaped = true;
+      } else {
+        result += '\\\\';
+      }
+      continue;
+    }
+
+    if (char === '\n') {
+      result += '\\n';
+      continue;
+    }
+
+    if (char === '\r') {
+      result += '\\r';
+      continue;
+    }
+
+    if (char === '\t') {
+      result += '\\t';
+      continue;
+    }
+
+    if (char === '"' || char === '“' || char === '”') {
+      const nextSig = findNextSignificantChar(text, index + 1);
+      if (nextSig && ![',', '}', ']', ':'].includes(nextSig)) {
+        result += '\\"';
+      } else {
+        result += '"';
+        inString = false;
+      }
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result.replace(/,\s*([}\]])/g, '$1');
+}
+
+function extractTopLevelObjectBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  let depth = 0;
+  let startIndex = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) startIndex = index;
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0 && startIndex !== -1) {
+        blocks.push(text.substring(startIndex, index + 1));
+        startIndex = -1;
+      }
+    }
+  }
+
+  return blocks;
+}
+
+function tryParseJsonVariants(text: string) {
+  const attempts = Array.from(new Set([
+    text,
+    text.replace(/,\s*([}\]])/g, '$1'),
+    text.replace(/("(?:[^"\\]|\\.)*")|[\n\r\t]/g, (match, str) => (str ? str : ' ')),
+    repairJsonLikeText(text),
+  ]));
+
+  for (const attempt of attempts) {
+    const parsed = tryParseJsonCandidate(attempt);
+    if (parsed !== null) return parsed;
+  }
+
+  return null;
+}
+
 export function parseJsonLoose(text: string) {
   try {
     let clean = text.replace(/```json\s*|```/g, '').trim();
@@ -515,39 +707,20 @@ export function parseJsonLoose(text: string) {
     const extracted = extractBalancedJsonBlock(clean);
     if (extracted) clean = extracted;
 
-    try {
-      return JSON.parse(clean);
-    } catch {}
+    const parsed = tryParseJsonVariants(clean);
+    if (parsed !== null) return parsed;
 
-    let fixed = clean
-      .replace(/,\s*([}\]])/g, '$1')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
+    if (clean.startsWith('[')) {
+      const blocks = extractTopLevelObjectBlocks(repairJsonLikeText(clean));
+      if (blocks.length > 0) {
+        const parsedItems = blocks
+          .map(block => tryParseJsonVariants(block))
+          .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item));
 
-    try {
-      return JSON.parse(fixed);
-    } catch {}
-
-    fixed = clean.replace(/("(?:[^"\\]|\\.)*")|[\n\r\t]/g, (match, str) => {
-      if (str) return str;
-      return ' ';
-    });
-
-    try {
-      return JSON.parse(fixed);
-    } catch {}
-
-    if (clean.startsWith('[') || clean.startsWith('{')) {
-      try {
-        return Function(`"use strict"; return (${clean});`)();
-      } catch {}
-    }
-
-    if (fixed.startsWith('[') || fixed.startsWith('{')) {
-      try {
-        return Function(`"use strict"; return (${fixed});`)();
-      } catch {}
+        if (parsedItems.length > 0) {
+          return parsedItems;
+        }
+      }
     }
 
     return null;

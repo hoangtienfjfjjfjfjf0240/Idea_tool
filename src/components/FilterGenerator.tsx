@@ -710,13 +710,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     abortRef.current = controller;
     startProgress();
     try {
-      const previousIdeasSummary = savedHistory.slice(0, 10).map((idea, i) => {
+      const previousIdeasSummary = savedHistory.slice(0, 6).map((idea, i) => {
         const c = idea.content;
-        return `${i + 1}. "${idea.title}"
-   Framework: CoreUser="${c?.framework?.coreUser || ''}", Painpoint="${c?.framework?.painpoint || ''}", Emotion="${c?.framework?.emotion || ''}", PSP="${c?.framework?.psp || ''}"
-   Hook: visual="${c?.hook?.visual || ''}", script="${c?.hook?.script || ''}", characterSpeech="${c?.hook?.characterSpeech || ''}", voiceover="${c?.hook?.voiceover || ''}", voice="${c?.hook?.voice || ''}"
-   Body: visual="${c?.body?.visual || ''}", characterSpeech="${c?.body?.characterSpeech || ''}", voiceover="${c?.body?.voiceover || ''}", voice="${c?.body?.voice || ''}"
-   CTA: characterSpeech="${c?.cta?.characterSpeech || ''}", voiceover="${c?.cta?.voiceover || ''}", voice="${c?.cta?.voice || ''}"`;
+        const hookSummary = c?.meta?.hookPrimary
+          || c?.hook?.textOverlay
+          || c?.hook?.voice
+          || c?.hook?.visual
+          || c?.hook?.script
+          || '';
+        return `${i + 1}. "${idea.title}" | type="${c?.creativeType || ''}" | pain="${c?.framework?.painpoint || ''}" | hook="${hookSummary}"`;
       }).join('\n');
 
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
