@@ -451,11 +451,11 @@ export async function POST(request: NextRequest) {
     requestBody = asRecord(await request.json());
     const hook = asRecord(requestBody.hook);
     const quantity = requestBody.quantity ?? 3;
-    const duration = requestBody.duration ?? 'Short social-first runtime';
-    const appName = requestBody.appName;
-    const appCategory = requestBody.appCategory;
-    const ideaDirection = requestBody.ideaDirection;
-    const selectedModel = requestBody.selectedModel;
+    const duration = asText(requestBody.duration) || 'Short social-first runtime';
+    const appName = asText(requestBody.appName) || 'App';
+    const appCategory = asText(requestBody.appCategory) || 'General';
+    const ideaDirection = asText(requestBody.ideaDirection) || undefined;
+    const selectedModel = asText(requestBody.selectedModel) || undefined;
     const requestedQty = Math.min(toPositiveInt(quantity, 3), MAX_IDEAS_PER_REQUEST);
     const targetLanguage = 'English';
     const batchPlans = buildIdeaBatchPlans(requestedQty);
@@ -466,7 +466,7 @@ export async function POST(request: NextRequest) {
     for (const plan of batchPlans) {
       const frameworkInjection = buildFrameworkInjection({
         appName,
-        category: appCategory || 'General',
+        category: appCategory,
         coreUsers: [asText(hook.core_user)].filter(Boolean),
         primaryEmotion: asText(hook.emotion) || 'Curiosity',
         visualTheme: `${asText(hook.creative_type) || asText(hook.subtitle) || 'UGC'}; use the winning hook as DNA, then expand it into a full brief.`,

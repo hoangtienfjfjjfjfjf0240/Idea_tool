@@ -837,19 +837,25 @@ export async function POST(request: NextRequest) {
   try {
     requestBody = asRecord(await request.json());
     const body = requestBody;
+    const mode = asText(body.mode);
 
     // === MODE: REFINE (AI chỉnh sửa idea có sẵn) ===
-    if (body.mode === 'refine') {
-      const { originalIdea, instruction, appName, appCategory, selectedModel } = body;
-      const originalFramework = originalIdea?.framework || {};
+    if (mode === 'refine') {
+      const originalIdea = asRecord(body.originalIdea);
+      const instruction = asText(body.instruction);
+      const appName = asText(body.appName) || 'App';
+      const appCategory = asText(body.appCategory) || 'General';
+      const selectedModel = asText(body.selectedModel) || undefined;
+      const originalFramework = asRecord(originalIdea.framework);
+      const originalDuration = asText(originalIdea.duration) || '30s';
       const refineFramework = buildFrameworkInjection({
         appName,
-        category: appCategory || 'General',
-        coreUsers: [String(originalFramework.coreUser || '')].filter(Boolean),
-        primaryEmotion: String(originalFramework.emotion || 'Curiosity'),
-        visualTheme: String(originalIdea?.creativeType || 'UGC') || 'UGC',
-        psp: String(originalFramework.psp || appName),
-        pillars: [String(originalFramework.painpoint || '')].filter(Boolean),
+        category: appCategory,
+        coreUsers: [asText(originalFramework.coreUser)].filter(Boolean),
+        primaryEmotion: asText(originalFramework.emotion) || 'Curiosity',
+        visualTheme: asText(originalIdea.creativeType) || 'UGC',
+        psp: asText(originalFramework.psp) || appName,
+        pillars: [asText(originalFramework.painpoint)].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: 1,
         language: 'Vietnamese strategy notes + original copy language',
@@ -878,7 +884,7 @@ ${JSON.stringify(originalIdea, null, 2)}
 
 ## OBJECT SCHEMA
 Use the same field schema as one item from the standard idea output spec:
-${buildIdeaOutputSpec({ quantity: 1, duration: originalIdea?.duration || '30s', appName, language: 'original copy language' })}
+${buildIdeaOutputSpec({ quantity: 1, duration: originalDuration, appName, language: 'original copy language' })}
 
 For this refine task, return only the single object body, not the surrounding array.
 
@@ -916,21 +922,25 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       return NextResponse.json({
         success: true,
         data: normalizeIdeaOutput(parsed, {
-          duration: originalIdea?.duration || '30s',
+          duration: originalDuration,
           appName,
-          pillar: String(originalFramework.painpoint || ''),
+          pillar: asText(originalFramework.painpoint),
         }),
       });
     }
 
     // === MODE: GENERATE ANGLES (tạo angle từ painpoint) ===
-    if (body.mode === 'generate-angles') {
-      const { appName, appCategory, painpoints, coreUsers, emotions } = body;
-      const pps = (painpoints || []).join('; ');
-      const anglePrompt = `Tạo angle quảng cáo cho app "${appName}" (${appCategory || 'App'}).
+    if (mode === 'generate-angles') {
+      const appName = asText(body.appName) || 'App';
+      const appCategory = asText(body.appCategory) || 'App';
+      const painpoints = asStringList(body.painpoints);
+      const coreUsers = asStringList(body.coreUsers);
+      const emotions = asStringList(body.emotions);
+      const pps = painpoints.join('; ');
+      const anglePrompt = `Tạo angle quảng cáo cho app "${appName}" (${appCategory}).
 Painpoints: ${pps}
-Core Users: ${(coreUsers || []).join('; ')}
-Emotions: ${(emotions || []).join('; ')}
+Core Users: ${coreUsers.join('; ')}
+Emotions: ${emotions.join('; ')}
 
 Yêu cầu:
 1. Mỗi angle PHẢI bám trực tiếp vào painpoint đã chọn, không được trượt sang painpoint khác.
@@ -981,7 +991,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
         console.error('[generate-angles] AI error:', e);
       }
       // Fallback: generate locally
-      const fallback = (painpoints || []).flatMap((pp: string) => [
+      const fallback = painpoints.flatMap((pp) => [
         `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
         `${pp} và mỗi lần nhìn vào nhà lại càng rối hơn`,
         `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
@@ -989,21 +999,36 @@ Trả JSON array of strings. KHÔNG markdown.`;
       return NextResponse.json({ success: true, angles: fallback });
     }
 
-    if (body.mode !== 'refine' && body.mode !== 'generate-angles') {
-      const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics, trendingStructures } = body;
-      const featureContext = filters?.solution?.length ? filters.solution.join(', ') : 'General App Features';
-      const requestedQuantity = Math.min(toPositiveInt(config?.quantity, 3), MAX_IDEAS_PER_REQUEST);
-      const duration = config?.duration || 'Short social-first runtime';
-      const visualType = config?.visualType || 'UGC (Người thật)';
-      const targetLang = detectLang(filters?.coreUser);
-      const marketContext = buildMarketContext(filters?.targetMarket);
-      const angleContext = filters?.angle?.length ? filters.angle.join(', ') : '';
-      const primaryPillar = filters?.painPoint?.[0] || 'General user friction';
-      const angleIndex = Number(config?.angleIndex || 1);
-      const totalAngles = Number(config?.totalAngles || 1);
-      const requestStartIndex = Math.max(0, Number(config?.startIndex || 0) || 0);
-      const totalVariations = Math.max(requestedQuantity, Number(config?.totalVariations || requestedQuantity) || requestedQuantity);
+    if (mode !== 'refine' && mode !== 'generate-angles') {
+      const appName = asText(body.appName) || 'App';
+      const appCategory = asText(body.appCategory) || 'General';
+      const filters = asRecord(body.filters);
+      const config = asRecord(body.config);
+      const previousIdeas = asText(body.previousIdeas);
+      const appKnowledge = asText(body.appKnowledge);
+      const selectedModel = asText(body.selectedModel) || undefined;
+      const trendingTopics = asStringList(body.trendingTopics);
+      const trendingStructures = asStringList(body.trendingStructures);
+      const solutionValues = asStringList(filters.solution);
+      const coreUserValues = asStringList(filters.coreUser);
+      const emotionValues = asStringList(filters.emotion);
+      const targetMarketValues = asStringList(filters.targetMarket);
+      const angleValues = asStringList(filters.angle);
+      const painPointValues = asStringList(filters.painPoint);
+      const featureContext = solutionValues.length ? solutionValues.join(', ') : 'General App Features';
+      const requestedQuantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
+      const duration = asText(config.duration) || 'Short social-first runtime';
+      const visualType = asText(config.visualType) || 'UGC (Người thật)';
+      const targetLang = detectLang(coreUserValues);
+      const marketContext = buildMarketContext(targetMarketValues);
+      const angleContext = angleValues.length ? angleValues.join(', ') : '';
+      const primaryPillar = painPointValues[0] || 'General user friction';
+      const angleIndex = Number(config.angleIndex || 1);
+      const totalAngles = Number(config.totalAngles || 1);
+      const requestStartIndex = Math.max(0, Number(config.startIndex || 0) || 0);
+      const totalVariations = Math.max(requestedQuantity, Number(config.totalVariations || requestedQuantity) || requestedQuantity);
       const modelCandidates = resolveIdeaModels(selectedModel);
+      const ideaDescription = asText(config.ideaDescription) || undefined;
       const batchPlans = buildIdeaBatchPlans(requestedQuantity);
 
       const truncatedKnowledge = clampPromptContext(appKnowledge, GENERATE_IDEAS_CONTEXT_CHAR_LIMIT);
@@ -1014,19 +1039,14 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const recentIdeasBlock = truncatedPreviousIdeas
         ? `\n[RECENT SAVED IDEAS - learn style, do not repeat]\n${truncatedPreviousIdeas}\n`
         : '';
-      const trendingBlock = trendingTopics?.length
+      const trendingBlock = trendingTopics.length
         ? `\n[TRENDING CONTEXT]\n${trendingTopics.join(', ')}\nUse trends only when they naturally fit the selected pain point and emotion.\n`
         : '';
-      const structuredTrendNotes = Array.isArray(trendingStructures)
-        ? trendingStructures
-            .map(item => String(item || '').trim())
-            .filter(Boolean)
-            .slice(0, 4)
-        : [];
+      const structuredTrendNotes = trendingStructures.slice(0, 4);
       const importedTrendBlock = structuredTrendNotes.length
         ? `\n[IMPORTED VIDEO STRUCTURE]\n${structuredTrendNotes.join('\n')}\nLearn pacing and treatment, but do not copy the source structure verbatim.\n`
         : '';
-      const seasonalVisualBlock = buildSeasonalVisualBlock(config?.seasonalVisualContext);
+      const seasonalVisualBlock = buildSeasonalVisualBlock(config.seasonalVisualContext);
 
       const refillIdeasOneByOne = async (
         missingCount: number,
@@ -1086,13 +1106,13 @@ Trả JSON array of strings. KHÔNG markdown.`;
 
         const frameworkInjection = buildFrameworkInjection({
           appName,
-          category: appCategory || 'General',
-          coreUsers: filters?.coreUser || [],
-          primaryEmotion: filters?.emotion?.[0] || 'Curiosity',
-          visualTheme: `${visualType}. Keep the scenes native to ${filters?.targetMarket?.join(', ') || 'the selected market'}.`,
+          category: appCategory,
+          coreUsers: coreUserValues,
+          primaryEmotion: emotionValues[0] || 'Curiosity',
+          visualTheme: `${visualType}. Keep the scenes native to ${targetMarketValues.join(', ') || 'the selected market'}.`,
           psp: featureContext,
-          pillars: filters?.painPoint?.length ? filters.painPoint : ['General user friction'],
-          trendingHooks: trendingTopics || [],
+          pillars: painPointValues.length ? painPointValues : ['General user friction'],
+          trendingHooks: trendingTopics,
           performanceData: [
             truncatedKnowledge ? 'AI Brain memory block attached below in supporting context.' : 'No AI Brain memory yet',
             truncatedPreviousIdeas ? 'Recent idea history block attached below in supporting context.' : 'No recent saved ideas',
@@ -1119,8 +1139,8 @@ Trả JSON array of strings. KHÔNG markdown.`;
           priority: 'A',
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
-            `Idea description: ${config?.ideaDescription || 'Creative freedom'}`,
-            `Target market: ${filters?.targetMarket?.join(', ') || 'Default market'}`,
+            `Idea description: ${ideaDescription || 'Creative freedom'}`,
+            `Target market: ${targetMarketValues.join(', ') || 'Default market'}`,
             `Batch window: ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}/${totalVariations}`,
           ],
         });
@@ -1308,7 +1328,7 @@ ${retryNotes.join('\n\n')}`, {
                 duration,
                 startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
                 angleIndex,
-                ideaDescription: config?.ideaDescription,
+                ideaDescription,
               });
               batchIdeas.push(...fallbackIdeas);
               fallbackCount += fallbackIdeas.length;
@@ -1342,7 +1362,7 @@ ${retryNotes.join('\n\n')}`, {
               duration,
               startIndex: requestStartIndex + plan.batchStartIndex + recoveredIdeas.length,
               angleIndex,
-              ideaDescription: config?.ideaDescription,
+              ideaDescription,
             });
             aggregatedIdeas.push(...fallbackIdeas);
             fallbackCount += fallbackIdeas.length;
@@ -1373,7 +1393,7 @@ ${retryNotes.join('\n\n')}`, {
             duration,
             startIndex: requestStartIndex + aggregatedIdeas.length,
             angleIndex,
-            ideaDescription: config?.ideaDescription,
+            ideaDescription,
           });
           aggregatedIdeas.push(...finalTopUp);
           fallbackCount += finalTopUp.length;
@@ -1392,7 +1412,7 @@ ${retryNotes.join('\n\n')}`, {
           duration,
           startIndex: requestStartIndex,
           angleIndex,
-          ideaDescription: config?.ideaDescription,
+          ideaDescription,
         });
         aggregatedIdeas.push(...emergencyIdeas);
         fallbackCount += emergencyIdeas.length;
@@ -1415,18 +1435,32 @@ ${retryNotes.join('\n\n')}`, {
     }
 
     // === MODE: GENERATE (tạo idea mới) ===
-    const { appName, appCategory, filters, config, previousIdeas, appKnowledge, selectedModel, trendingTopics, trendingStructures } = body;
-    const featureContext = filters?.solution?.length ? filters.solution.join(', ') : "General App Features";
-    const quantity = Math.min(config?.quantity || 3, 5); // Cap at 5 to avoid gateway timeout
-    const duration = config?.duration || 'Short social-first runtime';
-    const visualType = config?.visualType || 'UGC (Người thật)';
-    const targetLang = detectLang(filters?.coreUser);
-    const marketContext = buildMarketContext(filters?.targetMarket);
-    const angleContext = filters?.angle?.length ? filters.angle.join(', ') : '';
-    const primaryPillar = filters?.painPoint?.[0] || 'General user friction';
+    const appName = asText(body.appName) || 'App';
+    const appCategory = asText(body.appCategory) || 'General';
+    const filters = asRecord(body.filters);
+    const config = asRecord(body.config);
+    const previousIdeas = asText(body.previousIdeas);
+    const appKnowledge = asText(body.appKnowledge);
+    const selectedModel = asText(body.selectedModel) || undefined;
+    const trendingTopics = asStringList(body.trendingTopics);
+    const trendingStructures = asStringList(body.trendingStructures);
+    const solutionValues = asStringList(filters.solution);
+    const coreUserValues = asStringList(filters.coreUser);
+    const emotionValues = asStringList(filters.emotion);
+    const targetMarketValues = asStringList(filters.targetMarket);
+    const angleValues = asStringList(filters.angle);
+    const painPointValues = asStringList(filters.painPoint);
+    const featureContext = solutionValues.length ? solutionValues.join(', ') : "General App Features";
+    const quantity = Math.min(toPositiveInt(config.quantity, 3), 5); // Cap at 5 to avoid gateway timeout
+    const duration = asText(config.duration) || 'Short social-first runtime';
+    const visualType = asText(config.visualType) || 'UGC (Người thật)';
+    const targetLang = detectLang(coreUserValues);
+    const marketContext = buildMarketContext(targetMarketValues);
+    const angleContext = angleValues.length ? angleValues.join(', ') : '';
+    const primaryPillar = painPointValues[0] || 'General user friction';
 
     // Truncate knowledge to avoid prompt overflow
-    const rawKnowledge = appKnowledge || '';
+    const rawKnowledge = appKnowledge;
     const truncatedKnowledge = rawKnowledge.length > 3000 ? rawKnowledge.substring(0, 3000) + '\n[...truncated]' : rawKnowledge;
 
     const knowledgeBlock = truncatedKnowledge
@@ -1437,23 +1471,19 @@ ${retryNotes.join('\n\n')}`, {
       ? `\n[IDEAS GẦN ĐÂY — Học phong cách, nâng cấp, KHÔNG lặp lại]\n${previousIdeas}\n`
       : '';
 
-    const trendingBlock = trendingTopics?.length
+    const trendingBlock = trendingTopics.length
       ? `\n[TRENDING HIỆN TẠI — KẾT HỢP NẾU PHÙ HỢP]\n${trendingTopics.join(', ')}\n→ Kết hợp trend vào tình huống/hook nếu tự nhiên. KHÔNG ép trend vào nếu không phù hợp với painpoint/emotion đã chọn.\n`
       : '';
-    const structuredTrendNotes = Array.isArray(trendingStructures)
-      ? trendingStructures
-          .map(item => String(item || '').trim())
-          .filter(Boolean)
-          .slice(0, 6)
-      : [];
+    const structuredTrendNotes = trendingStructures.slice(0, 6);
     const importedTrendBlock = structuredTrendNotes.length
       ? `\n[IMPORTED VIDEO STRUCTURE — ƯU TIÊN HỌC CẤU TRÚC, KHÔNG COPY NGUYÊN XI]\n${structuredTrendNotes.join('\n')}\n→ Học nhịp hook/body/CTA, camera treatment, audio pattern và text overlay style. Vẫn phải bám đúng painpoint/emotion/filter của app.\n`
       : '';
-    const seasonalVisualBlock = buildSeasonalVisualBlock(config?.seasonalVisualContext);
-    const variationIndex = Number(config?.variationIndex || 0);
-    const totalVariations = Number(config?.totalVariations || quantity);
-    const angleIndex = Number(config?.angleIndex || 1);
-    const totalAngles = Number(config?.totalAngles || 1);
+    const seasonalVisualBlock = buildSeasonalVisualBlock(config.seasonalVisualContext);
+    const variationIndex = Number(config.variationIndex || 0);
+    const totalVariations = Number(config.totalVariations || quantity);
+    const angleIndex = Number(config.angleIndex || 1);
+    const totalAngles = Number(config.totalAngles || 1);
+    const ideaDescription = asText(config.ideaDescription) || undefined;
     const variationBlock = variationIndex > 0
       ? `\n[VARIATION TRONG LẦN GEN HIỆN TẠI]\nĐây là idea ${variationIndex}/${totalVariations}. Phải khác các idea còn lại về tình huống mở đầu, hành động đầu tiên, creative type hoặc nhân vật phụ. Vẫn giữ ĐÚNG core user, painpoint, emotion, PSP, target market, month/season/event và output schema.\n`
       : '';
@@ -1461,13 +1491,13 @@ ${retryNotes.join('\n\n')}`, {
 
     const frameworkInjection = buildFrameworkInjection({
       appName,
-      category: appCategory || 'General',
-      coreUsers: filters?.coreUser || [],
-      primaryEmotion: filters?.emotion?.[0] || 'Curiosity',
-      visualTheme: `${visualType}. Keep the scenes native to ${filters?.targetMarket?.join(', ') || 'the selected market'}.`,
+      category: appCategory,
+      coreUsers: coreUserValues,
+      primaryEmotion: emotionValues[0] || 'Curiosity',
+      visualTheme: `${visualType}. Keep the scenes native to ${targetMarketValues.join(', ') || 'the selected market'}.`,
       psp: featureContext,
-      pillars: filters?.painPoint?.length ? filters.painPoint : ['General user friction'],
-      trendingHooks: trendingTopics || [],
+      pillars: painPointValues.length ? painPointValues : ['General user friction'],
+      trendingHooks: trendingTopics,
       performanceData: [
         rawKnowledge ? `AI Brain memory: ${truncatedKnowledge}` : 'No AI Brain memory yet',
         previousIdeas ? `Recent idea history for anti-repeat:\n${previousIdeas}` : 'No recent idea history',
@@ -1491,8 +1521,8 @@ ${retryNotes.join('\n\n')}`, {
       priority: 'A',
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,
-        `Idea description: ${config?.ideaDescription || 'Creative freedom'}`,
-        `Target market: ${filters?.targetMarket?.join(', ') || 'Default market'}`,
+        `Idea description: ${ideaDescription || 'Creative freedom'}`,
+        `Target market: ${targetMarketValues.join(', ') || 'Default market'}`,
       ],
     });
 
