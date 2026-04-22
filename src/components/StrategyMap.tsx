@@ -1161,6 +1161,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     }
     return next;
   }, [hiddenNodeIds, onlyUngeneratedVisibleNodeIds, showOnlyUngenerated, workflowNodeRegistry]);
+  const visibleLayoutSignature = useMemo(() => (
+    Array.from(effectiveHiddenNodeIdSet).sort().join('|')
+  ), [effectiveHiddenNodeIdSet]);
 
   const collectBranchNodeIds = useCallback((startNodeId: string) => {
     const visited = new Set<string>();
@@ -1342,7 +1345,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       autoFitPendingRef.current = false;
     });
     return () => window.cancelAnimationFrame(fitId);
-  }, [canvasW, canvasH, fitView, viewportHeight, viewportWidth, viewPan.x, viewPan.y, viewScale]);
+  }, [canvasW, canvasH, fitView, viewportHeight, viewportWidth, viewPan.x, viewPan.y, viewScale, visibleLayoutSignature]);
 
   useEffect(() => {
     if (!pendingFullViewFitRef.current || !isFullView) return;
@@ -1439,6 +1442,12 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     autoFitPendingRef.current = false;
     zoomAtPoint(anchor.x, anchor.y, viewScale * factor);
   }, [getViewportZoomAnchor, viewScale, zoomAtPoint]);
+
+  const handleFitMap = useCallback(() => {
+    autoFitPendingRef.current = true;
+    fitView({ mode: 'auto' });
+    autoFitPendingRef.current = false;
+  }, [fitView]);
 
   const handleViewportWheelAt = useCallback((clientX: number, clientY: number, deltaY: number) => {
     autoFitPendingRef.current = false;
@@ -1885,6 +1894,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     const branchNodeIds = collectBranchNodeIds(selectedBranchNodeId).filter(nodeId => nodeId !== 'root');
     if (branchNodeIds.length === 0) return;
 
+    autoFitPendingRef.current = true;
     setHiddenNodeIds(prev => Array.from(new Set([...prev, ...branchNodeIds])));
     setSelectedNode(null);
     setSelectedCustomNodeId(null);
@@ -1892,7 +1902,34 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     cancelActiveDraft();
   }, [cancelActiveDraft, collectBranchNodeIds, selectedBranchNodeId]);
 
+  const handleHideBranch = useCallback((nodeId: string) => {
+    if (!nodeId || nodeId === 'root') return;
+    const branchNodeIds = collectBranchNodeIds(nodeId).filter(branchNodeId => branchNodeId !== 'root');
+    if (branchNodeIds.length === 0) return;
+
+    autoFitPendingRef.current = true;
+    setHiddenNodeIds(prev => Array.from(new Set([...prev, ...branchNodeIds])));
+    if (selectedNode && branchNodeIds.includes(selectedNode.id)) {
+      setSelectedNode(null);
+      setActivePath([]);
+    }
+    if (selectedCustomNodeId && branchNodeIds.includes(selectedCustomNodeId)) {
+      setSelectedCustomNodeId(null);
+    }
+    if (dragConnection?.fromId && branchNodeIds.includes(dragConnection.fromId)) {
+      setDragConnection(null);
+    }
+    if (pendingNodePicker?.fromId && branchNodeIds.includes(pendingNodePicker.fromId)) {
+      setPendingNodePicker(null);
+    }
+    if (pendingCustomNodeEditor?.fromId && branchNodeIds.includes(pendingCustomNodeEditor.fromId)) {
+      setPendingCustomNodeEditor(null);
+    }
+    cancelActiveDraft();
+  }, [cancelActiveDraft, collectBranchNodeIds, dragConnection?.fromId, pendingCustomNodeEditor?.fromId, pendingNodePicker?.fromId, selectedCustomNodeId, selectedNode]);
+
   const handleShowAllBranches = useCallback(() => {
+    autoFitPendingRef.current = true;
     setHiddenNodeIds([]);
   }, []);
 
@@ -2050,7 +2087,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           {strategyStateBadge.label}
         </span>
         <button
-          onClick={() => setShowOnlyUngenerated(prev => !prev)}
+          onClick={() => {
+            autoFitPendingRef.current = true;
+            setShowOnlyUngenerated(prev => !prev);
+          }}
           className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
             showOnlyUngenerated
               ? 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -2152,6 +2192,13 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
           <div className="text-[11px] font-medium text-gray-400">Pan nền để di chuyển, lăn chuột để zoom, bấm fit để tự căn chỉnh.</div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={handleFitMap}
+              className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-[11px] font-black text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+              title="Fit lại map"
+            >
+              Fit
+            </button>
             <button
               onClick={() => zoomBy(0.9)}
               className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
@@ -2333,7 +2380,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
                 const branchStatus = branchStatusByNodeId.get(node.id) || 'ungenerated';
                 const branchTheme = BRANCH_STATUS_THEME[branchStatus];
-                const statusIconOffset = treeNode ? 'right-1.5' : 'right-7';
+                const canHideNode = node.id !== 'root';
+                const statusIconOffset = !treeNode && canHideNode ? 'right-12' : canHideNode ? 'right-7' : !treeNode ? 'right-7' : 'right-1.5';
 
                 return (
                   <div
@@ -2434,6 +2482,19 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                             title="Xóa node custom"
                           >
                             <X size={10} />
+                          </button>
+                        )}
+                        {canHideNode && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleHideBranch(node.id);
+                            }}
+                            data-node-action="true"
+                            className={`absolute ${treeNode ? 'right-1.5' : 'right-7'} top-1.5 rounded-full bg-white/80 p-1 text-gray-400 hover:text-slate-700`}
+                            title="Ẩn nhánh này"
+                          >
+                            <EyeOff size={10} />
                           </button>
                         )}
                       </div>
