@@ -6,6 +6,7 @@ const AI_API_KEY = process.env.AI_API_KEY || process.env.AI_GATEWAY_API_KEY || '
 export function getAIChatCompletionsUrl(baseUrl = AI_BASE_URL): string {
   const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
   if (!normalizedBase) return '';
+  if (normalizedBase.endsWith('/chat/completions')) return normalizedBase;
   return normalizedBase.endsWith('/v1')
     ? `${normalizedBase}/chat/completions`
     : `${normalizedBase}/v1/chat/completions`;
