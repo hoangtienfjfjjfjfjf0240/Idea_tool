@@ -723,26 +723,54 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
       const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
+      const maxIdeasPerAngleRequest = 10;
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
-        Array.from({ length: quantity }, (_, ideaIndex) => ({
-          selectedAngle: angle,
-          angleIndex,
-          ideaIndex,
-          filtersSnapshot: {
-            ...filters,
-            angle: angle ? [angle] : [],
-          } as FilterState,
-        }))
+        Array.from({ length: Math.ceil(quantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
+          const startIndex = chunkIndex * maxIdeasPerAngleRequest;
+          return {
+            selectedAngle: angle,
+            angleIndex,
+            startIndex,
+            requestQuantity: Math.min(maxIdeasPerAngleRequest, quantity - startIndex),
+            filtersSnapshot: {
+              ...filters,
+              angle: angle ? [angle] : [],
+            } as FilterState,
+          };
+        })
       );
-      const totalRequestedIdeas = generationTasks.length;
+      const totalRequestedIdeas = anglesToGenerate.length * quantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-      const maxConcurrent = Math.min(2, Math.max(1, generationTasks.length));
+      const maxConcurrent = 1;
+      const maxAttemptsPerAngle = selectedModel === 'gemini-3-pro' ? 3 : 2;
+      const buildInRunIdeasSummary = () => {
+        if (allData.length === 0) return '';
 
-      const requestIdeaSlot = async (task: { selectedAngle: string | null; angleIndex: number; ideaIndex: number; filtersSnapshot: FilterState }) => {
+        return allData.slice(-12).map(({ item }, index) => {
+          const hookSummary = item.meta?.hookPrimary
+            || item.hook?.textOverlay
+            || item.hook?.voice
+            || item.hook?.visual
+            || item.hook?.script
+            || '';
+          return `${index + 1}. "${item.title || 'Idea'}" | type="${item.creativeType || ''}" | pain="${item.framework?.painpoint || ''}" | hook="${hookSummary}"`;
+        }).join('\n');
+      };
+
+      const requestAngleIdeas = async (task: { selectedAngle: string | null; angleIndex: number; startIndex: number; requestQuantity: number; filtersSnapshot: FilterState }) => {
         const attemptRequest = async (attempt = 1) => {
-          setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${task.ideaIndex + 1}/${quantity}...`);
+          const retryLabel = attempt > 1 ? ` (thử lại ${attempt}/${maxAttemptsPerAngle})` : '';
+          const rangeStart = task.startIndex + 1;
+          const rangeEnd = task.startIndex + task.requestQuantity;
+          setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${rangeStart}-${rangeEnd}/${quantity}${retryLabel}...`);
 
           try {
+            const inRunIdeasSummary = buildInRunIdeasSummary();
+            const previousIdeasForRequest = [
+              previousIdeasSummary,
+              inRunIdeasSummary ? `[IDEAS ALREADY GENERATED THIS RUN - DO NOT REPEAT]\n${inRunIdeasSummary}` : '',
+            ].filter(Boolean).join('\n\n');
+
             const res = await fetch('/api/generate-ideas', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -751,19 +779,19 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 appCategory: app.category,
                 filters: task.filtersSnapshot,
                 config: {
-                  quantity: 1,
+                  quantity: task.requestQuantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
                   ideaDescription,
                   visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
                   seasonalVisualContext,
                   totalVariations: quantity,
-                  variationIndex: task.ideaIndex + 1,
-                  startIndex: task.ideaIndex,
+                  variationIndex: task.startIndex + 1,
+                  startIndex: task.startIndex,
                   angleIndex: task.angleIndex + 1,
                   totalAngles: anglesToGenerate.length,
                   selectedAngle: task.selectedAngle,
                 },
-                previousIdeas: previousIdeasSummary || null,
+                previousIdeas: previousIdeasForRequest || null,
                 appKnowledge: app.app_knowledge || null,
                 selectedModel: selectedModel || '',
                 trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
@@ -784,25 +812,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} warnings:`, result.meta.warnings);
             }
             if ((result.meta?.fallbackCount || 0) > 0) {
-              throw new Error(`Angle ${task.angleIndex + 1}, idea ${task.ideaIndex + 1} chỉ nhận fallback template từ API.`);
+              throw new Error(`Angle ${task.angleIndex + 1} chỉ nhận fallback template từ API.`);
             }
 
-            const completedItem = aiItems[0];
-            if (!completedItem) {
-              throw new Error(`Angle ${task.angleIndex + 1}, idea ${task.ideaIndex + 1} không có idea hợp lệ từ API.`);
+            if (aiItems.length < task.requestQuantity) {
+              throw new Error(`Angle ${task.angleIndex + 1} chỉ nhận ${aiItems.length}/${task.requestQuantity} ideas hợp lệ từ API.`);
             }
 
-            return [{
-              item: completedItem,
+            return aiItems.slice(0, task.requestQuantity).map(item => ({
+              item,
               filtersSnapshot: task.filtersSnapshot,
-            }];
+            }));
           } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
               throw error;
             }
 
-            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1}, idea ${task.ideaIndex + 1} request failed.`, error);
-            if (attempt < 2) {
+            console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed.`, error);
+            if (attempt < maxAttemptsPerAngle) {
               return attemptRequest(attempt + 1);
             }
 
@@ -817,9 +844,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         const end = Math.min(start + maxConcurrent, generationTasks.length);
         const briefStart = start + 1;
         const briefEnd = end;
-        setProgressLabel(`Đang tạo full brief ${briefStart}-${briefEnd}/${totalRequestedIdeas}...`);
+        setProgressLabel(`Đang tạo angle ${briefStart}-${briefEnd}/${generationTasks.length}...`);
         const chunk = await Promise.all(
-          generationTasks.slice(start, end).map(task => requestIdeaSlot(task))
+          generationTasks.slice(start, end).map(task => requestAngleIdeas(task))
         );
         allData = [...allData, ...chunk.flatMap(item => item)];
         if (allData.length === 0 && end >= generationTasks.length) {

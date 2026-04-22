@@ -219,13 +219,13 @@ Before outputting each idea, internally ask:
 If any answer is no, rewrite before outputting.`;
 
 export const CREATIVE_PROMPT_RULES = `## RULES
-R01. meta.hookPrimary must stay under 12 words.
+R01. meta.hookPrimary should be a natural, descriptive stop-scroll line around 8-18 words. It may be up to 22 words when needed to make the pain point specific.
 R02. Hook must create pattern interrupt, not just describe the product.
 R03. Every idea must include 3 hook variations: primary + alt 1 + alt 2.
 R04. Each angle must have a distinct angle type inside the same pillar.
 R05. Angle means a genuinely different opening approach, not a paraphrase.
 R06. Every visual scene must be executable without follow-up questions.
-R07. hook.voice + body.voice + cta.voice together must stay concise, and hook.voice on its own should stay punchy.
+R07. hook.characterSpeech or hook.voiceover may be 1-2 natural spoken sentences when that is needed to make the first 3-5 seconds feel real, specific, and native.
 R08. dontDo must be specific enough for QC to check.
 R09. Do not make medical claims or prohibited health promises.
 R10. Do not use before/after health outcome framing.
@@ -243,11 +243,12 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in the hook.
-- meta.hookPrimary, meta.hookAlt1, meta.hookAlt2 must use 3 different rhetorical approaches, not 3 paraphrases.
+- meta.hookPrimary, meta.hookAlt1, meta.hookAlt2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
 - On-camera speech must be characterSpeech; off-camera narrator/video voice must be voiceover. Do not merge both into one [VOICE] script.
 - Voice/speech must sound like a real person talking in-feed, not a polished ad.
 - Keep the output social-first, UGC-friendly, handheld, relatable.
 - hook.visual should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
+- hook.characterSpeech, hook.voiceover, and hook.textOverlay should avoid keyword-fragment hooks like "Head rush standing up?" when a more natural sentence would land harder.
 - Separate visual, characterSpeech, voiceover, and textOverlay clearly for hook, body, and CTA.
 - Include Vietnamese translation fields so the VN team can review fast.
 - When a batch requests multiple ideas, diversify creative type, opening action, blocker, reveal, and voice opening.
@@ -327,10 +328,10 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   const hookBodyCtaBlock = compact
     ? `  "hook": {
     "durationSeconds": 4,
-    "visual": "Detailed opening visual in Vietnamese, 1-2 concise sentences covering camera, location, blocker, and visible painpoint clue",
-    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
-    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary"
+    "visual": "Detailed opening visual in Vietnamese, 2-3 dense sentences covering camera, location, exact blocker, and visible painpoint clue",
+    "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
+    "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point"
   },
   "body": {
     "visual": "Detailed body visual in Vietnamese, 1-2 concise sentences",
@@ -348,10 +349,10 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     : `  "hook": {
     "durationSeconds": 4,
     "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense sentences covering camera, location, blocker, and visible painpoint clue",
-    "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
-    "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
+    "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
+    "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
-    "textOverlay": "Short on-screen text in ${options.language} that keeps the same stop-scroll idea as meta.hookPrimary",
+    "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point",
     "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
     "viewerProfile": "Vietnamese description of who stops scrolling",
     "viewerEmotion": "Vietnamese description of what the viewer feels",
@@ -379,10 +380,10 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     ? `- Fill every field listed above.
 - Do not add server-derived legacy fields such as hook.voice, hook.text, viTranslation, viewerProfile, viewerEmotion, painpointImpact, whyTheyStopScrolling, or analogous body/cta legacy fields.
 - Keep explanation to 1 short sentence.
-- Keep hook/body/cta.visual concise: 1-2 short dense sentences, visual-only.
+- Keep hook.visual dense and specific: usually 2-3 sentences. Body/CTA visual can stay shorter.
 - hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
-- characterSpeech + voiceover across hook/body/cta must stay speakable within ${options.duration}, with hook speech staying short.`
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it speakable within 3-5 seconds, usually 8-20 words.`
     : `- Fill every field. Use "N/A" only when genuinely not applicable.
 - hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
 - hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
@@ -390,7 +391,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
 - Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
 - hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
-- characterSpeech + voiceover across hook/body/cta must stay speakable within ${options.duration}, with hook speech staying short.`;
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it speakable within 3-5 seconds, usually 8-20 words.`;
 
   return `## OUTPUT SPECIFICATION
 
@@ -409,7 +410,7 @@ Return ${quantityLabel} objects in this exact schema:
     "angleName": "3-5 word angle name",
     "angleType": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
     "angleDesc": "1 sentence describing the unique approach",
-    "hookPrimary": "Main hook text under 12 words",
+    "hookPrimary": "Main hook text, natural and descriptive, usually 8-18 words",
     "hookAlt1": "Alternative hook variation A using a different rhetorical approach",
     "hookAlt2": "Alternative hook variation B using a different rhetorical approach",
     "visualRefNotes": "Specific production note",
@@ -431,7 +432,7 @@ ${hookBodyCtaBlock}
 
 ## OUTPUT RULES
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
-- meta.hookPrimary must stay under 12 words.
+- meta.hookPrimary should be natural and descriptive, usually 8-18 words, max 22 words if needed for specificity.
 - meta.hookAlt1 and meta.hookAlt2 must not be paraphrases of meta.hookPrimary.
 ${compactOutputRules}
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
@@ -453,7 +454,7 @@ Return ${quantityLabel} objects in this exact schema:
   "explanation": "Vietnamese explanation of what changed and why it works",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
-    "hookPrimary": "Hook under 12 words",
+    "hookPrimary": "Natural hook line, usually 8-18 words",
     "hookAlt1": "Alternative hook A with a different rhetorical approach",
     "hookAlt2": "Alternative hook B with a different rhetorical approach",
     "visualRefNotes": "Specific production note",
@@ -466,7 +467,7 @@ Return ${quantityLabel} objects in this exact schema:
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
-    "textOverlay": "Short on-screen text in ${options.language} aligned with meta.hookPrimary",
+    "textOverlay": "Readable on-screen text in ${options.language}, around 6-16 words, aligned with meta.hookPrimary",
     "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
     "viewerEmotion": "Vietnamese description of what the viewer feels",
     "painpointImpact": "Vietnamese description of why this pain lands",
@@ -477,6 +478,7 @@ Return ${quantityLabel} objects in this exact schema:
 ## OUTPUT RULES
 - Focus on the first 3-5 seconds only.
 - Keep the winning hook DNA unless the user explicitly asks to change it.
+- Hooks may be descriptive when needed. Avoid clipped keyword fragments; write native, speakable hook lines.
 - hook.durationSeconds must estimate the actual hook runtime as an integer second count.
 - For UGC/POV/Reaction/Interview, split on-camera talent speech into characterSpeech and off-camera narrator/video voice into voiceover.
 - visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.

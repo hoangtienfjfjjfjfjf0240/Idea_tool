@@ -11,7 +11,7 @@ import {
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS = 90000;

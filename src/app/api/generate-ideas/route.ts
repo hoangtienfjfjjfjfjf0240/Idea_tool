@@ -11,7 +11,7 @@ import {
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function parseJson(text: string) {
   return parseJsonLoose(text);
@@ -226,7 +226,21 @@ function resolveModel(selected?: string): string {
 }
 
 function resolveIdeaModels(selected?: string): string[] {
-  return [resolveModel(selected)];
+  const primary = resolveModel(selected);
+  const fallbackModels = primary.startsWith('gemini/')
+    ? [
+        primary,
+        'gemini/gemini-2.5-pro',
+        'gemini/gemini-2.5-flash',
+      ]
+    : [
+        primary,
+        'openai/gpt-5.4',
+        'openai/gpt-5.4-mini',
+        'openai/gpt-4.1',
+        'gemini/gemini-2.5-pro',
+      ];
+  return Array.from(new Set(fallbackModels));
 }
 
 function clampPromptContext(value: unknown, maxLength: number) {
@@ -1069,12 +1083,6 @@ Trả JSON array of strings. KHÔNG markdown.`;
         priorGeneratedIdeas: Record<string, unknown>[],
         reasonLabel: string
       ) => {
-        void missingCount;
-        void batchStartIndex;
-        void priorGeneratedIdeas;
-        void reasonLabel;
-        return [];
-        /*
         const recovered: Record<string, unknown>[] = [];
 
         for (let offset = 0; offset < missingCount; offset += 1) {
@@ -1103,7 +1111,6 @@ Trả JSON array of strings. KHÔNG markdown.`;
         }
 
         return recovered;
-        */
       };
 
       const runGenerationBatch = async (
