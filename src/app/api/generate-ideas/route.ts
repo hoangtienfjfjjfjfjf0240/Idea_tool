@@ -22,10 +22,10 @@ const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|neve
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
 const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
-const MAX_IDEAS_PER_AI_BATCH = 5;
+const MAX_IDEAS_PER_AI_BATCH = 3;
 const MAX_IDEAS_PER_REQUEST = 20;
-const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 32000;
-const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 18000;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 45000;
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 25000;
 
 type IdeaBatchPlan = {
   batchQuantity: number;

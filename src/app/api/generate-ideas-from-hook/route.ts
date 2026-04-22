@@ -12,7 +12,7 @@ import {
 } from '@/lib/creativePromptSystem';
 
 export const maxDuration = 120;
-const MAX_IDEAS_PER_AI_BATCH = 5;
+const MAX_IDEAS_PER_AI_BATCH = 3;
 const MAX_IDEAS_PER_REQUEST = 10;
 const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
 const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|painful\b|awkward\b|annoying\b|sao\b|vẫn\b|đừng\b|không cần\b|thay vì|bao giờ|tệ nhất|mệt|phiền|khổ)/i;

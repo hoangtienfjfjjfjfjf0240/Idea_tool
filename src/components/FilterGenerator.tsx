@@ -52,7 +52,7 @@ interface ImportedTrendAnalysis {
 }
 
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
-const MAX_IDEAS_PER_GENERATE_REQUEST = 5;
+const MAX_IDEAS_PER_GENERATE_REQUEST = 3;
 
 type IdeaApiSection = {
   durationSeconds?: number;
@@ -732,8 +732,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const totalRequestedIdeas = generationTasks.length * quantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const maxConcurrent = quantity > MAX_IDEAS_PER_GENERATE_REQUEST
-        ? Math.min(2, Math.max(1, generationTasks.length))
-        : Math.min(3, Math.max(1, generationTasks.length));
+        ? 1
+        : Math.min(2, Math.max(1, generationTasks.length));
 
       const requestAngleBatch = async (task: { selectedAngle: string | null; angleIndex: number; filtersSnapshot: FilterState }) => {
         const requestAngleChunk = async (batchQuantity: number, startIndex: number, attempt = 1) => {
