@@ -743,8 +743,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
       const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
-      const useGeminiSmallFastPath = selectedModel === 'gemini-3-pro' && quantity <= 3;
-      const maxIdeasPerAngleRequest = useGeminiSmallFastPath ? 1 : 10;
+      const maxIdeasPerAngleRequest = 1;
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(quantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
@@ -762,7 +761,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       );
       const totalRequestedIdeas = anglesToGenerate.length * quantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-      const maxConcurrent = useGeminiSmallFastPath ? Math.min(3, generationTasks.length) : 1;
+      const maxConcurrent = Math.min(5, generationTasks.length);
       const maxAttemptsPerAngle = selectedModel === 'gemini-3-pro' ? 1 : 2;
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
