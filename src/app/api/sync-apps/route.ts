@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { askAI } from '@/lib/aiClient';
+import { assertAllowedUrl, guardApiRequest, STORE_URL_HOSTS } from '@/lib/apiGuards';
 
 // Helper: parse JSON from text
 function parseJsonFromText(text: string): Record<string, unknown> | null {
@@ -112,6 +113,14 @@ OUTPUT JSON ONLY (no markdown, no explanation):
 // POST /api/sync-apps — Sync all apps or a specific app
 // Also called by Vercel Cron daily
 export async function POST(request: NextRequest) {
+  const guard = await guardApiRequest(request, {
+    key: 'sync-apps',
+    max: 10,
+    windowMs: 10 * 60 * 1000,
+    allowCronSecret: true,
+  });
+  if (guard instanceof NextResponse) return guard;
+
   const supabase = createServerClient();
 
   // Optional: sync specific app
@@ -147,6 +156,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     try {
+      assertAllowedUrl(app.store_link, STORE_URL_HOSTS, 'Store URL');
       // Fetch reliable icon URL and AI scan in parallel
       const [scannedData, reliableIconUrl] = await Promise.all([
         scanAppForSync(app.store_link),
@@ -274,6 +284,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const fakeRequest = new NextRequest(request.url, { method: 'POST' });
+  const fakeRequest = new NextRequest(request.url, {
+    method: 'POST',
+    headers: { authorization: authHeader || '' },
+  });
   return POST(fakeRequest);
 }

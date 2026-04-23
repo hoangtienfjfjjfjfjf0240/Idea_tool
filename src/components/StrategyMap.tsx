@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, StrategyMapState, StrategyMapCustomNodeState, StrategyWorkflowLevel } from '@/types/database';
 import { addFilterOption, getFilterOptions, getIdeaSessions, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { authenticatedFetch } from '@/lib/authFetch';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
 
@@ -1741,7 +1742,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     setIsGeneratingAngleOptions(true);
 
     try {
-      const res = await fetch('/api/generate-ideas', {
+      const res = await authenticatedFetch('/api/generate-ideas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

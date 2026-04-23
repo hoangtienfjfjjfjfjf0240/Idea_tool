@@ -4,6 +4,7 @@ import { ArrowLeft, Play, PenTool, Sparkles, Plus, X, Wand2, Copy, Target, Loade
 import type { ScreenType, Hook, AppProject, FilterState, IdeaContent, GeneratedIdea } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
+import { authenticatedFetch } from '@/lib/authFetch';
 
 interface HookLibraryProps {
   setScreen: (s: ScreenType) => void;
@@ -301,7 +302,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     abortRef.current = controller;
     startProgress();
     try {
-      const res = await fetch('/api/generate-hooks', {
+      const res = await authenticatedFetch('/api/generate-hooks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -923,7 +924,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         }
 
         try {
-          const uploadRes = await fetch('/api/upload-hook-media', {
+          const uploadRes = await authenticatedFetch('/api/upload-hook-media', {
             method: 'POST',
             body: formData,
           });
@@ -1093,7 +1094,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const analyzeWithGemini = async (imageBase64: string, fileName: string) => {
     try {
-      const res = await fetch('/api/analyze-hook', {
+      const res = await authenticatedFetch('/api/analyze-hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64, fileName }),
@@ -1497,7 +1498,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       abortRef.current = controller;
       startProgress();
       try {
-        const res = await fetch('/api/generate-ideas-from-hook', {
+        const res = await authenticatedFetch('/api/generate-ideas-from-hook', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -5,6 +5,7 @@ import {
   normalizeHookOutput,
   parseJsonLoose,
 } from '@/lib/creativePromptSystem';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 60;
 
@@ -349,6 +350,9 @@ function resolveHookModels(selected?: string): string[] {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'generate-hooks', max: 60, windowMs: 5 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { hook, instruction, quantity = 3, appName, appCategory, selectedModel } = await request.json();
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
     const targetLanguage = 'English';

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPartFromUri, createUserContent, GoogleGenAI } from '@google/genai';
 import { parseJsonLoose } from '@/lib/creativePromptSystem';
+import { assertAllowedUrl, guardApiRequest, TREND_VIDEO_URL_HOSTS } from '@/lib/apiGuards';
 
 export const maxDuration = 300;
 
@@ -10,6 +11,7 @@ const GEMINI_API_VERSION = process.env.GEMINI_API_VERSION || 'v1beta';
 const GEMINI_BASE_URL =
   process.env.GEMINI_BASE_URL || (AI_BASE_URL ? `${AI_BASE_URL.replace(/\/+$/, '')}/gemini` : '');
 const MAX_DOWNLOAD_BYTES = 120 * 1024 * 1024;
+const MAX_HTML_BYTES = 2 * 1024 * 1024;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
 
@@ -87,6 +89,7 @@ function toAbsoluteUrl(candidate: string, baseUrl: string) {
 }
 
 async function fetchHtml(url: string) {
+  assertAllowedUrl(url, TREND_VIDEO_URL_HOSTS, 'Trend URL');
   const response = await fetch(url, {
     headers: {
       'user-agent': USER_AGENT,
@@ -99,7 +102,16 @@ async function fetchHtml(url: string) {
     throw new Error(`Không mở được trang video (${response.status}).`);
   }
 
-  return response.text();
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > MAX_HTML_BYTES) {
+    throw new Error('Trang video quá lớn để import.');
+  }
+
+  const html = await response.text();
+  if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
+    throw new Error('Trang video quá lớn để import.');
+  }
+  return html;
 }
 
 function extractVideoCandidates(html: string, baseUrl: string) {
@@ -128,6 +140,7 @@ function extractVideoCandidates(html: string, baseUrl: string) {
 
 async function resolveVideoSource(inputUrl: string) {
   const parsedUrl = new URL(inputUrl);
+  assertAllowedUrl(inputUrl, TREND_VIDEO_URL_HOSTS, 'Trend URL');
 
   if (isYouTubeUrl(parsedUrl)) {
     return {
@@ -200,6 +213,7 @@ async function waitUntilFileActive(ai: GoogleGenAI, fileName: string) {
 }
 
 async function uploadRemoteVideo(ai: GoogleGenAI, videoUrl: string) {
+  assertAllowedUrl(videoUrl, TREND_VIDEO_URL_HOSTS, 'Video URL');
   const response = await fetch(videoUrl, {
     headers: {
       'user-agent': USER_AGENT,
@@ -340,6 +354,9 @@ export async function POST(request: NextRequest) {
   let aiFileName: string | null = null;
 
   try {
+    const guard = await guardApiRequest(request, { key: 'import-trending-video', max: 10, windowMs: 10 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     if (!GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'Thiếu GEMINI_API_KEY hoặc GOOGLE_API_KEY để phân tích full video bằng Gemini trực tiếp.' },

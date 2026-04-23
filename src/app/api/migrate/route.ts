@@ -1,8 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { guardApiRequest } from '@/lib/apiGuards';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'migrate', max: 5, windowMs: 10 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,

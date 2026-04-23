@@ -6,6 +6,7 @@ import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 import { CATEGORY_SEEDS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
 import { buildFavoriteFingerprint, loadFavoriteKeys, saveFavoriteKeys } from '@/lib/favorites';
+import { authenticatedFetch } from '@/lib/authFetch';
 
 interface FilterGeneratorProps {
   app: AppProject;
@@ -487,7 +488,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setTrendImportError(null);
 
     try {
-      const res = await fetch('/api/import-trending-video', {
+      const res = await authenticatedFetch('/api/import-trending-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: value }),
@@ -799,7 +800,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               inRunIdeasSummary ? `[IDEAS ALREADY GENERATED THIS RUN - DO NOT REPEAT]\n${inRunIdeasSummary}` : '',
             ].filter(Boolean).join('\n\n');
 
-            const res = await fetch('/api/generate-ideas', {
+            const res = await authenticatedFetch('/api/generate-ideas', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -994,7 +995,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
 
         try {
-          const response = await fetch('/api/learn-app', {
+          const response = await authenticatedFetch('/api/learn-app', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1320,7 +1321,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
     setGeneratingAngles(true);
     try {
-      const res = await fetch('/api/generate-ideas', {
+      const res = await authenticatedFetch('/api/generate-ideas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1987,7 +1988,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                           if (!refineInstruction.trim() || isRefining) return;
                           setIsRefining(true);
                           try {
-                            const res = await fetch('/api/generate-ideas', {
+                            const res = await authenticatedFetch('/api/generate-ideas', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({

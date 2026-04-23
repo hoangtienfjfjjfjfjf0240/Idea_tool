@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
 import { createServerClient } from '@/lib/supabase';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 60;
 
@@ -15,6 +16,9 @@ function parseJson(text: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'generate-filters', max: 20, windowMs: 10 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { appId, appName, appCategory, features } = await request.json();
     if (!appId || !appName) {
       return NextResponse.json({ error: 'appId and appName required' }, { status: 400 });

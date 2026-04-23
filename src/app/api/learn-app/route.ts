@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 import { askAI } from '@/lib/aiClient';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 180;
 
@@ -247,6 +248,9 @@ function buildHooksSummary(hooks: HookRow[]): string {
 }
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'learn-app', max: 20, windowMs: 10 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { appId, appName, appCategory, existingKnowledge, sessionId } = await request.json();
     if (!appId) return NextResponse.json({ error: 'appId required' }, { status: 400 });
 

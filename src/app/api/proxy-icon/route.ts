@@ -1,28 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertAllowedUrl, checkRateLimit } from '@/lib/apiGuards';
+
+const ICON_HOSTS = ['mzstatic.com', 'googleusercontent.com'];
+const MAX_ICON_BYTES = 5 * 1024 * 1024;
 
 // Proxy icon images to bypass hotlink protection from Apple/Google CDNs
 export async function GET(request: NextRequest) {
+  const limited = checkRateLimit(request, { key: 'proxy-icon', max: 120, windowMs: 60 * 1000 });
+  if (limited) return limited;
+
   const url = request.nextUrl.searchParams.get('url');
   
   if (!url || !url.startsWith('http')) {
     return NextResponse.json({ error: 'Missing or invalid URL' }, { status: 400 });
   }
 
-  // Only allow known CDN domains
-  const allowedDomains = [
-    'is1-ssl.mzstatic.com',
-    'is2-ssl.mzstatic.com',
-    'is3-ssl.mzstatic.com',
-    'is4-ssl.mzstatic.com',
-    'is5-ssl.mzstatic.com',
-    'play-lh.googleusercontent.com',
-  ];
-
   try {
-    const parsed = new URL(url);
-    if (!allowedDomains.some(d => parsed.hostname === d || parsed.hostname.endsWith('.mzstatic.com') || parsed.hostname.endsWith('.googleusercontent.com'))) {
-      return NextResponse.json({ error: 'Domain not allowed' }, { status: 403 });
-    }
+    const parsed = assertAllowedUrl(url, ICON_HOSTS, 'Icon URL');
 
     const response = await fetch(url, {
       headers: {
@@ -37,7 +31,19 @@ export async function GET(request: NextRequest) {
     }
 
     const contentType = response.headers.get('content-type') || 'image/png';
+    if (!contentType.startsWith('image/')) {
+      return NextResponse.json({ error: 'Unsupported icon content type' }, { status: 415 });
+    }
+
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > MAX_ICON_BYTES) {
+      return NextResponse.json({ error: 'Icon too large' }, { status: 413 });
+    }
+
     const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_ICON_BYTES) {
+      return NextResponse.json({ error: 'Icon too large' }, { status: 413 });
+    }
 
     return new NextResponse(buffer, {
       status: 200,

@@ -10,6 +10,7 @@ import {
   parseJsonLoose,
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 300;
 const MAX_IDEAS_PER_AI_BATCH = 5;
@@ -442,6 +443,9 @@ function resolveIdeaModels(selected?: string): string[] {
 export async function POST(request: NextRequest) {
   let requestBody: Record<string, unknown> = {};
   try {
+    const guard = await guardApiRequest(request, { key: 'generate-ideas-from-hook', max: 60, windowMs: 5 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     requestBody = asRecord(await request.json());
     const hook = asRecord(requestBody.hook);
     const quantity = requestBody.quantity ?? 3;

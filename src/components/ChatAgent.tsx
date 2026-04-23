@@ -4,6 +4,7 @@ import { MessageCircle, Send, X, Bot, User, Loader2, Sparkles, ChevronDown, Ligh
 import type { AppProject, Hook, GeneratedIdea, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
+import { authenticatedFetch } from '@/lib/authFetch';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -30,6 +31,7 @@ interface ChatAgentProps {
   onIdeasGenerated?: (ideas: GeneratedIdea[]) => void;
   onAppKnowledgeUpdated?: (knowledge: string) => void;
   onOpenIdeas?: () => void;
+  forceHidden?: boolean;
 }
 
 const QUICK_PROMPTS = [
@@ -39,7 +41,7 @@ const QUICK_PROMPTS = [
   { icon: <Zap size={14} />, text: 'Gợi ý hook viral cho app', color: '#ef4444' },
 ];
 
-export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, selectedModel, onIdeasGenerated, onAppKnowledgeUpdated, onOpenIdeas }) => {
+export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, selectedModel, onIdeasGenerated, onAppKnowledgeUpdated, onOpenIdeas, forceHidden }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -72,7 +74,7 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, selectedM
     setLoading(true);
 
     try {
-      const res = await fetch('/api/chat-agent', {
+      const res = await authenticatedFetch('/api/chat-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -123,7 +125,7 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, selectedM
           if (onIdeasGenerated && savedIdeas) onIdeasGenerated(savedIdeas);
 
           // Background learn
-          fetch('/api/learn-app', {
+          authenticatedFetch('/api/learn-app', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -196,6 +198,8 @@ export const ChatAgent: React.FC<ChatAgentProps> = ({ app, appContext, selectedM
       return part;
     });
   };
+
+  if (forceHidden) return null;
 
   // Floating chat button
   if (!isOpen) {

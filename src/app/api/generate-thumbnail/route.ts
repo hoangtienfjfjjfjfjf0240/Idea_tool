@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'generate-thumbnail', max: 40, windowMs: 10 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { idea, appName, appCategory } = await request.json();
 
     if (!idea) {

@@ -10,6 +10,7 @@ import {
   parseJsonLoose,
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 300;
 
@@ -957,6 +958,9 @@ function buildFallbackIdeasForFilters(options: {
 export async function POST(request: NextRequest) {
   let requestBody: Record<string, unknown> = {};
   try {
+    const guard = await guardApiRequest(request, { key: 'generate-ideas', max: 160, windowMs: 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     requestBody = asRecord(await request.json());
     const body = requestBody;
     const mode = asText(body.mode);

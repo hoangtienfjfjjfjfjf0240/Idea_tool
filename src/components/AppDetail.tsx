@@ -5,6 +5,7 @@ import type { AppProject, Feature, FilterState, SyncLog, ScreenType } from '@/ty
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
 import { StrategyMap } from '@/components/StrategyMap';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
+import { authenticatedFetch } from '@/lib/authFetch';
 
 type AppTab = 'overview' | 'ideas' | 'hooks' | 'strategy' | 'brain' | 'config';
 
@@ -89,7 +90,7 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
   const handleManualSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/api/sync-apps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appId: app.id }) });
+      const res = await authenticatedFetch('/api/sync-apps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appId: app.id }) });
       const data = await res.json();
       if (data.success) {
         await loadData();
@@ -106,7 +107,7 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
     setBrainRefreshing(true);
     setBrainError('');
     try {
-      const res = await fetch('/api/learn-app', {
+      const res = await authenticatedFetch('/api/learn-app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

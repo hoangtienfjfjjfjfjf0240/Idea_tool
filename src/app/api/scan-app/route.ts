@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
+import { assertAllowedUrl, guardApiRequest, STORE_URL_HOSTS } from '@/lib/apiGuards';
 
 // Scrape icon from store page HTML (og:image meta tag)
 async function scrapeStoreIcon(storeUrl: string): Promise<string | null> {
   try {
+    assertAllowedUrl(storeUrl, STORE_URL_HOSTS, 'Store URL');
     const res = await fetch(storeUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -36,10 +38,14 @@ async function scrapeStoreIcon(storeUrl: string): Promise<string | null> {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'scan-app', max: 30, windowMs: 10 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { url } = await request.json();
     if (!url || typeof url !== 'string') {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
+    assertAllowedUrl(url, STORE_URL_HOSTS, 'Store URL');
 
     // Run icon scrape and AI call in parallel
     const iconPromise = scrapeStoreIcon(url);

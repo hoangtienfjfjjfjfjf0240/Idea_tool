@@ -4,6 +4,7 @@ import { Plus, X, Smartphone, Globe, Loader2, Pencil, Trash2, ScanLine, RefreshC
 import type { AppProject, SyncLog } from '@/types/database';
 import { getApps, addApp, updateApp, deleteApp, addFeaturesBatch, getSyncLogs } from '@/lib/db';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
+import { authenticatedFetch } from '@/lib/authFetch';
 
 
 interface DashboardProps {
@@ -88,7 +89,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
     if (!appUrl.trim()) return;
     setIsScanning(true);
     try {
-      const res = await fetch('/api/scan-app', {
+      const res = await authenticatedFetch('/api/scan-app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: appUrl }),
@@ -126,7 +127,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
             await updateApp(newApp.id, { features_count: scannedFeaturesBuffer.length });
           }
           // Auto-generate filter options (coreUser, painPoint, emotion) in background
-          fetch('/api/generate-filters', {
+          authenticatedFetch('/api/generate-filters', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

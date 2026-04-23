@@ -208,14 +208,16 @@ export default function Home() {
     setSelectedApp(updatedApp);
   };
 
-  // Skip auth - go straight to app
   if (checkingAuth || restoringNav) {
-    // Still check in background for user name display
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
       </div>
     );
+  }
+
+  if (!isLoggedIn) {
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   const renderScreen = () => {
@@ -302,6 +304,13 @@ export default function Home() {
     }
   };
 
+  const shouldHideChatAgent =
+    currentScreen === 'f2.1'
+    || currentScreen === 'f2.1.1'
+    || currentScreen === 'f2.2.1'
+    || currentScreen === 'f2.2.2'
+    || currentScreen === 'f2.4';
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       <NavBar currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} userName={userName} onLogout={handleLogout} selectedModel={selectedModel} onModelChange={handleModelChange} />
@@ -332,6 +341,7 @@ export default function Home() {
             setSelectedApp(prev => prev ? { ...prev, app_knowledge: knowledge } : prev);
           }}
           onOpenIdeas={handleOpenIdeas}
+          forceHidden={shouldHideChatAgent}
         />
       )}
     </div>

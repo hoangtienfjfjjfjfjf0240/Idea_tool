@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAIWithImage } from '@/lib/aiClient';
 import { parseJsonLoose } from '@/lib/creativePromptSystem';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 120;
 
@@ -10,6 +11,9 @@ function readText(value: unknown, fallback = ''): string {
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'analyze-hook', max: 30, windowMs: 5 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { imageBase64, fileName } = await request.json();
     if (!imageBase64) {
       return NextResponse.json({ error: 'imageBase64 is required' }, { status: 400 });

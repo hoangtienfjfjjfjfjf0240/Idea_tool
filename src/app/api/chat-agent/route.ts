@@ -7,6 +7,7 @@ import {
   normalizeIdeaOutput,
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
+import { guardApiRequest } from '@/lib/apiGuards';
 
 export const maxDuration = 120;
 
@@ -91,6 +92,9 @@ function summarizeRecentFilterCombos(recentIdeas: Array<Record<string, unknown>>
 
 export async function POST(request: NextRequest) {
   try {
+    const guard = await guardApiRequest(request, { key: 'chat-agent', max: 60, windowMs: 5 * 60 * 1000 });
+    if (guard instanceof NextResponse) return guard;
+
     const { message, appContext, chatHistory, selectedModel } = await request.json();
 
     if (!message?.trim()) {
