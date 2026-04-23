@@ -467,26 +467,104 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
-function buildSingleIdeaSlotBlock(slotNumber: number, totalVariations: number): string {
+function buildSingleIdeaSlotBlock(
+  slotNumber: number,
+  totalVariations: number,
+  context: { angle: string; painpoint: string; psp: string; visualType: string }
+): string {
   if (totalVariations <= 1) return '';
 
   const lanes = [
-    'UGC handheld: open with a personal action already stuck mid-task.',
-    'Reaction/social interruption: a second person or object changes the rhythm.',
-    'Split screen/reveal: use a blocking object or setting that differs from idea 1.',
-    'ASMR/oddly satisfying: use texture, sound, or small motion as the stop-scroll cue.',
-    'Comment reply/social proof: open from a question, comment, or outside reaction.',
-    'Challenge: turn the pain point into a quick viewer task or one-beat puzzle.',
-    'Interview/street test: open with a direct question to the target user.',
-    'Trend format: use a trend structure but change scene family and first action.',
+    {
+      name: 'UGC constraint reveal',
+      creativeType: 'UGC',
+      must: 'Open on the exact physical obstacle/state that makes the user hesitate, before any app UI appears.',
+      sceneShift: 'personal, close handheld, one messy real-life object as the blocker',
+    },
+    {
+      name: 'Reaction / second opinion',
+      creativeType: 'Reaction',
+      must: 'Open with another person interrupting or questioning the decision, forcing the user to prove the answer quickly.',
+      sceneShift: 'two-person tension, reply line, social pressure',
+    },
+    {
+      name: 'Split-screen decision test',
+      creativeType: 'Split Screen',
+      must: 'Open with two or three clearly different options/states competing on screen; reveal why guessing is risky.',
+      sceneShift: 'multi-panel comparison, different corners/options, not one static phone shot',
+    },
+    {
+      name: 'Proof object / receipt shock',
+      creativeType: 'Social Proof',
+      must: 'Open with a concrete proof object such as a quote, receipt, screenshot, checklist, calendar, or estimate gap.',
+      sceneShift: 'paper/screenshot/number-driven proof, not just vibe checking',
+    },
+    {
+      name: 'Comment reply',
+      creativeType: 'Comment Reply',
+      must: 'Open from a viewer comment or skeptical question and answer it through the selected pain point.',
+      sceneShift: 'comment overlay, direct response framing, fast rebuttal',
+    },
+    {
+      name: 'Challenge / timer',
+      creativeType: 'Challenge',
+      must: 'Open with a timed challenge or one-beat task that dramatizes how hard the decision is without the PSP.',
+      sceneShift: 'countdown, task pressure, before/after logic without medical or misleading claims',
+    },
+    {
+      name: 'Interview / street test',
+      creativeType: 'Interview',
+      must: 'Open with a direct question to the target user or a quick poll between two choices.',
+      sceneShift: 'question-first, human answer, market-native language',
+    },
+    {
+      name: 'ASMR / tactile detail',
+      creativeType: 'ASMR',
+      must: 'Open with a tactile texture, small repeated motion, sound cue, or object handling that embodies the pain.',
+      sceneShift: 'texture/sound-led, satisfying reveal, no generic phone-only setup',
+    },
+    {
+      name: 'Mistake teardown',
+      creativeType: 'Teardown',
+      must: 'Open by exposing a common wrong choice and explain the hidden cost/confusion through the selected angle.',
+      sceneShift: 'red-flag annotation, mistake-first hook, practical correction',
+    },
+    {
+      name: 'Trend remix',
+      creativeType: 'Trend Format',
+      must: 'Use a recognizable social format, but make the first action and payoff native to the pain point.',
+      sceneShift: 'trend rhythm, unexpected first frame, not a generic demo',
+    },
   ];
   const lane = lanes[(Math.max(1, slotNumber) - 1) % lanes.length];
+  const plannedLanes = lanes
+    .slice(0, Math.min(totalVariations, lanes.length))
+    .map((item, index) => `${index + 1}. ${item.name} / ${item.creativeType}: ${item.sceneShift}`)
+    .join('\n');
 
   return `
-[SINGLE IDEA SLOT]
+[SINGLE IDEA SLOT - PARALLEL GENERATION CONTRACT]
 You are creating idea ${slotNumber}/${totalVariations} for this selected angle.
-Use this lane for differentiation: ${lane}
-Do not write a generic fallback. Make the first visual/action clearly different from the other possible slots while staying on the exact same pain point, emotion, PSP, and angle.`;
+Selected pain point: "${context.painpoint || 'selected pain point'}"
+Selected angle: "${context.angle || 'selected angle'}"
+Selected PSP: "${context.psp || 'selected PSP'}"
+Selected visual type: "${context.visualType || 'selected visual type'}"
+
+ALL PARALLEL SLOTS ARE EXPECTED TO FOLLOW THIS PLAN:
+${plannedLanes}
+
+YOUR SLOT ${slotNumber} LANE:
+- Name: ${lane.name}
+- Required creativeType family: ${lane.creativeType}
+- Must do: ${lane.must}
+- Scene shift: ${lane.sceneShift}
+
+Hard guardrails for this slot:
+- Stay on the exact selected pain point and angle. Do not replace the angle with a generic benefit.
+- Do not write a generic "user holds phone and checks which style/vibe fits" idea unless the lane adds a new conflict object, social pressure, proof object, timer, teardown, or tactile cue.
+- The first frame must make this lane visibly different from the other slots.
+- The title, hook.visual, hook voice, body proof, and CTA payoff must all reflect this lane.
+- If the result sounds like a basic app demo, rewrite it into the assigned lane before output.`;
 }
 
 function ideaSignature(idea: Record<string, unknown>): string {
@@ -1150,7 +1228,13 @@ Trả JSON array of strings. KHÔNG markdown.`;
         );
         const singleIdeaSlotBlock = buildSingleIdeaSlotBlock(
           slotStartIndex + 1,
-          totalVariations
+          totalVariations,
+          {
+            angle: angleContext,
+            painpoint: primaryPillar,
+            psp: featureContext,
+            visualType,
+          }
         );
 
         const frameworkInjection = buildFrameworkInjection({
