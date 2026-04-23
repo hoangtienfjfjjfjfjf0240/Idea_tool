@@ -1372,7 +1372,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
     let y = nextPan.y;
     if (centerWhenSmaller && visibleHeight <= viewportHeight - topPadding - FIT_PADDING) {
-      y = Math.round(topPadding - contentBounds.minY * scale);
+      const availableHeight = viewportHeight - topPadding - FIT_PADDING;
+      y = Math.round(topPadding + (availableHeight - visibleHeight) / 2 - contentBounds.minY * scale);
     } else {
       y = clamp(nextPan.y, minPanY, maxPanY);
     }
@@ -1402,9 +1403,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       ZOOM_MIN,
       mode === 'auto' ? 1 : Math.min(ZOOM_MAX, FIT_VIEW_EDIT_MAX)
     );
+    const availableHeight = viewportHeight - 18 - FIT_PADDING;
     const nextPan = clampPanToViewport({
-      x: FIT_PADDING - contentBounds.minX * nextScale,
-      y: 18 - contentBounds.minY * nextScale,
+      x: Math.round((viewportWidth - contentBounds.width * nextScale) / 2 - contentBounds.minX * nextScale),
+      y: Math.round(18 + (availableHeight - contentBounds.height * nextScale) / 2 - contentBounds.minY * nextScale),
     }, nextScale);
     setViewScale(nextScale);
     setViewPan(nextPan);

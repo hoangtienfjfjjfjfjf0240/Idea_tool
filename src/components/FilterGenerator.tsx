@@ -1908,6 +1908,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   </div>
 
+                  <div className="mb-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
+                      className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                      title={isFavorite ? 'Bỏ khỏi danh sách đã chọn' : 'Đánh dấu đã chọn'}
+                    >
+                      <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(idea)}
+                      className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
+                      title="Copy"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  </div>
+
                   <div className="bg-red-50 rounded-xl p-4 border border-red-100 mb-2">
                     <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest flex items-center gap-1 mb-3">Hook ({hookDuration}s)</span>
                     {isEditing ? (
@@ -2072,24 +2091,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       </div>
                     );
                   })}
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
-                        className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
-                        title={isFavorite ? 'Bỏ khỏi danh sách đã chọn' : 'Đánh dấu đã chọn'}
-                      >
-                        <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(idea)}
-                        className="h-8 w-8 rounded-md border border-gray-200 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 flex items-center justify-center transition-colors"
-                        title="Copy"
-                      >
-                        <Copy size={14} />
-                      </button>
-                    </div>
                   </div>
                   )}
                 </div>
