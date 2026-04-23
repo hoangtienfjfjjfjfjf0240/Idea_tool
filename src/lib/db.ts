@@ -615,6 +615,51 @@ export async function addFilterOption(appId: string, category: string, value: st
   return data;
 }
 
+export async function updateFilterOptionByValue(
+  appId: string,
+  category: string,
+  oldValue: string,
+  newValue: string
+): Promise<boolean> {
+  const normalizedValue = newValue.trim();
+  if (!normalizedValue) return false;
+  if (normalizedValue === oldValue) return true;
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from('filter_options')
+    .select('id')
+    .eq('app_id', appId)
+    .eq('category', category)
+    .eq('value', normalizedValue);
+
+  if (existingError) {
+    console.error('updateFilterOptionByValue select existing error:', existingError);
+    return false;
+  }
+
+  if ((existingRows || []).length > 0) {
+    return deleteFilterOptionByValue(appId, category, oldValue);
+  }
+
+  const { data, error } = await supabase
+    .from('filter_options')
+    .update({ value: normalizedValue, is_custom: true })
+    .eq('app_id', appId)
+    .eq('category', category)
+    .eq('value', oldValue)
+    .select('id');
+
+  if (error) {
+    console.error('updateFilterOptionByValue update error:', error);
+    return false;
+  }
+
+  if ((data || []).length > 0) return true;
+
+  const inserted = await addFilterOption(appId, category, normalizedValue);
+  return Boolean(inserted);
+}
+
 export async function deleteFilterOption(id: string): Promise<boolean> {
   const { error } = await supabase
     .from('filter_options')

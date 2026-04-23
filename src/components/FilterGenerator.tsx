@@ -635,9 +635,20 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const handleAddItem = async (category: string) => {
-    if (newItem.text.trim()) {
-      await dbService.addFilterOption(app.id, category, newItem.text.trim());
-      setOptions(prev => ({ ...prev, [category]: [...(prev[category] || []), newItem.text.trim()] }));
+    const value = newItem.text.trim();
+    if (value) {
+      if ((options[category] || []).includes(value)) {
+        setNewItem({ cat: null, text: '' });
+        return;
+      }
+
+      const saved = await dbService.addFilterOption(app.id, category, value);
+      if (!saved) {
+        alert('Lưu lựa chọn vào database thất bại. Vui lòng thử lại.');
+        return;
+      }
+
+      setOptions(prev => ({ ...prev, [category]: [...(prev[category] || []), value] }));
       setNewItem({ cat: null, text: '' });
     }
   };
@@ -653,13 +664,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     console.log(`Delete filter option [${category}] "${item}":`, ok ? 'success' : 'failed');
   };
 
-  const handleUpdateOption = (category: string, oldItem: string, newItemText: string) => {
-    if (!newItemText.trim() || newItemText === oldItem) { setEditingItemText(null); return; }
-    setOptions(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === oldItem ? newItemText.trim() : i)) }));
+  const handleUpdateOption = async (category: string, oldItem: string, newItemText: string) => {
+    const normalizedText = newItemText.trim();
+    if (!normalizedText || normalizedText === oldItem) { setEditingItemText(null); return; }
+
+    setOptions(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === oldItem ? normalizedText : i)) }));
     if ((filters[category] || []).includes(oldItem)) {
-      setFilters(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === oldItem ? newItemText.trim() : i)) }));
+      setFilters(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === oldItem ? normalizedText : i)) }));
     }
     setEditingItemText(null);
+
+    const ok = await dbService.updateFilterOptionByValue(app.id, category, oldItem, normalizedText);
+    if (!ok) {
+      setOptions(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === normalizedText ? oldItem : i)) }));
+      setFilters(prev => ({ ...prev, [category]: (prev[category] || []).map(i => (i === normalizedText ? oldItem : i)) }));
+      alert('Lưu chỉnh sửa vào database thất bại. Vui lòng thử lại.');
+    }
   };
 
   const startProgress = () => {
@@ -672,7 +692,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       { at: 50, label: 'Đang tạo Voice & Text...' },
       { at: 70, label: 'Đang hoàn thiện Body & CTA...' },
       { at: 85, label: 'Đang kiểm tra chất lượng...' },
-      { at: 92, label: 'Đang lưu vào database...' },
+      { at: 92, label: 'Đang chờ AI trả kết quả...' },
     ];
     let current = 0;
     progressRef.current = setInterval(() => {
@@ -723,7 +743,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
       const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
-      const maxIdeasPerAngleRequest = 10;
+      const useGeminiSmallFastPath = selectedModel === 'gemini-3-pro' && quantity <= 3;
+      const maxIdeasPerAngleRequest = useGeminiSmallFastPath ? 1 : 10;
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(quantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
@@ -741,8 +762,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       );
       const totalRequestedIdeas = anglesToGenerate.length * quantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-      const maxConcurrent = 1;
-      const maxAttemptsPerAngle = selectedModel === 'gemini-3-pro' ? 3 : 2;
+      const maxConcurrent = useGeminiSmallFastPath ? Math.min(3, generationTasks.length) : 1;
+      const maxAttemptsPerAngle = selectedModel === 'gemini-3-pro' ? 1 : 2;
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
 
@@ -923,13 +944,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
 
       const sessionId = crypto.randomUUID();
-      dbService.saveIdeas(app.id, ideas, sessionId, filters).then(saved => {
-        if (saved.length > 0) {
-          const tempIds = new Set(tempResults.map(t => t.id));
-          setResults(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
-          setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
+      dbService.saveIdeas(app.id, ideas, sessionId, filters).then(async saved => {
+        if (saved.length === 0) {
+          alert('Tạo idea xong nhưng lưu database thất bại. Kết quả tạm vẫn đang hiển thị, hãy thử tạo/lưu lại trước khi refresh.');
+          return;
+        }
 
-          return fetch('/api/learn-app', {
+        const tempIds = new Set(tempResults.map(t => t.id));
+        setResults(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
+        setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
+
+        try {
+          const response = await fetch('/api/learn-app', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -939,17 +965,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               sessionId,
               existingKnowledge: app.app_knowledge || '',
             }),
-          }).then(async response => {
-            const data = await response.json().catch(() => null);
-            if (!response.ok || !data?.success) {
-              throw new Error(data?.error || 'Background learning failed');
-            }
-            if (data.knowledge && onAppKnowledgeUpdated) {
-              onAppKnowledgeUpdated(data.knowledge);
-            }
           });
+
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.success) {
+            throw new Error(data?.error || 'Background learning failed');
+          }
+          if (data.knowledge && onAppKnowledgeUpdated) {
+            onAppKnowledgeUpdated(data.knowledge);
+          }
+        } catch (learnError) {
+          console.warn('Background learning failed:', learnError);
         }
-      }).catch(err => console.warn('Background DB save or learning failed:', err));
+      }).catch(err => {
+        console.warn('Background DB save failed:', err);
+        alert('Tạo idea xong nhưng lưu database thất bại. Kết quả tạm vẫn đang hiển thị, hãy thử tạo/lưu lại trước khi refresh.');
+      });
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       console.error('Generate failed:', err);

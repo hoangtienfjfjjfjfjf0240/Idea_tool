@@ -24,7 +24,8 @@ const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
-const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 90000;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 65000;
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 25000;
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 15000;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
@@ -230,7 +231,7 @@ function resolveIdeaModels(selected?: string): string[] {
   const fallbackModels = primary.startsWith('gemini/')
     ? [
         primary,
-        'gemini/gemini-2.5-pro',
+        'openai/gpt-5.4-mini',
         'gemini/gemini-2.5-flash',
       ]
     : [
@@ -603,6 +604,20 @@ function buildIdeaBatchPlans(totalRequestedQuantity: number): IdeaBatchPlan[] {
     });
   }
   return plans;
+}
+
+function getIdeaBatchTimeoutMs(model: string, batchQuantity: number) {
+  if (model.includes('gemini-3-pro')) {
+    return batchQuantity <= 3
+      ? GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS
+      : GENERATE_IDEAS_BATCH_TIMEOUT_MS;
+  }
+
+  return GENERATE_IDEAS_BATCH_TIMEOUT_MS;
+}
+
+function getIdeaResponseTokenBudget(batchQuantity: number) {
+  return Math.max(2200, batchQuantity * 1200);
 }
 
 function trimPromptText(text: string, maxLength = 160) {
@@ -1220,7 +1235,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           modelCandidates[0]
         );
 
-        const responseTokenBudget = Math.max(2600, plan.batchQuantity * 1500);
+        const responseTokenBudget = getIdeaResponseTokenBudget(plan.batchQuantity);
         let text: string | null = null;
         let parsed: unknown = null;
         let modelUsed = modelCandidates[0];
@@ -1232,7 +1247,9 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             max_tokens: responseTokenBudget,
             useCreativePersona: false,
             priority: 'high',
-            timeoutMs: candidateIndex === 0 ? GENERATE_IDEAS_BATCH_TIMEOUT_MS : GENERATE_IDEAS_RETRY_TIMEOUT_MS,
+            timeoutMs: candidateIndex === 0
+              ? getIdeaBatchTimeoutMs(model, plan.batchQuantity)
+              : GENERATE_IDEAS_RETRY_TIMEOUT_MS,
           });
 
           if (!candidateText) continue;
@@ -1340,18 +1357,21 @@ ${retryNotes.join('\n\n')}`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
+      const shouldUseAiRefill = requestedQuantity > 3 && selectedModel !== 'gemini-3-pro';
 
       for (const plan of batchPlans) {
         try {
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
             const missingCount = plan.batchQuantity - batchIdeas.length;
-            const recoveredIdeas = await refillIdeasOneByOne(
-              missingCount,
-              plan.batchStartIndex + batchIdeas.length,
-              [...aggregatedIdeas, ...batchIdeas],
-              `batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few ideas`
-            );
+            const recoveredIdeas = shouldUseAiRefill
+              ? await refillIdeasOneByOne(
+                  missingCount,
+                  plan.batchStartIndex + batchIdeas.length,
+                  [...aggregatedIdeas, ...batchIdeas],
+                  `batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few ideas`
+                )
+              : [];
             batchIdeas.push(...recoveredIdeas);
 
             const stillMissing = plan.batchQuantity - batchIdeas.length;
@@ -1380,12 +1400,14 @@ ${retryNotes.join('\n\n')}`, {
           const batchErrorMessage = batchError instanceof Error
             ? batchError.message
             : 'Unknown batch error';
-          const recoveredIdeas = await refillIdeasOneByOne(
-            plan.batchQuantity,
-            plan.batchStartIndex,
-            aggregatedIdeas,
-            rangeLabel
-          );
+          const recoveredIdeas = shouldUseAiRefill
+            ? await refillIdeasOneByOne(
+                plan.batchQuantity,
+                plan.batchStartIndex,
+                aggregatedIdeas,
+                rangeLabel
+              )
+            : [];
           aggregatedIdeas.push(...recoveredIdeas);
 
           const stillMissing = plan.batchQuantity - recoveredIdeas.length;
@@ -1411,12 +1433,14 @@ ${retryNotes.join('\n\n')}`, {
 
       if (aggregatedIdeas.length < requestedQuantity) {
         const missingCount = requestedQuantity - aggregatedIdeas.length;
-        const recoveredIdeas = await refillIdeasOneByOne(
-          missingCount,
-          aggregatedIdeas.length,
-          aggregatedIdeas,
-          'final top-up'
-        );
+        const recoveredIdeas = shouldUseAiRefill
+          ? await refillIdeasOneByOne(
+              missingCount,
+              aggregatedIdeas.length,
+              aggregatedIdeas,
+              'final top-up'
+            )
+          : [];
         aggregatedIdeas.push(...recoveredIdeas);
 
         const stillMissing = requestedQuantity - aggregatedIdeas.length;

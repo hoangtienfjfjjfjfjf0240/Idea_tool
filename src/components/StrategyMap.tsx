@@ -22,7 +22,6 @@ interface TreeNode {
 // ===== Layout constants =====
 const NODE_W = 220;
 const NODE_H = 74;
-const GAP_X = 28;
 const ROW_GAP = 42;
 const LEVEL_LABEL_W = 170;
 const VIEWPORT_HEIGHT = 720;
@@ -328,6 +327,40 @@ function withLevelFilter(filters: Partial<FilterState> | null | undefined, level
   return next;
 }
 
+function normalizeWorkflowKeyPart(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+}
+
+function getWorkflowNodeCanonicalKey(node: WorkflowNode): string | null {
+  if (node.level === 'root') return 'root';
+
+  const nodeLevelIndex = LEVEL_ORDER.indexOf(node.level);
+  const parts: string[] = [];
+
+  for (const level of LEVEL_ORDER) {
+    if (level === 'root') continue;
+    if (LEVEL_ORDER.indexOf(level) > nodeLevelIndex) break;
+
+    const filterKey = LEVEL_TO_FILTER_KEY[level];
+    if (!filterKey) continue;
+
+    const rawValues = node.filters?.[filterKey];
+    const values = (Array.isArray(rawValues) ? rawValues : [])
+      .map(value => (typeof value === 'string' ? normalizeWorkflowKeyPart(value) : ''))
+      .filter(Boolean)
+      .sort();
+
+    if (values.length === 0 && level === node.level) {
+      values.push(normalizeWorkflowKeyPart(node.label));
+    }
+
+    if (values.length === 0) return null;
+    parts.push(`${level}:${values.join(',')}`);
+  }
+
+  return parts.length > 0 ? parts.join('|') : null;
+}
+
 function buildVerticalWorkflowLayout(
   tree: TreeNode,
   customNodes: CustomWorkflowNode[],
@@ -338,14 +371,10 @@ function buildVerticalWorkflowLayout(
 ) {
   const customRows = new Map<WorkflowLevel, CustomWorkflowNode[]>();
   const treeEdges: { fromId: string; toId: string }[] = [];
+  const aliasNodeIdByCustomId = new Map<string, string>();
 
   LEVEL_ORDER.forEach(level => {
     customRows.set(level, []);
-  });
-
-  customNodes.forEach(node => {
-    if (hiddenNodeIds.has(node.id)) return;
-    customRows.get(node.level)?.push(node);
   });
 
   const centerAreaX = LEVEL_LABEL_W + 48;
@@ -353,21 +382,17 @@ function buildVerticalWorkflowLayout(
   const flatNodes: FlatNode[] = [];
   const posById = new Map<string, FlatNode>();
   const rowCentersByLevel = new Map<WorkflowLevel, number[]>();
-  let nextLeafCenter = minCenter;
+  const treeRowsByLevel = new Map<WorkflowLevel, TreeNode[]>();
   let maxRight = minWidth - 32;
-  let minLeft = 0;
 
-  LEVEL_ORDER.forEach(level => rowCentersByLevel.set(level, []));
+  LEVEL_ORDER.forEach(level => {
+    rowCentersByLevel.set(level, []);
+    treeRowsByLevel.set(level, []);
+  });
 
   const getLevelY = (level: WorkflowLevel) => {
     const levelIndex = Math.max(0, LEVEL_ORDER.indexOf(level));
     return 24 + levelIndex * (NODE_H + ROW_GAP);
-  };
-
-  const reserveLeafCenter = () => {
-    const x = nextLeafCenter;
-    nextLeafCenter += NODE_W + GAP_X;
-    return x;
   };
 
   const registerFlatNode = (node: WorkflowNode, absX: number, absY: number) => {
@@ -375,32 +400,91 @@ function buildVerticalWorkflowLayout(
     flatNodes.push(flat);
     posById.set(node.id, flat);
     rowCentersByLevel.get(node.level)?.push(absX);
-    minLeft = Math.min(minLeft, absX - NODE_W / 2);
     maxRight = Math.max(maxRight, absX + NODE_W / 2);
     return flat;
   };
 
-  const layoutTreeNode = (node: TreeNode): number | null => {
-    if (hiddenNodeIds.has(node.id)) return null;
+  const findAvailableRowCenter = (desiredX: number, rowCenters: number[], maxCenter: number) => {
+    const clampedDesiredX = clamp(desiredX, minCenter, maxCenter);
+    if (!rowCenters.some(center => Math.abs(center - clampedDesiredX) < NODE_CLEARANCE)) {
+      return clampedDesiredX;
+    }
 
-    const childCenters = node.children
-      .map(child => ({ child, x: layoutTreeNode(child) }))
-      .filter((item): item is { child: TreeNode; x: number } => typeof item.x === 'number');
+    const rightSlot = rowCenters.length > 0 ? Math.max(...rowCenters) + NODE_CLEARANCE : minCenter;
+    if (rightSlot <= maxCenter && !rowCenters.some(center => Math.abs(center - rightSlot) < NODE_CLEARANCE)) {
+      return rightSlot;
+    }
 
-    const absX = childCenters.length > 0
-      ? (childCenters[0].x + childCenters[childCenters.length - 1].x) / 2
-      : reserveLeafCenter();
+    for (let attempt = 1; attempt < 32; attempt++) {
+      const rightCandidate = clamp(clampedDesiredX + attempt * NODE_CLEARANCE, minCenter, maxCenter);
+      if (!rowCenters.some(center => Math.abs(center - rightCandidate) < NODE_CLEARANCE)) {
+        return rightCandidate;
+      }
 
-    registerFlatNode(node, absX, getLevelY(node.level));
+      const leftCandidate = clamp(clampedDesiredX - attempt * NODE_CLEARANCE, minCenter, maxCenter);
+      if (!rowCenters.some(center => Math.abs(center - leftCandidate) < NODE_CLEARANCE)) {
+        return leftCandidate;
+      }
+    }
 
-    childCenters.forEach(({ child }) => {
-      treeEdges.push({ fromId: node.id, toId: child.id });
-    });
-
-    return absX;
+    return rowCenters.length > 0 ? Math.max(...rowCenters) + NODE_CLEARANCE : clampedDesiredX;
   };
 
-  layoutTreeNode(tree);
+  const compareTreeNodes = (a: TreeNode, b: TreeNode) => {
+    const levelDelta = LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level);
+    if (levelDelta !== 0) return levelDelta;
+
+    const labelDelta = a.label.localeCompare(b.label, 'vi', { numeric: true, sensitivity: 'base' });
+    if (labelDelta !== 0) return labelDelta;
+
+    return a.id.localeCompare(b.id, 'vi', { numeric: true, sensitivity: 'base' });
+  };
+
+  const sortedTreeChildren = (node: TreeNode) => [...node.children].sort(compareTreeNodes);
+
+  const collectTreeRows = (node: TreeNode) => {
+    if (hiddenNodeIds.has(node.id)) return;
+
+    treeRowsByLevel.get(node.level)?.push(node);
+
+    sortedTreeChildren(node).forEach(child => {
+      if (hiddenNodeIds.has(child.id)) return;
+      treeEdges.push({ fromId: node.id, toId: child.id });
+      collectTreeRows(child);
+    });
+  };
+
+  collectTreeRows(tree);
+
+  const visibleTreeNodeIdByKey = new Map<string, string>();
+  LEVEL_ORDER.forEach(level => {
+    (treeRowsByLevel.get(level) || []).forEach(node => {
+      const key = getWorkflowNodeCanonicalKey(node);
+      if (key && !visibleTreeNodeIdByKey.has(key)) {
+        visibleTreeNodeIdByKey.set(key, node.id);
+      }
+    });
+  });
+
+  customNodes.forEach(node => {
+    if (hiddenNodeIds.has(node.id)) return;
+
+    const matchingTreeNodeId = visibleTreeNodeIdByKey.get(getWorkflowNodeCanonicalKey(node) || '');
+    if (matchingTreeNodeId) {
+      aliasNodeIdByCustomId.set(node.id, matchingTreeNodeId);
+      return;
+    }
+
+    customRows.get(node.level)?.push(node);
+  });
+
+  LEVEL_ORDER.forEach(level => {
+    const y = getLevelY(level);
+    const treeRow = treeRowsByLevel.get(level) || [];
+    treeRow.forEach((node, index) => {
+      registerFlatNode(node, minCenter + index * NODE_CLEARANCE, y);
+    });
+  });
 
   const baseCanvasW = Math.max(minWidth, maxRight + 48, LEVEL_LABEL_W + NODE_W + 96);
 
@@ -419,24 +503,13 @@ function buildVerticalWorkflowLayout(
       const rightMostRowCenter = rowCenters.length > 0 ? Math.max(...rowCenters) : minCenter - NODE_CLEARANCE;
       const fallbackX = rightMostRowCenter + NODE_CLEARANCE * (index + 1);
       const resolvedY = manualPosition?.y ?? y;
-      let resolvedX = manualPosition?.x;
-
-      if (typeof resolvedX !== 'number') {
-        const maxCenter = Math.max(minCenter, baseCanvasW - NODE_W / 2 - 32 + customRow.length * NODE_CLEARANCE);
-        resolvedX = clamp(typeof node.preferredX === 'number' ? node.preferredX : fallbackX, minCenter, maxCenter);
-        if (rowCenters.some(center => Math.abs(center - resolvedX!) < NODE_CLEARANCE)) {
-          const step = NODE_CLEARANCE;
-          for (let attempt = 1; attempt < 24; attempt++) {
-            const direction = attempt % 2 === 1 ? 1 : -1;
-            const distance = Math.ceil(attempt / 2) * step;
-            const candidate = clamp(resolvedX + direction * distance, minCenter, maxCenter);
-            if (!rowCenters.some(center => Math.abs(center - candidate) < NODE_CLEARANCE)) {
-              resolvedX = candidate;
-              break;
-            }
-          }
-        }
-      }
+      const preferredX = typeof manualPosition?.x === 'number'
+        ? manualPosition.x
+        : typeof node.preferredX === 'number'
+          ? node.preferredX
+          : fallbackX;
+      const maxCenter = Math.max(minCenter, baseCanvasW - NODE_W / 2 - 32 + (customRow.length + 1) * NODE_CLEARANCE);
+      const resolvedX = findAvailableRowCenter(preferredX, rowCenters, maxCenter);
 
       registerFlatNode(node, resolvedX, resolvedY);
     });
@@ -463,9 +536,21 @@ function buildVerticalWorkflowLayout(
     };
   };
 
+  const resolvedCustomEdges = Array.from(
+    new Map(
+      customEdges
+        .map(edge => ({
+          fromId: aliasNodeIdByCustomId.get(edge.fromId) || edge.fromId,
+          toId: aliasNodeIdByCustomId.get(edge.toId) || edge.toId,
+        }))
+        .filter(edge => edge.fromId !== edge.toId)
+        .map(edge => [`${edge.fromId}->${edge.toId}`, edge] as const)
+    ).values()
+  );
+
   const flatLines = [
     ...treeEdges.map(edge => makeLine(edge)).filter((line): line is FlatLine => !!line),
-    ...customEdges.map(edge => makeLine(edge, true)).filter((line): line is FlatLine => !!line),
+    ...resolvedCustomEdges.map(edge => makeLine(edge, true)).filter((line): line is FlatLine => !!line),
   ];
 
   return {
