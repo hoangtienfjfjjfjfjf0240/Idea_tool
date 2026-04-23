@@ -761,8 +761,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       );
       const totalRequestedIdeas = anglesToGenerate.length * quantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-      const maxConcurrent = Math.min(5, generationTasks.length);
-      const maxAttemptsPerAngle = selectedModel === 'gemini-3-pro' ? 1 : 2;
+      const isGemini3Pro = selectedModel === 'gemini-3-pro';
+      const maxConcurrent = Math.min(isGemini3Pro ? 3 : 5, generationTasks.length);
+      const maxAttemptsPerAngle = 2;
+      const failedGenerationMessages: string[] = [];
+      const getAttemptModel = (attempt: number) => {
+        if (isGemini3Pro && attempt > 1) return 'gpt-5.4-mini';
+        return selectedModel || '';
+      };
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
 
@@ -779,7 +785,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
       const requestAngleIdeas = async (task: { selectedAngle: string | null; angleIndex: number; startIndex: number; requestQuantity: number; filtersSnapshot: FilterState }) => {
         const attemptRequest = async (attempt = 1) => {
-          const retryLabel = attempt > 1 ? ` (thử lại ${attempt}/${maxAttemptsPerAngle})` : '';
+          const attemptModel = getAttemptModel(attempt);
+          const retryModelLabel = attempt > 1 && isGemini3Pro ? ' bằng GPT mini' : '';
+          const retryLabel = attempt > 1 ? ` (thử lại ${attempt}/${maxAttemptsPerAngle}${retryModelLabel})` : '';
           const rangeStart = task.startIndex + 1;
           const rangeEnd = task.startIndex + task.requestQuantity;
           setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${rangeStart}-${rangeEnd}/${quantity}${retryLabel}...`);
@@ -813,7 +821,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 },
                 previousIdeas: previousIdeasForRequest || null,
                 appKnowledge: app.app_knowledge || null,
-                selectedModel: selectedModel || '',
+                selectedModel: attemptModel,
                 trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
                 trendingStructures: importedTrendAnalyses.length > 0
                   ? importedTrendAnalyses.map(item => item.promptBooster).filter(Boolean)
@@ -865,12 +873,34 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         const briefStart = start + 1;
         const briefEnd = end;
         setProgressLabel(`Đang tạo angle ${briefStart}-${briefEnd}/${generationTasks.length}...`);
-        const chunk = await Promise.all(
+        const settledChunk = await Promise.allSettled(
           generationTasks.slice(start, end).map(task => requestAngleIdeas(task))
         );
-        allData = [...allData, ...chunk.flatMap(item => item)];
-        if (allData.length === 0 && end >= generationTasks.length) {
-          throw new Error('AI không phản hồi');
+
+        const abortFailure = settledChunk.find(item =>
+          item.status === 'rejected'
+          && item.reason instanceof Error
+          && item.reason.name === 'AbortError'
+        );
+        if (abortFailure?.status === 'rejected') {
+          throw abortFailure.reason;
+        }
+
+        const chunkData: typeof allData = [];
+        for (const item of settledChunk) {
+          if (item.status === 'fulfilled') {
+            chunkData.push(...item.value);
+          } else {
+            const message = item.reason instanceof Error
+              ? item.reason.message
+              : 'Request tạo idea bị lỗi.';
+            failedGenerationMessages.push(message);
+          }
+        }
+
+        allData = [...allData, ...chunkData];
+        if (chunkData.length === 0 && settledChunk.length > 0) {
+          console.warn('[generate-ideas] Chunk produced no usable ideas.', failedGenerationMessages.slice(-settledChunk.length));
         }
       }
 
@@ -941,6 +971,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       stopProgress();
       setIsGenerating(false);
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
+      if (tempResults.length < totalRequestedIdeas) {
+        const missingIdeasCount = totalRequestedIdeas - tempResults.length;
+        const errorDetail = failedGenerationMessages.slice(-3).join('\n');
+        window.setTimeout(() => {
+          alert(
+            `Chỉ tạo được ${tempResults.length}/${totalRequestedIdeas} idea. ${missingIdeasCount} request bị fallback/timeout sau retry, kết quả đã tạo vẫn được giữ.`
+            + (errorDetail ? `\n\nChi tiết gần nhất:\n${errorDetail}` : '')
+          );
+        }, 0);
+      }
 
       const sessionId = crypto.randomUUID();
       dbService.saveIdeas(app.id, ideas, sessionId, filters).then(async saved => {
