@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from './supabase';
+import { isHostnameAuthDisabled } from './authMode';
 
 type AuthResult = {
   userId: string;
@@ -37,6 +38,10 @@ export async function requireApiAuth(
   request: NextRequest,
   options?: { allowCronSecret?: boolean }
 ): Promise<AuthResult | NextResponse> {
+  if (isHostnameAuthDisabled(request.nextUrl.hostname)) {
+    return { userId: `guest:${requestIp(request)}` };
+  }
+
   const token = bearerToken(request);
 
   if (

@@ -10,6 +10,7 @@ import { StrategyHistory } from '@/components/StrategyHistory';
 import { StrategyMap } from '@/components/StrategyMap';
 import { ChatAgent } from '@/components/ChatAgent';
 
+import { isAuthDisabled } from '@/lib/authMode';
 import { supabase } from '@/lib/supabase';
 import type { AppProject, FilterState, ScreenType } from '@/types/database';
 import { getApp, getHooks, getFilterOptions, getFeatures, getIdeas } from '@/lib/db';
@@ -52,9 +53,10 @@ function readSavedNavState(): NavState {
 }
 
 export default function Home() {
+  const authDisabled = isAuthDisabled();
   const [initialNavState] = useState<NavState>(() => readSavedNavState());
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userName, setUserName] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(authDisabled);
+  const [userName, setUserName] = useState(authDisabled ? 'Guest' : '');
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialNavState.screen);
   const [selectedApp, setSelectedApp] = useState<AppProject | null>(null);
   const [pendingAppId, setPendingAppId] = useState<string | null>(initialNavState.appId);
@@ -80,6 +82,13 @@ export default function Home() {
 
   // Check existing session on mount
   useEffect(() => {
+    if (authDisabled) {
+      setIsLoggedIn(true);
+      setUserName('Guest');
+      setCheckingAuth(false);
+      return;
+    }
+
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
@@ -108,7 +117,7 @@ export default function Home() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [authDisabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +198,14 @@ export default function Home() {
   };
 
   const handleLogout = async () => {
+    if (authDisabled) {
+      setCurrentScreen('f1');
+      setSelectedApp(null);
+      setPendingAppId(null);
+      localStorage.removeItem(NAV_STATE_KEY);
+      return;
+    }
+
     await supabase.auth.signOut();
     setIsLoggedIn(false);
     setUserName('');
@@ -216,7 +233,7 @@ export default function Home() {
     );
   }
 
-  if (!isLoggedIn) {
+  if (!authDisabled && !isLoggedIn) {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
@@ -313,7 +330,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      <NavBar currentScreen={currentScreen} setCurrentScreen={setCurrentScreen} userName={userName} onLogout={handleLogout} selectedModel={selectedModel} onModelChange={handleModelChange} />
+      <NavBar
+        currentScreen={currentScreen}
+        setCurrentScreen={setCurrentScreen}
+        userName={userName}
+        onLogout={authDisabled ? undefined : handleLogout}
+        selectedModel={selectedModel}
+        onModelChange={handleModelChange}
+      />
       <main className="py-4">
         {renderScreen()}
       </main>

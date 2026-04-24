@@ -1,9 +1,15 @@
 'use client';
 
+import { isClientAuthDisabled } from './authMode';
 import { supabase } from './supabase';
 
 export async function getAuthenticatedHeaders(headers?: HeadersInit): Promise<Headers> {
   const nextHeaders = new Headers(headers);
+
+  if (isClientAuthDisabled()) {
+    return nextHeaders;
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
 
   if (session?.access_token) {
