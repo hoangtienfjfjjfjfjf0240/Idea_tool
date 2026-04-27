@@ -13,7 +13,7 @@ import { ChatAgent } from '@/components/ChatAgent';
 import { isAuthDisabled } from '@/lib/authMode';
 import { getMissingBrowserSupabaseEnvVars, supabase } from '@/lib/supabase';
 import type { AppProject, FilterState, ScreenType } from '@/types/database';
-import { getApp, getHooks, getFilterOptions, getFeatures, getIdeas } from '@/lib/db';
+import { getApp, getHooks, getFilterOptions, getFeatures, getRecentIdeas } from '@/lib/db';
 import { Loader2 } from 'lucide-react';
 
 const NAV_STATE_KEY = 'ideagen_nav_state';
@@ -50,6 +50,14 @@ function readSavedNavState(): NavState {
   const screen = isScreenType(urlScreen) ? urlScreen : savedScreen;
   const appId = urlAppId || savedAppId;
   return screen === 'f1' ? { screen, appId: null } : { screen, appId };
+}
+
+function isChatAgentHiddenScreen(screen: ScreenType) {
+  return screen === 'f2.1'
+    || screen === 'f2.1.1'
+    || screen === 'f2.2.1'
+    || screen === 'f2.2.2'
+    || screen === 'f2.4';
 }
 
 export default function Home() {
@@ -194,21 +202,22 @@ export default function Home() {
   useEffect(() => {
     if (!hasHydrated) return;
     if (!hasSupabaseConfig || !selectedApp) return;
+    if (isChatAgentHiddenScreen(currentScreen)) return;
 
     if (selectedApp) {
       Promise.all([
         getHooks(selectedApp.id),
         getFilterOptions(selectedApp),
         getFeatures(selectedApp.id),
-        getIdeas(selectedApp.id),
+        getRecentIdeas(selectedApp.id, 24),
       ]).then(([hooks, filters, features, ideas]) => {
         setChatHooks(hooks);
         setChatFilters(filters);
         setChatFeatures(features.map(feature => feature.name));
-        setChatRecentIdeas(ideas.slice(0, 24));
+        setChatRecentIdeas(ideas);
       }).catch(() => {});
     }
-  }, [hasHydrated, hasSupabaseConfig, selectedApp?.id]);
+  }, [currentScreen, hasHydrated, hasSupabaseConfig, selectedApp?.id]);
 
   const handleLogin = (name: string) => {
     setUserName(name);
@@ -377,12 +386,7 @@ export default function Home() {
     }
   };
 
-  const shouldHideChatAgent =
-    currentScreen === 'f2.1'
-    || currentScreen === 'f2.1.1'
-    || currentScreen === 'f2.2.1'
-    || currentScreen === 'f2.2.2'
-    || currentScreen === 'f2.4';
+  const shouldHideChatAgent = isChatAgentHiddenScreen(currentScreen);
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">

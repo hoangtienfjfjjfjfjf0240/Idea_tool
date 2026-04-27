@@ -337,14 +337,86 @@ export async function deleteHook(id: string): Promise<boolean> {
 // ============================================
 //  GENERATED IDEAS
 // ============================================
-export async function getIdeas(appId: string): Promise<GeneratedIdea[]> {
+const IDEA_LIST_COLUMNS = 'id,app_id,title,duration,session_id,filters_snapshot,result,created_at';
+
+export interface GetIdeasOptions {
+  limit?: number;
+  includeContent?: boolean;
+}
+
+export interface IdeaStats {
+  totalIdeas: number;
+  wins: number;
+  failed: number;
+  monitoring: number;
+  sessions: number;
+}
+
+export async function getIdeas(appId: string, options: GetIdeasOptions = {}): Promise<GeneratedIdea[]> {
+  let query = supabase
+    .from('generated_ideas')
+    .select(options.includeContent === false ? IDEA_LIST_COLUMNS : '*')
+    .eq('app_id', appId)
+    .order('created_at', { ascending: false });
+
+  if (typeof options.limit === 'number' && options.limit > 0) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) { console.error('getIdeas error:', error); return []; }
+  return (data || []) as unknown as GeneratedIdea[];
+}
+
+export async function getRecentIdeas(appId: string, limit = 24): Promise<GeneratedIdea[]> {
+  return getIdeas(appId, { limit });
+}
+
+export async function getIdeasByIds(appId: string, ids: string[]): Promise<GeneratedIdea[]> {
+  const cleanIds = [...new Set(ids.filter(id => typeof id === 'string' && id.trim().length > 0))];
+  if (cleanIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from('generated_ideas')
     .select('*')
     .eq('app_id', appId)
-    .order('created_at', { ascending: false });
-  if (error) { console.error('getIdeas error:', error); return []; }
-  return data || [];
+    .in('id', cleanIds);
+
+  if (error) { console.error('getIdeasByIds error:', error); return []; }
+  return (data || []) as GeneratedIdea[];
+}
+
+export async function getIdeaStats(appId: string): Promise<IdeaStats> {
+  const { data, error } = await supabase
+    .from('generated_ideas')
+    .select('id, session_id, result')
+    .eq('app_id', appId);
+
+  if (error) {
+    console.error('getIdeaStats error:', error);
+    return { totalIdeas: 0, wins: 0, failed: 0, monitoring: 0, sessions: 0 };
+  }
+
+  const rows = (data || []) as Array<{ id: string; session_id: string | null; result: string | null }>;
+  const sessionIds = new Set<string>();
+  let wins = 0;
+  let failed = 0;
+  let monitoring = 0;
+
+  rows.forEach(row => {
+    sessionIds.add(row.session_id || `legacy:${row.id}`);
+    if (row.result === 'win') wins++;
+    if (row.result === 'failed') failed++;
+    if (row.result === 'monitoring') monitoring++;
+  });
+
+  return {
+    totalIdeas: rows.length,
+    wins,
+    failed,
+    monitoring,
+    sessions: sessionIds.size,
+  };
 }
 
 function hasMeaningfulText(value: unknown): boolean {
@@ -491,17 +563,12 @@ export interface IdeaSession {
   ideaCount: number;
 }
 
-export async function getIdeaSessions(appId: string): Promise<IdeaSession[]> {
-  const { data, error } = await supabase
-    .from('generated_ideas')
-    .select('*')
-    .eq('app_id', appId)
-    .order('created_at', { ascending: false });
-  if (error) { console.error('getIdeaSessions error:', error); return []; }
+export async function getIdeaSessions(appId: string, options: GetIdeasOptions = {}): Promise<IdeaSession[]> {
+  const data = await getIdeas(appId, options);
 
   // Group by session_id
   const sessionMap = new Map<string, GeneratedIdea[]>();
-  (data || []).forEach((idea: GeneratedIdea) => {
+  data.forEach((idea: GeneratedIdea) => {
     const sid = idea.session_id || 'legacy';
     if (!sessionMap.has(sid)) sessionMap.set(sid, []);
     sessionMap.get(sid)!.push(idea);

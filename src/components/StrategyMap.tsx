@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff, Search } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, StrategyMapState, StrategyMapCustomNodeState, StrategyWorkflowLevel } from '@/types/database';
-import { addFilterOption, getFilterOptions, getIdeaSessions, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { addFilterOption, getFilterOptions, getIdeaSessions, getIdeasByIds, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
@@ -731,6 +731,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [activePath, setActivePath] = useState<string[]>([]);
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
   const [ideaResults, setIdeaResults] = useState<Record<string, ResultType>>({});
+  const [ideaDetailCache, setIdeaDetailCache] = useState<Record<string, GeneratedIdea>>({});
+  const [loadingIdeaDetails, setLoadingIdeaDetails] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<string>(() => getWeekKey(new Date()));
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [containerWidth, setContainerWidth] = useState(900);
@@ -782,8 +784,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
     (async () => {
       setLoading(true);
+      setIdeaDetailCache({});
+      setLoadingIdeaDetails(false);
       const [data, savedOptionMap] = await Promise.all([
-        getIdeaSessions(app.id),
+        getIdeaSessions(app.id, { includeContent: false }),
         getFilterOptions(app),
       ]);
       if (cancelled) return;
@@ -2026,7 +2030,15 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     : null;
   const activeCreateFilters = selectedTreeFilters || selectedCustomNode?.filters || null;
   const canCreateFromBranch = !!activeCreateFilters && Object.keys(activeCreateFilters).length > 0;
-  const detailIdeas = selectedNode?.ideas || [];
+  const selectedIdeaIds = useMemo(
+    () => (selectedNode?.ideas || []).map(idea => idea.id).filter(Boolean),
+    [selectedNode]
+  );
+  const selectedIdeaIdsKey = selectedIdeaIds.join('|');
+  const detailIdeas = useMemo(
+    () => (selectedNode?.ideas || []).map(idea => ideaDetailCache[idea.id] || idea),
+    [ideaDetailCache, selectedNode]
+  );
   const detailLabel = selectedNode?.label || '';
   const detailIdeaCount = selectedNode?.ideaCount || detailIdeas.length;
   const selectedBranchNodeId = selectedCustomNodeId || selectedNode?.id || null;
@@ -2055,6 +2067,40 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       : strategyStateStatus === 'loading'
         ? { label: 'Đang tải biểu đồ...', className: 'bg-slate-50 text-slate-600 border-slate-200' }
         : { label: 'Đã lưu vào DB', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+
+  useEffect(() => {
+    if (!selectedNode || selectedIdeaIds.length === 0) {
+      setLoadingIdeaDetails(false);
+      return;
+    }
+
+    const missingIds = selectedIdeaIds.filter(ideaId => !ideaDetailCache[ideaId]?.content);
+    if (missingIds.length === 0) {
+      setLoadingIdeaDetails(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingIdeaDetails(true);
+    getIdeasByIds(app.id, missingIds)
+      .then(ideas => {
+        if (cancelled) return;
+        setIdeaDetailCache(prev => {
+          const next = { ...prev };
+          ideas.forEach(idea => {
+            next[idea.id] = idea;
+          });
+          return next;
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingIdeaDetails(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app.id, ideaDetailCache, selectedIdeaIds, selectedIdeaIdsKey, selectedNode]);
 
   const handleHideSelectedBranch = useCallback(() => {
     if (!selectedBranchNodeId || selectedBranchNodeId === 'root') return;
@@ -2146,14 +2192,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           </h2>
           <p className="text-xs text-gray-400 mt-1">Core User → PSP → Emotion → Visual → Painpoint · Click painpoint để xem ideas</p>
         </div>
-        {canCreateFromBranch && activeCreateFilters && onCreateFromBranch && (
-          <button onClick={() => {
-            onCreateFromBranch(activeCreateFilters);
-          }}
-            className="bg-gradient-to-r from-pink-500 via-rose-500 to-orange-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:shadow-lg hover:shadow-pink-200 hover:scale-105 transition-all">
-            <Sparkles size={16} /> Tạo idea từ nhánh này
-          </button>
-        )}
       </div>
 
       {/* ===== Week Picker — Dropdown ===== */}
@@ -2962,6 +3000,12 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               Đóng ✕
             </button>
           </div>
+
+          {loadingIdeaDetails && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500">
+              <Loader2 size={14} className="animate-spin" /> Đang tải script chi tiết cho nhánh này...
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {detailIdeas.map((idea) => {

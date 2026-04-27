@@ -463,6 +463,7 @@ const HISTORY_THIS_MONTH = 'this-month';
 const HISTORY_DAY_PREFIX = 'day:';
 const HISTORY_WEEK_PREFIX = 'week:';
 const HISTORY_MONTH_PREFIX = 'month:';
+const HISTORY_LOAD_LIMIT = 500;
 
 function toHistoryDate(value?: string | Date | null) {
   const date = value instanceof Date ? value : value ? new Date(value) : new Date();
@@ -718,7 +719,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // Auto-load results from DB when entering results screen
   useEffect(() => {
     if (currentScreen === 'f2.1.2' && results.length === 0) {
-      dbService.getIdeas(app.id).then(ideas => {
+      dbService.getIdeas(app.id, { limit: HISTORY_LOAD_LIMIT }).then(ideas => {
         setResults(ideas);
         setSavedHistory(ideas);
         setShowHistory(true);
@@ -738,7 +739,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const loadHistory = async () => {
-    const ideas = await dbService.getIdeas(app.id);
+    const ideas = await dbService.getIdeas(app.id, { limit: HISTORY_LOAD_LIMIT });
     setSavedHistory(ideas);
   };
 

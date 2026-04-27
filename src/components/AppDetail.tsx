@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles, PenTool } from 'lucide-react';
 import type { AppProject, Feature, FilterState, SyncLog } from '@/types/database';
-import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
+import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaStats, type IdeaStats } from '@/lib/db';
 import { StrategyMap } from '@/components/StrategyMap';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
 import { authenticatedFetch } from '@/lib/authFetch';
@@ -37,7 +37,13 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
   const [brainError, setBrainError] = useState('');
 
   // Quick stats
-  const [sessions, setSessions] = useState<IdeaSession[]>([]);
+  const [summaryStats, setSummaryStats] = useState<IdeaStats>({
+    totalIdeas: 0,
+    wins: 0,
+    failed: 0,
+    monitoring: 0,
+    sessions: 0,
+  });
   const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
@@ -58,22 +64,16 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
   const loadStats = async () => {
     setStatsLoading(true);
     try {
-      const data = await getIdeaSessions(app.id);
-      setSessions(data);
+      const data = await getIdeaStats(app.id);
+      setSummaryStats(data);
     } catch { /* ignore */ }
     setStatsLoading(false);
   };
 
   const stats = useMemo(() => {
-    let totalIdeas = 0, wins = 0, failed = 0;
-    sessions.forEach(s => s.ideas.forEach((i: any) => {
-      totalIdeas++;
-      if (i.result === 'win') wins++;
-      if (i.result === 'failed') failed++;
-    }));
-    const winRate = totalIdeas > 0 ? Math.round((wins / totalIdeas) * 100) : 0;
-    return { totalIdeas, wins, failed, winRate, sessions: sessions.length };
-  }, [sessions]);
+    const winRate = summaryStats.totalIdeas > 0 ? Math.round((summaryStats.wins / summaryStats.totalIdeas) * 100) : 0;
+    return { ...summaryStats, winRate };
+  }, [summaryStats]);
 
   const handleAddFeature = async () => {
     if (!featureName.trim()) return;
