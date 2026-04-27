@@ -47,11 +47,11 @@ I. NGUYÊN TẮC TƯ DUY (CORE PHILOSOPHY)
 II. CẤU TRÚC KỊCH BẢN BẮT BUỘC
 1. CONCEPT NAME.
 2. MARKET & USER ADAPTATION: Mô tả chi tiết ngoại hình nhân vật (sắc tộc), trang phục, bối cảnh kiến trúc đặc trưng của quốc gia đó để đảm bảo tính bản địa hóa.
-3. THE DIRECT HOOK (0-3s):
+3. MỞ ĐẦU TRỰC DIỆN (0-3s):
 - Visual: Mô tả cụ thể từng chuyển động, góc máy, trạng thái cơ thể hoặc biểu cảm khuôn mặt. Các tình huống phải rõ ràng, chi tiết. Không viết chung chung. Phải nêu rõ hành động gây sốc hoặc gây tò mò là gì.
 - Text/Voice: Một câu khẳng định duy nhất. Độ "gắt" tương ứng với cảm xúc được chọn.
 - Bonus: Đối với các ý tưởng về sự giao tiếp (2 hoặc nhiều nhân vật giao tiếp với nhau), cần đơn giản, không phức tạp hóa. Viết kịch bản cần bao gồm cả lời thoại phù hợp.
-4. THE PIVOT (3-6s):
+4. CHUYỂN TRỤC GIẢI PHÁP (3-6s):
 - Visual: Mô tả kỹ thao tác tay khi dùng tính năng (đặt ngón tay vào đâu, ánh sáng phát ra thế nào) và sự thay đổi của các con số/biểu đồ trên màn hình điện thoại.
 - Text/Voice: Khẳng định quyền lực giải pháp.
 
@@ -123,8 +123,8 @@ function buildV7ExecutionContract(input: {
 
 Hard V7 requirements:
 - Ignore old rules about hook word count, hook 3-5s, 12-word hooks, and short one-line hook templates.
-- THE DIRECT HOOK is the first interrupt beat: show consequence, shock, or weird visual at second 0.1.
-- THE PIVOT must happen immediately after: show the app/feature action with exact finger movement and visible UI/number/chart change.
+- Mở đầu trực diện là nhịp chặn đầu tiên: cho thấy hậu quả, cú sốc hoặc visual lạ ngay giây 0.1.
+- Chuyển trục giải pháp phải xảy ra ngay sau đó: cho thấy hành động dùng app/feature với thao tác ngón tay cụ thể và UI/số liệu/biểu đồ thay đổi rõ.
 - Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
 - All Text/Voice must be written in Vietnamese, but the wording, social behavior, setting, and vibe must feel native to the selected market.
 - If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
@@ -134,9 +134,9 @@ Hard V7 requirements:
 
 function buildV7TaskDirectives(quantity: number) {
   return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
-- Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Hook (0-3s) -> Pivot (3-6s) -> Proof/CTA continuation.
+- Each idea must follow: Concept Name -> Market & User Adaptation -> Mở đầu trực diện (0-3s) -> Chuyển trục giải pháp (3-6s) -> Bằng chứng/CTA nối tiếp.
 - The first frame must be a pattern interruption, not setup.
-- The Pivot must use the selected Feature/PSP as the solution tool.
+- Chuyển trục giải pháp phải dùng đúng Feature/PSP đã chọn làm công cụ xử lý.
 - Write the entire output in Vietnamese, including character dialogue, Text/Voice, text on screen, voice-over, CTA, and production notes.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
 - Do not use old hook word-count constraints or old 3-5s hook section rules.

@@ -521,19 +521,19 @@ All generated copy and descriptions must be Vietnamese. The selected market cont
             "hook_alt_1": "Một hướng hook khác bằng tiếng Việt, khác execution, không paraphrase",
             "hook_alt_2": "Một hướng hook khác bằng tiếng Việt, khác execution, không paraphrase",
             "hook_character_speech": "Lời thoại tiếng Việt chỉ khi có nhân vật nhìn thấy đang nói. Nếu không có người nói rõ, để chuỗi rỗng.",
-            "hook_voiceover": "Text/Voice tiếng Việt cho THE DIRECT HOOK. Một câu khẳng định gắt, không phải câu hỏi tu từ. Nếu không cần narrator, để chuỗi rỗng.",
-            "hook_text_overlay": "Text on screen tiếng Việt cho THE DIRECT HOOK. Một câu khẳng định trực diện, không theo giới hạn 6-16 từ cũ.",
+            "hook_voiceover": "Text/Voice tiếng Việt cho phần mở đầu trực diện. Một câu khẳng định gắt, không phải câu hỏi tu từ. Nếu không cần narrator, để chuỗi rỗng.",
+            "hook_text_overlay": "Chữ trên màn hình bằng tiếng Việt cho phần mở đầu trực diện. Một câu khẳng định trực diện, không theo giới hạn 6-16 từ cũ.",
             "reference_pattern": "Tên mẫu mô V7, ví dụ: UGC, 3D Scan, News Leak, Magic Feature, Real Disaster, Reaction Interruption",
             "interrupt_mechanism": "Hành động/hình ảnh cụ thể gây sốc hoặc gây tò mò để chặn scroll ngay giây 0.1",
             "first_frame_asset": "Tài sản frame đầu: nhân vật, sắc tộc, trang phục, địa điểm, tư thế, biểu cảm, đạo cụ hoặc màn hình điện thoại",
-            "psp_bridge": "THE PIVOT: chuyển tiếp cụ thể từ hậu quả/painpoint sang hành động dùng feature/app. Không theo giới hạn word-count cũ.",
+            "psp_bridge": "Chuyển trục giải pháp: chuyển tiếp cụ thể từ hậu quả/painpoint sang hành động dùng feature/app. Không theo giới hạn word-count cũ.",
             "proof_object": "Con số, biểu đồ, màn hình app, vật chứng hoặc bằng chứng visual xuất hiện sau pivot",
             "app_demo_action": "Thao tác feature chính xác: ngón tay chạm đâu, màn hình đổi gì, số/biểu đồ/ánh sáng/UI thay đổi thế nào",
             "overlay_sequence": ["0-3s text hook tiếng Việt", "3-6s text pivot tiếng Việt", "proof/demo overlay tiếng Việt", "CTA overlay tiếng Việt"],
             "edit_notes": "Ghi chú quay/dựng bằng tiếng Việt: góc máy, nhịp cắt, close-up, zoom, crop, caption style, mức độ thô/UGC",
-            "visual_scene_1": "THE DIRECT HOOK (0-3s): mô tả chi tiết chuyển động, góc máy, trạng thái cơ thể, biểu cảm, bối cảnh bản địa và hành động gây sốc/tò mò. Không viết setup chung chung.",
-            "visual_scene_2": "THE PIVOT (3-6s): mô tả chi tiết thao tác tay dùng feature, ngón tay chạm đâu, màn hình sáng/đổi UI thế nào, số/biểu đồ thay đổi ra sao.",
-            "visual_scene_3": "Proof/CTA continuation: visual đơn giản, sản xuất được, xác nhận giải pháp và dẫn tới hành động app.",
+            "visual_scene_1": "Mở đầu trực diện (0-3s): mô tả chi tiết chuyển động, góc máy, trạng thái cơ thể, biểu cảm, bối cảnh bản địa và hành động gây sốc/tò mò. Không viết setup chung chung.",
+            "visual_scene_2": "Chuyển trục giải pháp (3-6s): mô tả chi tiết thao tác tay dùng feature, ngón tay chạm đâu, màn hình sáng/đổi UI thế nào, số/biểu đồ thay đổi ra sao.",
+            "visual_scene_3": "Bằng chứng/CTA nối tiếp: visual đơn giản, sản xuất được, xác nhận giải pháp và dẫn tới hành động app.",
             "script_vo": "Kịch bản voice/text tiếng Việt ngắn. Nếu là idea giao tiếp 2+ nhân vật, viết lời thoại đơn giản, đúng vai; nếu không, dùng voice-over hoặc mô tả đọc được.",
             "cta_text": "CTA tiếng Việt.",
             "visual_ref_notes": "MARKET & USER ADAPTATION bằng tiếng Việt: sắc tộc, trang phục, kiến trúc, hành vi, văn hóa, bối cảnh nhà/công việc đặc trưng của market.",
@@ -554,7 +554,7 @@ All generated copy and descriptions must be Vietnamese. The selected market cont
 2. Keep every idea inside the exact selected pain point and selected angle.
 3. Do not apply old hook word-count limits, old 3-5s hook rules, or old one-line hook templates.
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
-5. Direct Hook visual_scene_1 must be concrete enough for a videographer or AI video tool to execute exactly.
+5. visual_scene_1 của phần mở đầu trực diện phải đủ cụ thể để người quay hoặc AI video tool thực hiện chính xác.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
 7. TOÀN BỘ OUTPUT PHẢI VIẾT BẰNG TIẾNG VIỆT, bao gồm lời thoại nhân vật, text on screen, voice-over, CTA, visual và ghi chú production.
 8. Cách nói, hành vi, bối cảnh, đồ vật, quan hệ xã hội và vibe phải nghĩ như người bản địa của selected market.
@@ -828,9 +828,14 @@ function sanitizeHealthClaimText(text: string): string {
     .replace(/\bkết quả y tế chính xác\b/gi, 'ghi chú sức khỏe cá nhân');
 }
 
-function healthMetricLabel(tokens: string[]): string {
+function healthMetricLabel(tokens: string[], sourceText = ''): string {
   const tokenSet = new Set(tokens);
-  if (tokenSet.has('blood') || tokenSet.has('pressure') || tokenSet.has('huyet')) return 'nhat ky huyet ap';
+  const normalizedSource = normalizeCompareText(sourceText);
+  if (tokenSet.has('blood') || tokenSet.has('pressure') || tokenSet.has('huyet')) {
+    if (/\b(camera|iphone|measure|do|scan|cam)\b/.test(normalizedSource)) return 'đo huyết áp bằng camera';
+    if (/\b(log|journal|diary|history|track|theo doi|ghi lai|nhat ky)\b/.test(normalizedSource)) return 'theo dõi huyết áp';
+    return 'huyết áp';
+  }
   if (tokenSet.has('heart') || tokenSet.has('rate') || tokenSet.has('bpm') || tokenSet.has('pulse') || tokenSet.has('tim') || tokenSet.has('nhip')) return 'nhip tim';
   if (tokenSet.has('glucose') || tokenSet.has('sugar') || tokenSet.has('duong')) return 'duong huyet';
   if (tokenSet.has('sleep') || tokenSet.has('ngu')) return 'xu huong giac ngu';
@@ -1188,7 +1193,7 @@ export function normalizeCreativeBriefOutput(
         const track = readFirstText(ideaRecord, ['track'], 'B').trim().toUpperCase();
         const trackReason = readFirstText(ideaRecord, ['track_reason', 'trackReason']);
         const priority = readFirstText(ideaRecord, ['priority'], 'A').trim().toUpperCase();
-        const metricLabel = healthMetricLabel(selectedSolutionTokens);
+        const metricLabel = isV7Ruleset ? '' : healthMetricLabel(selectedSolutionTokens, defaults.psp || '');
         const metricAnchors = selectedSolutionTokens.filter(token => HEALTH_METRIC_ANCHORS.has(token));
 
         hookPrimary = sanitizeHealthClaimText(hookPrimary);
