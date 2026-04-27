@@ -1358,7 +1358,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       ),
       '',
       ...buildCopySection(
-        'CTA (3-5s)',
+        'CTA',
         ctaVisual,
         ctaSpeech,
         content.cta?.textOverlay || content.cta?.text || '',
@@ -2451,7 +2451,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         <span className="text-sm font-bold text-purple-700">AI Refine — Chỉnh sửa bằng AI</span>
                       </div>
                       <textarea value={refineInstruction} onChange={e => setRefineInstruction(e.target.value)}
-                        placeholder='VD: "Đổi nhân vật thành cặp vợ chồng 50 tuổi, thêm hài hước", "Đổi emotion sang FOMO", "Rút gọn hook còn 3 giây"...'
+                        placeholder='VD: "Đổi nhân vật thành cặp vợ chồng 50 tuổi, thêm hài hước", "Đổi emotion sang FOMO", "Tăng độ trực diện của hook"...'
                         className="w-full h-20 resize-none text-sm border border-purple-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-300 bg-white mb-3" />
                       <div className="flex gap-2">
                         <button onClick={async () => {
@@ -2513,7 +2513,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
                   {/* Body + CTA shown only when the card is expanded, being edited, or refined. */}
                   {[{ key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
-                  { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
+                  { key: 'cta', label: '🔥 CTA', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
                   ].map(sec => {
                     const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
                     const visualContent = secData?.visual || secData?.script || '';

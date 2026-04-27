@@ -25,6 +25,7 @@ type IdeaOutputSpecOptions = {
   language: string;
   includeSelectedFilters?: boolean;
   compact?: boolean;
+  ruleset?: 'default' | 'v7';
 };
 
 type HookOutputSpecOptions = {
@@ -492,6 +493,74 @@ ${compactOutputRules}
 }
 
 export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): string {
+  if (options.ruleset === 'v7') {
+    const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+
+    return `## OUTPUT SPECIFICATION - V7 DIRECT ADS BRIEF
+
+Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
+Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
+
+Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7:
+
+[
+  {
+    "pillar_index": 0,
+    "pillar": "exact selected pain point text from input",
+    "angles": [
+      {
+        "angle_index": 0,
+        "angle_name": "specific direct angle name",
+        "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
+        "angle_desc": "1 sentence describing the direct attack on the pain point",
+        "ideas": [
+          {
+            "id": "P0-A0-I0",
+            "hook_primary": "CONCEPT NAME / direct localized hook statement. Do not obey old word-count limits.",
+            "hook_alt_1": "Alternative direct statement with a different execution, not a paraphrase",
+            "hook_alt_2": "Alternative direct statement with a different execution, not a paraphrase",
+            "hook_character_speech": "Single localized spoken line only if a visible person clearly speaks. Empty string if nobody speaks on camera.",
+            "hook_voiceover": "Localized Text/Voice line for THE DIRECT HOOK. One assertive statement, not a rhetorical question. Include Vietnamese translation in script_vo or visual_ref_notes when market language is not Vietnamese.",
+            "hook_text_overlay": "Localized on-screen text for THE DIRECT HOOK. One brutal, direct statement. No old 6-16 word constraint.",
+            "reference_pattern": "V7 Direct Hook + Pivot",
+            "interrupt_mechanism": "The exact shocking/curious visual action that interrupts scroll at second 0.1",
+            "first_frame_asset": "Exact first-frame asset/person/action: ethnicity, clothing, location, body posture, expression, prop, or phone screen",
+            "psp_bridge": "THE PIVOT: the concrete transition from pain consequence to feature/app action. Do not use old psp bridge word-count limits.",
+            "proof_object": "The number, chart, app screen, before-state object, or visual proof shown after the pivot",
+            "app_demo_action": "Exact feature action: where the finger taps, what changes on screen, numbers/chart/light/UI state",
+            "overlay_sequence": ["0-3s direct hook overlay", "3-6s pivot overlay", "proof/demo overlay", "CTA overlay"],
+            "edit_notes": "Camera movement, cut rhythm, close-up, zoom, crop, caption style, and production notes",
+            "visual_scene_1": "THE DIRECT HOOK (0-3s): detailed visual movement, camera angle, body state, facial expression, localized environment, and the shocking/curious action. Do not write generic setup.",
+            "visual_scene_2": "THE PIVOT (3-6s): detailed hand motion using the feature, where the finger touches, screen light/UI change, and numbers/charts changing.",
+            "visual_scene_3": "Proof/CTA continuation: simple production-ready visual that confirms the solution and leads to app action.",
+            "script_vo": "Localized Text/Voice lines plus Vietnamese translation in parentheses when the target market language is not Vietnamese.",
+            "cta_text": "Localized CTA text.",
+            "visual_ref_notes": "MARKET & USER ADAPTATION: ethnicity, clothing, architecture, home/work context, and country-specific visual cues.",
+            "talent_profile": "Localized character detail: age, ethnicity, gender, clothing, social context, or No talent.",
+            "dont_do": "1 specific V7 negative constraint not to violate.",
+            "track": "A|B|C",
+            "track_reason": "1 sentence explaining production track.",
+            "priority": "A|B|C"
+          }
+        ]
+      }
+    ]
+  }
+]
+
+## V7 OUTPUT RULES
+1. Output JSON array only.
+2. Keep every idea inside the exact selected pain point and selected angle.
+3. Do not apply old hook word-count limits, old 3-5s hook rules, or old one-line hook templates.
+4. The first visible beat must attack the pain point with brutal directness at second 0.1.
+5. Direct Hook visual_scene_1 must be concrete enough for a videographer or AI video tool to execute exactly.
+6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
+7. Text/Voice must be in the language of the target market. If the market is foreign, do not write the actual spoken/overlay line in Vietnamese; include Vietnamese translation alongside it in script_vo or notes.
+8. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
+9. Use the selected feature/PSP as the Pivot solution.
+10. Hyper-localize ethnicity, clothing, architecture, environment, and social setting to the selected market.`;
+  }
+
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
 
   return `## OUTPUT SPECIFICATION - CREATIVE BRIEF TREE
@@ -889,6 +958,7 @@ function createBriefValidationErrors(input: {
   painpointTokens?: string[];
   solutionTokens?: string[];
   language?: string;
+  ruleset?: 'default' | 'v7';
 }) {
   const errors: string[] = [];
   const trackingPattern = /^P\d+-A\d+-I\d+$/;
@@ -918,12 +988,19 @@ function createBriefValidationErrors(input: {
       errors.push('all user-facing fields must be Vietnamese, not English');
     }
   }
+  const isV7 = input.ruleset === 'v7';
   const hookPrimaryWordCount = countWords(input.hookPrimary);
-  if (input.hookPrimary && (hookPrimaryWordCount < 5 || hookPrimaryWordCount > 16)) {
+  if (!isV7 && input.hookPrimary && (hookPrimaryWordCount < 5 || hookPrimaryWordCount > 16)) {
     errors.push('hook_primary must be 5-16 words');
   }
   if (input.hookPrimary && !hasPatternInterrupt(input.hookPrimary)) {
     errors.push('hook_primary must create a clear pattern interrupt');
+  }
+  if (isV7) {
+    const hookCopy = [input.hookPrimary, input.hookCharacterSpeech || '', input.hookVoiceover || '', input.hookTextOverlay || ''].join(' ');
+    if (/\?/.test(hookCopy)) {
+      errors.push('V7 forbids rhetorical question hooks; use a direct statement');
+    }
   }
   if (!input.hookAlt1) errors.push('hook_alt_1 is required');
   if (!input.hookAlt2) errors.push('hook_alt_2 is required');
@@ -948,13 +1025,13 @@ function createBriefValidationErrors(input: {
   if (hookCharacterSpeech && !visualMentionsVisibleSpeaker(input.visualScene1)) {
     errors.push('hook_character_speech requires a clearly visible speaker in visual_scene_1');
   }
-  if (hookCharacterSpeech && countWords(hookCharacterSpeech) > 36) {
+  if (!isV7 && hookCharacterSpeech && countWords(hookCharacterSpeech) > 36) {
     errors.push('hook_character_speech must be 36 words or fewer');
   }
-  if (hookVoiceover && countWords(hookVoiceover) > 48) {
+  if (!isV7 && hookVoiceover && countWords(hookVoiceover) > 48) {
     errors.push('hook_voiceover must be 48 words or fewer');
   }
-  if (hookVoiceover && countWords(hookVoiceover) < 12 && !hookCharacterSpeech) {
+  if (!isV7 && hookVoiceover && countWords(hookVoiceover) < 12 && !hookCharacterSpeech) {
     errors.push('hook_voiceover is too short for an 8-12s hook arc');
   }
   if (hookVoiceover && isSameLine(hookVoiceover, input.hookPrimary)) {
@@ -970,10 +1047,10 @@ function createBriefValidationErrors(input: {
   if (!pspBridge) {
     errors.push('psp_bridge is required');
   }
-  if (pspBridge && countWords(pspBridge) > 38) {
+  if (!isV7 && pspBridge && countWords(pspBridge) > 38) {
     errors.push('psp_bridge must be 38 words or fewer');
   }
-  if (pspBridge && countWords(pspBridge) < 7) {
+  if (!isV7 && pspBridge && countWords(pspBridge) < 7) {
     errors.push('psp_bridge is too short to connect hook to PSP');
   }
   if (pspBridge && input.hookPrimary && isSameLine(pspBridge, input.hookPrimary)) {
@@ -999,7 +1076,7 @@ function createBriefValidationErrors(input: {
     errors.push('script_vo must be 60 words or fewer');
   }
   if (!input.ctaText) errors.push('cta_text is required');
-  if (input.ctaText && input.ctaText.split(/\s+/).filter(Boolean).length > 6) {
+  if (!isV7 && input.ctaText && input.ctaText.split(/\s+/).filter(Boolean).length > 6) {
     errors.push('cta_text must be 6 words or fewer');
   }
   if (!input.dontDo || input.dontDo.split(/\s+/).filter(Boolean).length < 5) {
@@ -1023,6 +1100,7 @@ export function normalizeCreativeBriefOutput(
     angle?: string;
     ideaDescription?: string;
     language?: string;
+    ruleset?: 'default' | 'v7';
   }
 ): { items: Record<string, unknown>[]; invalidReasons: string[] } {
   const rootItems = Array.isArray(input) ? input : [input];
@@ -1197,6 +1275,7 @@ export function normalizeCreativeBriefOutput(
           painpointTokens: selectedPainpointTokens,
           solutionTokens: selectedSolutionTokens,
           language: defaults.language,
+          ruleset: defaults.ruleset,
         });
 
         if (acceptedHookPrimaries.some(existing => jaccardSimilarity(existing, hookPrimary) >= 0.72)) {

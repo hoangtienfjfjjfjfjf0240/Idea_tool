@@ -32,6 +32,41 @@ const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 60000;
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 75000;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
+const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
+
+const CREATIVE_ADS_GENERATION_RULES_V7 = `CREATIVE ADS GENERATION RULES (VERSION 7.0)
+ROLE:
+Bạn là một Performance Creative Engine. Nhiệm vụ của bạn là chuyển hóa dữ liệu đầu vào thành kịch bản quảng cáo dạng ngắn (Short-form Ads) đột phá cho App Mobile, tối ưu cho Meta Reels toàn cầu.
+
+I. NGUYÊN TẮC TƯ DUY (CORE PHILOSOPHY)
+- Brutal Directness: Bỏ qua dẫn dắt. Đi thẳng vào hậu quả hoặc giải pháp ngay giây 0.1.
+- Pattern Interruption: Hình ảnh phải đủ lạ hoặc gây sốc để chặn hành vi lướt tay.
+- Hyper-Localization: Tùy biến sâu dựa trên sắc tộc, môi trường sống và ngôn ngữ bản địa của thị trường mục tiêu.
+- Execution Simplicity: Ưu tiên bối cảnh đơn giản, dễ sản xuất (UGC, Stock, Gen AI) nhưng phải mô tả hành động nhân vật cực kỳ chi tiết.
+
+II. CẤU TRÚC KỊCH BẢN BẮT BUỘC
+1. CONCEPT NAME.
+2. MARKET & USER ADAPTATION: Mô tả chi tiết ngoại hình nhân vật (sắc tộc), trang phục, bối cảnh kiến trúc đặc trưng của quốc gia đó để đảm bảo tính bản địa hóa.
+3. THE DIRECT HOOK (0-3s): Visual phải mô tả cụ thể từng chuyển động, góc máy, trạng thái cơ thể hoặc biểu cảm khuôn mặt. Không viết chung chung. Phải nêu rõ hành động gây sốc hoặc gây tò mò là gì. Text/Voice là một câu khẳng định duy nhất viết bằng ngôn ngữ của quốc gia mục tiêu, độ gắt tương ứng với cảm xúc được chọn.
+4. THE PIVOT (3-6s): Visual phải mô tả kỹ thao tác tay khi dùng tính năng (đặt ngón tay vào đâu, ánh sáng phát ra thế nào) và sự thay đổi của các con số/biểu đồ trên màn hình điện thoại. Text/Voice là khẳng định quyền lực giải pháp viết bằng ngôn ngữ của quốc gia mục tiêu.
+
+III. CÁC ĐIỀU CẤM (NEGATIVE CONSTRAINTS)
+- KHÔNG mô tả âm thanh thừa thãi trừ khi là mấu chốt của Hook.
+- KHÔNG dùng câu hỏi tu từ hoặc lối nói lái, ẩn dụ.
+- KHÔNG viết lời thoại, voice video bằng tiếng Việt cho thị trường nước ngoài; phải dùng ngôn ngữ bản địa, nhưng vẫn kèm lời dịch bên cạnh.
+
+IV. CƠ CHẾ THÍCH NGHI CẢM XÚC
+- Fear/Urgency: Ngôn ngữ tàn nhẫn, đánh vào hậu quả mất mát ngay lập tức.
+- Trust: Tập trung vào sự minh bạch, con số và bằng chứng thực tế.
+- Curiosity: Tập trung vào sự kỳ lạ, "ma thuật" công nghệ chưa từng thấy.
+- Educational: Khẳng định kiến thức mới một cách quyết đoán, không dạy đời.
+
+V. HƯỚNG DẪN XỬ LÝ BIẾN SỐ ĐẦU VÀO
+- Lấy Painpoint làm mục tiêu tấn công cho Hook.
+- Sử dụng Feature, kể cả tính năng phóng đại/fake nếu brief yêu cầu, làm công cụ giải quyết ở Pivot.
+- Toàn bộ Text/Voice phải được dịch sang ngôn ngữ của Market được chỉ định.
+- Mô tả tình huống phải đủ kĩ để một người quay phim hoặc công cụ AI Video có thể hiểu và thực hiện chính xác hành động.`;
+
 type IdeaBatchPlan = {
   batchQuantity: number;
   batchStartIndex: number;
@@ -45,6 +80,55 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function shouldUseCreativeRulesV7(appName: string, appKnowledge: string): boolean {
+  const haystack = `${appName}\n${appKnowledge}`.toLowerCase();
+  return haystack.includes(CREATIVE_RULESET_V7_MARKER.toLowerCase())
+    || /\bv7\b/.test(haystack)
+    || /rule\s*7/.test(haystack);
+}
+
+function buildV7ExecutionContract(input: {
+  appName: string;
+  coreUserValues: string[];
+  primaryPillar: string;
+  angleContext: string;
+  featureContext: string;
+  targetMarketValues: string[];
+  targetLang: string;
+  visualType: string;
+  ideaDescription?: string;
+}) {
+  return `## V7 EXECUTION CONTRACT - APPLIES TO THIS TEST APP ONLY
+- App: ${input.appName}
+- Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
+- Local language for Text/Voice: ${input.targetLang}
+- Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
+- Painpoint to attack: ${input.primaryPillar}
+- Angle focus: ${input.angleContext || 'Creative freedom'}
+- Feature/Pivot tool: ${input.featureContext}
+- Visual style: ${input.visualType}
+- User direction: ${input.ideaDescription || 'None'}
+
+Hard V7 requirements:
+- Ignore old rules about hook word count, hook 3-5s, 12-word hooks, and short one-line hook templates.
+- THE DIRECT HOOK is the first interrupt beat: show consequence, shock, or weird visual at second 0.1.
+- THE PIVOT must happen immediately after: show the app/feature action with exact finger movement and visible UI/number/chart change.
+- Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
+- Text/Voice for foreign markets must be in that market language, with Vietnamese translation beside it in script_vo or notes.
+- No rhetorical questions. Use direct statements.
+- Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
+}
+
+function buildV7TaskDirectives(quantity: number) {
+  return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
+- Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Hook (0-3s) -> Pivot (3-6s) -> Proof/CTA continuation.
+- The first frame must be a pattern interruption, not setup.
+- The Pivot must use the selected Feature/PSP as the solution tool.
+- Do not use old hook word-count constraints or old 3-5s hook section rules.
+- Do not use rhetorical questions, wordplay, or vague metaphor hooks.
+- If multiple ideas are requested, vary ethnicity/context/visual action/phone screen/proof object aggressively while staying inside the same painpoint and angle.`;
 }
 
 function countWords(text: string): number {
@@ -211,6 +295,26 @@ function detectLang(coreUsers: string[]): string {
   if (hasWord('thai') || hasWord('thái') || hasWord('malay') || hasWord('indonesia') || hasWord('sea')) return 'SEA (Đa ngôn ngữ ĐNA)';
   if (hasWord('korean') || hasWord('hàn') || hasWord('korea')) return 'KO (Hàn Quốc)';
   return 'Vietnamese';
+}
+
+function detectMarketLang(targetMarkets: string[], coreUsers: string[]): string {
+  const joined = `${targetMarkets.join(' ')} ${coreUsers.join(' ')}`.toLowerCase();
+  const hasAny = (tokens: string[]) => tokens.some(token => joined.includes(token));
+
+  if (hasAny(['us', 'usa', 'united states', 'mỹ', 'my', 'uk', 'united kingdom', 'canada', 'australia', 'english'])) return 'English';
+  if (hasAny(['vietnam', 'việt', 'viet', 'vn'])) return 'Vietnamese';
+  if (hasAny(['japan', 'jp', 'nhật', '日本', 'japanese'])) return 'Japanese';
+  if (hasAny(['korea', 'kr', 'hàn', 'korean'])) return 'Korean';
+  if (hasAny(['germany', 'deutsch', 'đức', 'german'])) return 'German';
+  if (hasAny(['france', 'pháp', 'french', 'français'])) return 'French';
+  if (hasAny(['spain', 'spanish', 'tây ban nha', 'español', 'latam', 'latin'])) return 'Spanish';
+  if (hasAny(['brazil', 'brasil', 'portuguese', 'bồ đào nha'])) return 'Portuguese';
+  if (hasAny(['thai', 'thái', 'thailand'])) return 'Thai';
+  if (hasAny(['indonesia', 'indonesian'])) return 'Indonesian';
+  if (hasAny(['malay', 'malaysia'])) return 'Malay';
+  if (hasAny(['sea', 'đông nam á'])) return 'Local SEA language matching the selected country';
+
+  return detectLang(coreUsers);
 }
 
 // Map frontend model names to gateway model identifiers
@@ -1210,6 +1314,8 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const config = asRecord(body.config);
       const previousIdeas = asText(body.previousIdeas);
       const appKnowledge = asText(body.appKnowledge);
+      const useCreativeRulesV7 = shouldUseCreativeRulesV7(appName, appKnowledge);
+      const creativeRuleset: 'default' | 'v7' = useCreativeRulesV7 ? 'v7' : 'default';
       const selectedModel = asText(body.selectedModel) || undefined;
       const trendingTopics = asStringList(body.trendingTopics);
       const trendingStructures = asStringList(body.trendingStructures);
@@ -1223,7 +1329,9 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const requestedQuantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
       const duration = asText(config.duration) || 'Short social-first runtime';
       const visualType = asText(config.visualType) || 'UGC (Người thật)';
-      const targetLang = detectLang(coreUserValues);
+      const targetLang = useCreativeRulesV7
+        ? detectMarketLang(targetMarketValues, coreUserValues)
+        : detectLang(coreUserValues);
       const marketContext = buildMarketContext(targetMarketValues);
       const angleContext = angleValues.length ? angleValues.join(', ') : '';
       const primaryPillar = painPointValues[0] || 'General user friction';
@@ -1326,7 +1434,19 @@ Trả JSON array of strings. KHÔNG markdown.`;
           }
         );
 
-        const painpointPrecisionBlock = `
+        const painpointPrecisionBlock = useCreativeRulesV7
+          ? buildV7ExecutionContract({
+              appName,
+              coreUserValues,
+              primaryPillar,
+              angleContext,
+              featureContext,
+              targetMarketValues,
+              targetLang,
+              visualType,
+              ideaDescription,
+            })
+          : `
 ## PAINPOINT PRECISION CONTRACT
 - Exact core user: ${coreUserValues.join('; ') || 'General viewer'}
 - Exact pain point pillar: ${primaryPillar}
@@ -1389,6 +1509,35 @@ Hard requirements:
           ],
         });
 
+        const outputSpec = buildCreativeBriefOutputSpec({
+          quantity: plan.batchQuantity,
+          duration,
+          appName,
+          language: targetLang,
+          ruleset: creativeRuleset,
+        });
+        const rulesBlock = useCreativeRulesV7
+          ? `${CREATIVE_ADS_GENERATION_RULES_V7}
+
+${buildV7TaskDirectives(plan.batchQuantity)}`
+          : `${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
+
+        const taskDirectives = useCreativeRulesV7
+          ? buildV7TaskDirectives(plan.batchQuantity)
+          : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
+- Duration: ${duration}
+- The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
+- Each idea must stay inside the selected pillar and selected angle focus.
+- Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
+- If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
+- Hook must include psp_bridge so the pain/emotion connects to the PSP before the Body section.
+- Hook, body, and CTA must follow one continuous problem-solution chain.
+- Body is a suggested demo/proof continuation; do not rely on Body alone to explain why the PSP matters.
+- If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
+- Creative type cap: output at most 1 POV idea in this batch. Use UGC, Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format for the rest.
+- Production blueprint: each idea must include reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes. reference_pattern can be custom/hybrid. psp_bridge belongs to Hook and must connect the emotion/angle to the PSP. The remaining fields must be concrete enough for a creator to edit the video without asking follow-up questions.`;
+
         const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
 ${frameworkInjection}
@@ -1408,23 +1557,11 @@ ${singleIdeaSlotBlock || ''}
 ${painpointPrecisionBlock}
 
 ## TASK
-Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
-- Duration: ${duration}
-- The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
-- Each idea must stay inside the selected pillar and selected angle focus.
-- Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
-- If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
-- Hook must include psp_bridge so the pain/emotion connects to the PSP before the Body section.
-- Hook, body, and CTA must follow one continuous problem-solution chain.
-- Body is a suggested demo/proof continuation; do not rely on Body alone to explain why the PSP matters.
-- If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
-- Creative type cap: output at most 1 POV idea in this batch. Use UGC, Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format for the rest.
-- Production blueprint: each idea must include reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes. reference_pattern can be custom/hybrid. psp_bridge belongs to Hook and must connect the emotion/angle to the PSP. The remaining fields must be concrete enough for a creator to edit the video without asking follow-up questions.
+${taskDirectives}
 
-${buildCreativeBriefOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang })}
+${outputSpec}
 
-${CREATIVE_PROMPT_RULES}
-${TOOL_COMPATIBILITY_GUARDRAILS}`;
+${rulesBlock}`;
 
         console.log(
           '[generate-ideas] Batch prompt:',
@@ -1487,6 +1624,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           angle: angleContext,
           ideaDescription,
           language: targetLang,
+          ruleset: creativeRuleset,
         });
         let validation = normalizeAndValidateIdeas(briefOutput.items, {
           duration,
@@ -1543,8 +1681,9 @@ ${retryNotes.join('\n\n')}`, {
               psp: featureContext,
               angle: angleContext,
               ideaDescription,
-              language: targetLang,
-            });
+            language: targetLang,
+            ruleset: creativeRuleset,
+          });
             const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
               duration,
               appName,
@@ -1602,6 +1741,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               angle: angleContext,
               ideaDescription,
               language: targetLang,
+              ruleset: creativeRuleset,
             });
             const fallbackValidation = normalizeAndValidateIdeas(fallbackBriefOutput.items, {
               duration,
@@ -1802,6 +1942,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const config = asRecord(body.config);
     const previousIdeas = asText(body.previousIdeas);
     const appKnowledge = asText(body.appKnowledge);
+    const useCreativeRulesV7 = shouldUseCreativeRulesV7(appName, appKnowledge);
+    const creativeRuleset: 'default' | 'v7' = useCreativeRulesV7 ? 'v7' : 'default';
     const selectedModel = asText(body.selectedModel) || undefined;
     const trendingTopics = asStringList(body.trendingTopics);
     const trendingStructures = asStringList(body.trendingStructures);
@@ -1815,7 +1957,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const quantity = Math.min(toPositiveInt(config.quantity, 3), 5); // Cap at 5 to avoid gateway timeout
     const duration = asText(config.duration) || 'Short social-first runtime';
     const visualType = asText(config.visualType) || 'UGC (Người thật)';
-    const targetLang = detectLang(coreUserValues);
+    const targetLang = useCreativeRulesV7
+      ? detectMarketLang(targetMarketValues, coreUserValues)
+      : detectLang(coreUserValues);
     const marketContext = buildMarketContext(targetMarketValues);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
@@ -1850,7 +1994,19 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       : '';
     const diversityBlock = buildBatchDiversityBlock(quantity, angleContext, angleIndex, totalAngles);
 
-    const painpointPrecisionBlock = `
+    const painpointPrecisionBlock = useCreativeRulesV7
+      ? buildV7ExecutionContract({
+          appName,
+          coreUserValues,
+          primaryPillar,
+          angleContext,
+          featureContext,
+          targetMarketValues,
+          targetLang,
+          visualType,
+          ideaDescription,
+        })
+      : `
 ## PAINPOINT PRECISION CONTRACT
 - Exact core user: ${coreUserValues.join('; ') || 'General viewer'}
 - Exact pain point pillar: ${primaryPillar}
@@ -1870,6 +2026,29 @@ Hard requirements:
 - Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
 - For multiple ideas, every hook_primary must be meaningfully different. Do not reuse "Why do I..." or the same sentence frame across the batch.`;
+
+    const outputSpec = buildCreativeBriefOutputSpec({
+      quantity,
+      duration,
+      appName,
+      language: targetLang,
+      ruleset: creativeRuleset,
+    });
+    const rulesBlock = useCreativeRulesV7
+      ? `${CREATIVE_ADS_GENERATION_RULES_V7}
+
+${buildV7TaskDirectives(quantity)}`
+      : `${CREATIVE_PROMPT_RULES}
+${TOOL_COMPATIBILITY_GUARDRAILS}`;
+    const taskDirectives = useCreativeRulesV7
+      ? buildV7TaskDirectives(quantity)
+      : `Generate ${quantity} production-ready full ideas for the selected filter combination.
+- Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
+- Each idea must stay inside the selected pillar and selected angle focus.
+- Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
+- If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
+- Hook, body, and CTA must follow one continuous problem-solution chain.
+- If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.`;
 
     const frameworkInjection = buildFrameworkInjection({
       appName,
@@ -1924,18 +2103,11 @@ ${diversityBlock || ''}
 ${painpointPrecisionBlock}
 
 ## TASK
-Generate ${quantity} production-ready full ideas for the selected filter combination.
-- Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
-- Each idea must stay inside the selected pillar and selected angle focus.
-- Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
-- If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
-- Hook, body, and CTA must follow one continuous problem-solution chain.
-- If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
+${taskDirectives}
 
-${buildCreativeBriefOutputSpec({ quantity, duration, appName, language: targetLang })}
+${outputSpec}
 
-${CREATIVE_PROMPT_RULES}
-${TOOL_COMPATIBILITY_GUARDRAILS}`;
+${rulesBlock}`;
 
     console.log('[generate-ideas] Prompt length:', prompt.length, 'chars, model:', selectedModel || 'gemini-2.5-pro');
     let text = await askAI(prompt, {
@@ -1991,6 +2163,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       angle: angleContext,
       ideaDescription,
       language: targetLang,
+      ruleset: creativeRuleset,
     });
     let validation = normalizeAndValidateIdeas(briefOutput.items, {
       duration,
@@ -2044,6 +2217,7 @@ ${retryNotes.join('\n\n')}`, {
           angle: angleContext,
           ideaDescription,
           language: targetLang,
+          ruleset: creativeRuleset,
         });
         const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
           duration,
