@@ -501,7 +501,8 @@ export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): st
 Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
 
-Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7:
+Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7.
+All generated copy and descriptions must be Vietnamese. The selected market controls behavior, setting, social context, and vibe only.
 
 [
   {
@@ -510,36 +511,36 @@ Use this existing JSON structure so the tool can render and save results, but fi
     "angles": [
       {
         "angle_index": 0,
-        "angle_name": "specific direct angle name",
+        "angle_name": "Tên angle trực diện bằng tiếng Việt",
         "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
-        "angle_desc": "1 sentence describing the direct attack on the pain point",
+        "angle_desc": "Một câu tiếng Việt mô tả cách angle tấn công trực diện vào painpoint",
         "ideas": [
           {
             "id": "P0-A0-I0",
-            "hook_primary": "CONCEPT NAME / direct localized hook statement. Do not obey old word-count limits.",
-            "hook_alt_1": "Alternative direct statement with a different execution, not a paraphrase",
-            "hook_alt_2": "Alternative direct statement with a different execution, not a paraphrase",
-            "hook_character_speech": "Single localized spoken line only if a visible person clearly speaks. Empty string if nobody speaks on camera.",
-            "hook_voiceover": "Localized Text/Voice line for THE DIRECT HOOK. One assertive statement, not a rhetorical question. Include Vietnamese translation in script_vo or visual_ref_notes when market language is not Vietnamese.",
-            "hook_text_overlay": "Localized on-screen text for THE DIRECT HOOK. One brutal, direct statement. No old 6-16 word constraint.",
-            "reference_pattern": "V7 Direct Hook + Pivot",
-            "interrupt_mechanism": "The exact shocking/curious visual action that interrupts scroll at second 0.1",
-            "first_frame_asset": "Exact first-frame asset/person/action: ethnicity, clothing, location, body posture, expression, prop, or phone screen",
-            "psp_bridge": "THE PIVOT: the concrete transition from pain consequence to feature/app action. Do not use old psp bridge word-count limits.",
-            "proof_object": "The number, chart, app screen, before-state object, or visual proof shown after the pivot",
-            "app_demo_action": "Exact feature action: where the finger taps, what changes on screen, numbers/chart/light/UI state",
-            "overlay_sequence": ["0-3s direct hook overlay", "3-6s pivot overlay", "proof/demo overlay", "CTA overlay"],
-            "edit_notes": "Camera movement, cut rhythm, close-up, zoom, crop, caption style, and production notes",
-            "visual_scene_1": "THE DIRECT HOOK (0-3s): detailed visual movement, camera angle, body state, facial expression, localized environment, and the shocking/curious action. Do not write generic setup.",
-            "visual_scene_2": "THE PIVOT (3-6s): detailed hand motion using the feature, where the finger touches, screen light/UI change, and numbers/charts changing.",
-            "visual_scene_3": "Proof/CTA continuation: simple production-ready visual that confirms the solution and leads to app action.",
-            "script_vo": "Localized Text/Voice lines plus Vietnamese translation in parentheses when the target market language is not Vietnamese.",
-            "cta_text": "Localized CTA text.",
-            "visual_ref_notes": "MARKET & USER ADAPTATION: ethnicity, clothing, architecture, home/work context, and country-specific visual cues.",
-            "talent_profile": "Localized character detail: age, ethnicity, gender, clothing, social context, or No talent.",
-            "dont_do": "1 specific V7 negative constraint not to violate.",
+            "hook_primary": "Tên concept + câu hook trực diện bằng tiếng Việt. Không theo giới hạn word-count cũ.",
+            "hook_alt_1": "Một hướng hook khác bằng tiếng Việt, khác execution, không paraphrase",
+            "hook_alt_2": "Một hướng hook khác bằng tiếng Việt, khác execution, không paraphrase",
+            "hook_character_speech": "Lời thoại tiếng Việt chỉ khi có nhân vật nhìn thấy đang nói. Nếu không có người nói rõ, để chuỗi rỗng.",
+            "hook_voiceover": "Text/Voice tiếng Việt cho THE DIRECT HOOK. Một câu khẳng định gắt, không phải câu hỏi tu từ. Nếu không cần narrator, để chuỗi rỗng.",
+            "hook_text_overlay": "Text on screen tiếng Việt cho THE DIRECT HOOK. Một câu khẳng định trực diện, không theo giới hạn 6-16 từ cũ.",
+            "reference_pattern": "Tên mẫu mô V7, ví dụ: UGC, 3D Scan, News Leak, Magic Feature, Real Disaster, Reaction Interruption",
+            "interrupt_mechanism": "Hành động/hình ảnh cụ thể gây sốc hoặc gây tò mò để chặn scroll ngay giây 0.1",
+            "first_frame_asset": "Tài sản frame đầu: nhân vật, sắc tộc, trang phục, địa điểm, tư thế, biểu cảm, đạo cụ hoặc màn hình điện thoại",
+            "psp_bridge": "THE PIVOT: chuyển tiếp cụ thể từ hậu quả/painpoint sang hành động dùng feature/app. Không theo giới hạn word-count cũ.",
+            "proof_object": "Con số, biểu đồ, màn hình app, vật chứng hoặc bằng chứng visual xuất hiện sau pivot",
+            "app_demo_action": "Thao tác feature chính xác: ngón tay chạm đâu, màn hình đổi gì, số/biểu đồ/ánh sáng/UI thay đổi thế nào",
+            "overlay_sequence": ["0-3s text hook tiếng Việt", "3-6s text pivot tiếng Việt", "proof/demo overlay tiếng Việt", "CTA overlay tiếng Việt"],
+            "edit_notes": "Ghi chú quay/dựng bằng tiếng Việt: góc máy, nhịp cắt, close-up, zoom, crop, caption style, mức độ thô/UGC",
+            "visual_scene_1": "THE DIRECT HOOK (0-3s): mô tả chi tiết chuyển động, góc máy, trạng thái cơ thể, biểu cảm, bối cảnh bản địa và hành động gây sốc/tò mò. Không viết setup chung chung.",
+            "visual_scene_2": "THE PIVOT (3-6s): mô tả chi tiết thao tác tay dùng feature, ngón tay chạm đâu, màn hình sáng/đổi UI thế nào, số/biểu đồ thay đổi ra sao.",
+            "visual_scene_3": "Proof/CTA continuation: visual đơn giản, sản xuất được, xác nhận giải pháp và dẫn tới hành động app.",
+            "script_vo": "Kịch bản voice/text tiếng Việt ngắn. Nếu là idea giao tiếp 2+ nhân vật, viết lời thoại đơn giản, đúng vai; nếu không, dùng voice-over hoặc mô tả đọc được.",
+            "cta_text": "CTA tiếng Việt.",
+            "visual_ref_notes": "MARKET & USER ADAPTATION bằng tiếng Việt: sắc tộc, trang phục, kiến trúc, hành vi, văn hóa, bối cảnh nhà/công việc đặc trưng của market.",
+            "talent_profile": "Chi tiết nhân vật bằng tiếng Việt: tuổi, sắc tộc, giới tính, trang phục, quan hệ xã hội, hoặc No talent nếu không cần người.",
+            "dont_do": "Một điều cấm V7 cụ thể bằng tiếng Việt.",
             "track": "A|B|C",
-            "track_reason": "1 sentence explaining production track.",
+            "track_reason": "Một câu tiếng Việt giải thích vì sao chọn track sản xuất này.",
             "priority": "A|B|C"
           }
         ]
@@ -555,10 +556,12 @@ Use this existing JSON structure so the tool can render and save results, but fi
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
 5. Direct Hook visual_scene_1 must be concrete enough for a videographer or AI video tool to execute exactly.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
-7. Text/Voice must be in the language of the target market. If the market is foreign, do not write the actual spoken/overlay line in Vietnamese; include Vietnamese translation alongside it in script_vo or notes.
-8. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
-9. Use the selected feature/PSP as the Pivot solution.
-10. Hyper-localize ethnicity, clothing, architecture, environment, and social setting to the selected market.`;
+7. TOÀN BỘ OUTPUT PHẢI VIẾT BẰNG TIẾNG VIỆT, bao gồm lời thoại nhân vật, text on screen, voice-over, CTA, visual và ghi chú production.
+8. Cách nói, hành vi, bối cảnh, đồ vật, quan hệ xã hội và vibe phải nghĩ như người bản địa của selected market.
+9. Nếu idea có 2+ nhân vật giao tiếp, lời thoại phải đơn giản, tự nhiên, đúng vai và không biến thành hội thoại dài.
+10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
+11. Use the selected feature/PSP as the Pivot solution.
+12. Hyper-localize ethnicity, clothing, architecture, environment, behavior, culture, and social setting to the selected market.`;
   }
 
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
@@ -1106,6 +1109,7 @@ export function normalizeCreativeBriefOutput(
   const rootItems = Array.isArray(input) ? input : [input];
   const items: Record<string, unknown>[] = [];
   const invalidReasons: string[] = [];
+  const isV7Ruleset = defaults.ruleset === 'v7';
 
   rootItems.map(readRecord).forEach((pillarRecord, pillarFallbackIndex) => {
     if (Object.keys(pillarRecord).length === 0) return;
@@ -1204,7 +1208,7 @@ export function normalizeCreativeBriefOutput(
         if (!hookTextOverlay) {
           hookTextOverlay = hookPrimary;
         }
-        if (!hookVoiceover) {
+        if (!hookVoiceover && !isV7Ruleset) {
           const candidateVoiceover = firstSentenceSnippet(scriptVo);
           if (candidateVoiceover && !isSameLine(candidateVoiceover, hookPrimary) && !isSameLine(candidateVoiceover, hookTextOverlay)) {
             hookVoiceover = candidateVoiceover;
