@@ -316,6 +316,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         signal: controller.signal,
       });
       const result = await res.json();
+      if (result?.fallback) {
+        throw new Error('Backend đang trả fallback hook thay vì output AI sạch. Không lưu kết quả fallback.');
+      }
       if (res.ok && result.success && result.data?.length > 0) {
         const generated = (result.data as HookIdea[]).slice(0, quantity);
         setGeneratedIdeas(generated);
@@ -335,7 +338,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       }
 
       console.error('Generate hooks failed:', err);
-      alert('Có lỗi khi tạo hook. Vui lòng thử lại.');
+      alert(err instanceof Error && err.message ? err.message : 'Có lỗi khi tạo hook. Vui lòng thử lại.');
     } finally {
       window.clearTimeout(timeoutId);
       abortRef.current = null;
@@ -386,7 +389,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const estimateSectionDurationSeconds = (section?: Record<string, unknown>) => {
     const rawDuration = readNumber(section?.durationSeconds ?? section?.duration_seconds ?? section?.hookDurationSeconds ?? section?.hook_duration_seconds);
-    if (rawDuration && rawDuration > 0) return Math.min(8, Math.max(2, Math.round(rawDuration)));
+    if (rawDuration && rawDuration > 0) return Math.min(12, Math.max(6, Math.round(rawDuration)));
 
     const speech = [
       getSectionCharacterSpeech(section),
@@ -396,8 +399,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     const visual = readText(section?.visual, readText(section?.script));
     const timingText = speech || visual;
     const words = timingText.split(/\s+/).filter(Boolean).length;
-    if (words === 0) return 3;
-    return Math.min(8, Math.max(2, Math.ceil(speech ? 1 + words / 2.7 : 2 + words / 5.2)));
+    if (words === 0) return 8;
+    return Math.min(12, Math.max(6, Math.ceil(speech ? 2 + words / 2.8 : 4 + words / 5.2)));
   };
 
   const buildIdeaSectionScript = (
@@ -1506,6 +1509,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               quantity: fullIdeasQty,
               duration: IDEA_RUNTIME_GUIDANCE,
               ideaDirection: ideaDirection || null,
+              appKnowledge: app?.app_knowledge || null,
             appName: app?.name || '',
             appCategory: app?.category || '',
             selectedModel: selectedModel || '',
@@ -1513,6 +1517,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           signal: controller.signal,
         });
         const result = await res.json();
+        if (result?.meta?.warnings?.length) {
+          console.warn('[generate-ideas-from-hook] warnings:', result.meta.warnings);
+        }
+        if ((result?.meta?.fallbackCount || 0) > 0) {
+          throw new Error('Backend đang trả fallback ideas thay vì output AI sạch. Cần siết prompt/context rồi chạy lại.');
+        }
         if (res.ok && result.success && result.data?.length > 0) {
           const generated = (result.data as FullIdea[]).slice(0, fullIdeasQty);
           const saved = await saveFullIdeasToDatabase(generated);
@@ -1523,6 +1533,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
+          if (err.message) {
+            alert(err.message);
+            return;
+          }
           alert('Có lỗi khi tạo ideas. Vui lòng thử lại.');
         }
       } finally {
@@ -2011,7 +2025,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <div className="p-4">
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Modified Hook</span>
-                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">English</span>
+                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Tiếng Việt</span>
                       {idea.savedIdeaId && (
                         <span className="text-[11px] px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-md text-emerald-700">Đã lưu History</span>
                       )}

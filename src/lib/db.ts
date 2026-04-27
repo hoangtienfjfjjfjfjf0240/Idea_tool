@@ -540,6 +540,15 @@ export async function updateIdeaContent(ideaId: string, title: string, content: 
   return true;
 }
 
+export async function deleteIdea(ideaId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('generated_ideas')
+    .delete()
+    .eq('id', ideaId);
+  if (error) { console.error('deleteIdea error:', error); return false; }
+  return true;
+}
+
 // ============================================
 //  FILTER OPTIONS
 // ============================================

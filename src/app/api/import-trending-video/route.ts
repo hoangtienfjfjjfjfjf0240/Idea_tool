@@ -35,6 +35,20 @@ type ImportedTrendAnalysis = {
   };
 };
 
+const IMPORTED_ANALYSIS_FALLBACKS = {
+  title: 'Imported video structure',
+  summary: 'Imported from video URL',
+  creativeType: 'UGC',
+  angleType: 'Curiosity',
+  emotionalDriver: 'Curiosity',
+  hookPattern: 'Open with a strong, in-context visual hook.',
+  bodyPattern: 'Escalate the problem, then reveal the workaround or solution.',
+  ctaPattern: 'Close with a short payoff or CTA.',
+  visualStyle: 'Handheld, social-first visual treatment.',
+  audioStyle: 'Natural in-feed voice or sound design.',
+  textOverlayStyle: 'Short, mobile-first text overlay.',
+} as const;
+
 function createGeminiClient() {
   return new GoogleGenAI({
     apiKey: GEMINI_API_KEY,
@@ -264,7 +278,7 @@ function buildAnalysisPrompt() {
 Nhiệm vụ:
 - Đọc TOÀN BỘ video, gồm cả visual + audio/voice + text overlay.
 - Trích ra cấu trúc có thể tái sử dụng cho tool generate idea.
-- Tập trung vào: hook 0-3s, tiến trình body, payoff/CTA, camera style, audio style, text overlay style, emotion trigger.
+- Tập trung vào: hook mini-scene 0-8/12s, tiến trình body, payoff/CTA, camera style, audio style, text overlay style, emotion trigger.
 - Không mô tả lan man. Output ngắn, thực dụng, dùng được để build lại idea khác.
 
 Return JSON only, không markdown, theo schema:
@@ -274,7 +288,7 @@ Return JSON only, không markdown, theo schema:
   "creativeType": "UGC|POV|Reaction|ASMR|Split Screen|Demo|Social Proof|Interview|Other",
   "angleType": "Curiosity|Problem Reveal|Comparison|POV|Social Proof|Relief|Fear|Demo",
   "emotionalDriver": "Cảm xúc chính người xem bị kéo vào",
-  "hookPattern": "Mô tả mẫu hook 0-3s",
+  "hookPattern": "Mô tả mẫu hook mini-scene 0-8/12s",
   "bodyPattern": "Mô tả nhịp triển khai phần giữa",
   "ctaPattern": "Mô tả CTA/payoff cuối video",
   "visualStyle": "Handheld/close-up/street interview/... cụ thể",
@@ -300,17 +314,17 @@ function normalizeImportedAnalysis(raw: unknown): ImportedTrendAnalysis {
   const hints = (item.filterHints && typeof item.filterHints === 'object' ? item.filterHints : {}) as Record<string, unknown>;
 
   return {
-    title: normalizeText(item.title, 'Imported video structure'),
-    summary: normalizeText(item.summary, 'Imported from video URL'),
-    creativeType: normalizeText(item.creativeType, 'UGC'),
-    angleType: normalizeText(item.angleType, 'Curiosity'),
-    emotionalDriver: normalizeText(item.emotionalDriver, 'Curiosity'),
-    hookPattern: normalizeText(item.hookPattern, 'Open with a strong, in-context visual hook.'),
-    bodyPattern: normalizeText(item.bodyPattern, 'Escalate the problem, then reveal the workaround or solution.'),
-    ctaPattern: normalizeText(item.ctaPattern, 'Close with a short payoff or CTA.'),
-    visualStyle: normalizeText(item.visualStyle, 'Handheld, social-first visual treatment.'),
-    audioStyle: normalizeText(item.audioStyle, 'Natural in-feed voice or sound design.'),
-    textOverlayStyle: normalizeText(item.textOverlayStyle, 'Short, mobile-first text overlay.'),
+    title: normalizeText(item.title, IMPORTED_ANALYSIS_FALLBACKS.title),
+    summary: normalizeText(item.summary, IMPORTED_ANALYSIS_FALLBACKS.summary),
+    creativeType: normalizeText(item.creativeType, IMPORTED_ANALYSIS_FALLBACKS.creativeType),
+    angleType: normalizeText(item.angleType, IMPORTED_ANALYSIS_FALLBACKS.angleType),
+    emotionalDriver: normalizeText(item.emotionalDriver, IMPORTED_ANALYSIS_FALLBACKS.emotionalDriver),
+    hookPattern: normalizeText(item.hookPattern, IMPORTED_ANALYSIS_FALLBACKS.hookPattern),
+    bodyPattern: normalizeText(item.bodyPattern, IMPORTED_ANALYSIS_FALLBACKS.bodyPattern),
+    ctaPattern: normalizeText(item.ctaPattern, IMPORTED_ANALYSIS_FALLBACKS.ctaPattern),
+    visualStyle: normalizeText(item.visualStyle, IMPORTED_ANALYSIS_FALLBACKS.visualStyle),
+    audioStyle: normalizeText(item.audioStyle, IMPORTED_ANALYSIS_FALLBACKS.audioStyle),
+    textOverlayStyle: normalizeText(item.textOverlayStyle, IMPORTED_ANALYSIS_FALLBACKS.textOverlayStyle),
     keyMoments: normalizeList(item.keyMoments, 6),
     filterHints: {
       emotion: normalizeList(hints.emotion, 4),
@@ -318,6 +332,38 @@ function normalizeImportedAnalysis(raw: unknown): ImportedTrendAnalysis {
       visualType: normalizeList(hints.visualType, 4),
     },
   };
+}
+
+function isFallbackValue(value: string, fallback: string) {
+  return normalizeText(value).toLowerCase() === fallback.toLowerCase();
+}
+
+function validateImportedAnalysis(data: ImportedTrendAnalysis) {
+  const hintCount = [
+    ...data.filterHints.emotion,
+    ...data.filterHints.angle,
+    ...data.filterHints.visualType,
+  ].length;
+  let score = 0;
+
+  if (!isFallbackValue(data.title, IMPORTED_ANALYSIS_FALLBACKS.title) && data.title.length >= 6) score += 1;
+  if (!isFallbackValue(data.summary, IMPORTED_ANALYSIS_FALLBACKS.summary) && data.summary.length >= 24) score += 1;
+  if (!isFallbackValue(data.hookPattern, IMPORTED_ANALYSIS_FALLBACKS.hookPattern) && data.hookPattern.length >= 24) score += 2;
+  if (!isFallbackValue(data.bodyPattern, IMPORTED_ANALYSIS_FALLBACKS.bodyPattern) && data.bodyPattern.length >= 24) score += 1;
+  if (!isFallbackValue(data.visualStyle, IMPORTED_ANALYSIS_FALLBACKS.visualStyle) && data.visualStyle.length >= 18) score += 1;
+  if (!isFallbackValue(data.audioStyle, IMPORTED_ANALYSIS_FALLBACKS.audioStyle) && data.audioStyle.length >= 12) score += 1;
+  if (data.keyMoments.length >= 2) score += 2;
+  if (hintCount >= 2) score += 1;
+
+  const hasCorePattern =
+    !isFallbackValue(data.hookPattern, IMPORTED_ANALYSIS_FALLBACKS.hookPattern)
+    && !isFallbackValue(data.visualStyle, IMPORTED_ANALYSIS_FALLBACKS.visualStyle);
+
+  if (!hasCorePattern || score < 5) {
+    throw new Error(
+      'AI chưa đọc được nội dung video đủ tốt để import. Không lưu fallback generic. Hãy thử video public ngắn hơn, direct MP4/WebM, hoặc dán mô tả trend dạng text.'
+    );
+  }
 }
 
 function buildStructureNotes(data: ImportedTrendAnalysis) {
@@ -413,6 +459,7 @@ export async function POST(request: NextRequest) {
         }
 
         parsed = normalizeImportedAnalysis(raw);
+        validateImportedAnalysis(parsed);
         modelUsed = model;
         break;
       } catch (error) {

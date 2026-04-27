@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callAI } from '@/lib/aiClient';
 import {
-  buildIdeaOutputSpec,
+  buildCreativeBriefOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
-  normalizeIdeaOutput,
+  normalizeCreativeBriefOutput,
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
@@ -55,13 +55,14 @@ function summarizeRecentIdeas(recentIdeas: Array<Record<string, unknown>>): stri
   if (!recentIdeas.length) return '(Chưa có recent ideas)';
 
   return recentIdeas.slice(0, 12).map((idea, index) => {
-    const content = (idea.content || {}) as Record<string, any>;
-    const framework = (content.framework || {}) as Record<string, string>;
+    const content = (idea.content || {}) as Record<string, unknown>;
+    const framework = (content.framework || {}) as Record<string, unknown>;
+    const hook = (content.hook || {}) as Record<string, unknown>;
     const filters = (idea.filters_snapshot || {}) as Record<string, unknown>;
     return `${index + 1}. [${resultLabel((idea.result as string | null) || null)}] "${truncate(idea.title, 90)}" (${idea.duration || '-'})
    framework: user="${truncate(framework.coreUser, 70)}" | pain="${truncate(framework.painpoint, 80)}" | emotion="${truncate(framework.emotion, 60)}" | PSP="${truncate(framework.psp, 80)}"
-   selectedFilters: coreUser="${joinList(filters.coreUser, framework.coreUser || '-')}" | pain="${joinList(filters.painPoint, framework.painpoint || '-')}" | emotion="${joinList(filters.emotion, framework.emotion || '-')}" | solution="${joinList(filters.solution, framework.psp || '-')}" | angle="${joinList(filters.angle)}" | market="${joinList(filters.targetMarket)}" | visual="${joinList(filters.visualType, content.creativeType || '-')}"
-   creativeType="${content.creativeType || '-'}" | hook="${truncate(content.hook?.textOverlay || content.hook?.text || content.hook?.voice || '', 100)}"`;
+   selectedFilters: coreUser="${joinList(filters.coreUser, String(framework.coreUser || '-'))}" | pain="${joinList(filters.painPoint, String(framework.painpoint || '-'))}" | emotion="${joinList(filters.emotion, String(framework.emotion || '-'))}" | solution="${joinList(filters.solution, String(framework.psp || '-'))}" | angle="${joinList(filters.angle)}" | market="${joinList(filters.targetMarket)}" | visual="${joinList(filters.visualType, String(content.creativeType || '-'))}"
+   creativeType="${String(content.creativeType || '-')}" | hook="${truncate(hook.textOverlay || hook.text || hook.voice || '', 100)}"`;
   }).join('\n');
 }
 
@@ -70,10 +71,10 @@ function summarizeRecentFilterCombos(recentIdeas: Array<Record<string, unknown>>
 
   const comboMap = new Map<string, { count: number; win: number; failed: number; monitoring: number; label: string }>();
   recentIdeas.forEach(idea => {
-    const content = (idea.content || {}) as Record<string, any>;
-    const framework = (content.framework || {}) as Record<string, string>;
+    const content = (idea.content || {}) as Record<string, unknown>;
+    const framework = (content.framework || {}) as Record<string, unknown>;
     const filters = (idea.filters_snapshot || {}) as Record<string, unknown>;
-    const label = `coreUser="${joinList(filters.coreUser, framework.coreUser || '-')}" | pain="${joinList(filters.painPoint, framework.painpoint || '-')}" | emotion="${joinList(filters.emotion, framework.emotion || '-')}" | solution="${joinList(filters.solution, framework.psp || '-')}" | angle="${joinList(filters.angle)}" | market="${joinList(filters.targetMarket)}" | visual="${joinList(filters.visualType, content.creativeType || '-')}"`;
+    const label = `coreUser="${joinList(filters.coreUser, String(framework.coreUser || '-'))}" | pain="${joinList(filters.painPoint, String(framework.painpoint || '-'))}" | emotion="${joinList(filters.emotion, String(framework.emotion || '-'))}" | solution="${joinList(filters.solution, String(framework.psp || '-'))}" | angle="${joinList(filters.angle)}" | market="${joinList(filters.targetMarket)}" | visual="${joinList(filters.visualType, String(content.creativeType || '-'))}"`;
     if (!comboMap.has(label)) comboMap.set(label, { count: 0, win: 0, failed: 0, monitoring: 0, label });
     const row = comboMap.get(label)!;
     row.count++;
@@ -151,18 +152,19 @@ CÁCH HOẠT ĐỘNG:
 - Bạn trả lời TRỰC TIẾP câu hỏi/yêu cầu của user
 - Khi user yêu cầu tạo ideas, bạn TỰ CHỌN filter phù hợp nhất và tạo ideas
 - Khi tạo ideas, phải nhìn recent ideas để tránh lặp lại cùng scene family, cùng hook opening và cùng blocker nếu user không yêu cầu lặp
+- Khi tạo ideas, Hook phải có psp_bridge: cầu nối từ emotion/angle của viewer sang PSP trước khi sang Body. Body chỉ là demo/proof continuation.
 - Khi user hỏi chiến lược, bạn phân tích dựa trên DỮ LIỆU THỰC TẾ của app
 - Mỗi câu trả lời phải CỤ THỂ, ACTIONABLE, có ví dụ
 - Khi user yêu cầu tạo ideas, phải tuân thủ prompt system, output spec, và rules bên dưới
 
 ĐỊNH DẠNG OUTPUT:
-- Khi tạo ideas: trả về JSON block trong \`\`\`json ... \`\`\`
+- Khi tạo ideas: trả về raw JSON array only, không markdown fence, không preamble
 - Khi tư vấn: trả lời text bình thường, bullet points
 - Khi so sánh: dùng bảng so sánh
 - Luôn viết tiếng Việt tự nhiên
 
 NẾU USER YÊU CẦU TẠO IDEAS, tuân thủ đúng schema sau:
-${buildIdeaOutputSpec({ quantity: 3, duration: '30s', appName: appContext?.name || 'App', language: 'the chosen market language', includeSelectedFilters: true })}
+${buildCreativeBriefOutputSpec({ quantity: 3, duration: '30s', appName: appContext?.name || 'App', language: 'Vietnamese' })}
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
@@ -202,14 +204,16 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
     if (rawJson.startsWith('[') || rawJson.startsWith('{')) {
       try {
         const parsed = JSON.parse(rawJson);
-        const arr = Array.isArray(parsed) ? parsed : [parsed];
-        ideas = arr.map(item =>
-          normalizeIdeaOutput(item, {
-            duration: '30s',
-            appName: appContext?.name || 'App',
-            pillar: appContext?.filters?.painPoint?.[0] || 'General user friction',
-          })
-        );
+        const normalized = normalizeCreativeBriefOutput(parsed, {
+          duration: '30s',
+          appName: appContext?.name || 'App',
+          pillar: appContext?.filters?.painPoint?.[0] || 'General user friction',
+          coreUser: joinList(appContext?.filters?.coreUser, 'General viewer'),
+          emotion: joinList(appContext?.filters?.emotion, 'Create a clear viewer emotion'),
+          psp: joinList(appContext?.filters?.solution, appContext?.name || 'App'),
+          language: 'Vietnamese',
+        });
+        ideas = normalized.items;
       } catch {
         // Not valid JSON
       }

@@ -11,7 +11,7 @@ import { StrategyMap } from '@/components/StrategyMap';
 import { ChatAgent } from '@/components/ChatAgent';
 
 import { isAuthDisabled } from '@/lib/authMode';
-import { supabase } from '@/lib/supabase';
+import { getMissingBrowserSupabaseEnvVars, supabase } from '@/lib/supabase';
 import type { AppProject, FilterState, ScreenType } from '@/types/database';
 import { getApp, getHooks, getFilterOptions, getFeatures, getIdeas } from '@/lib/db';
 import { Loader2 } from 'lucide-react';
@@ -54,15 +54,20 @@ function readSavedNavState(): NavState {
 
 export default function Home() {
   const authDisabled = isAuthDisabled();
+  const missingSupabaseEnvVars = getMissingBrowserSupabaseEnvVars();
+  const hasSupabaseConfig = missingSupabaseEnvVars.length === 0;
   const [initialNavState] = useState<NavState>(() => readSavedNavState());
+  const [hasHydrated, setHasHydrated] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(authDisabled);
   const [userName, setUserName] = useState(authDisabled ? 'Guest' : '');
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialNavState.screen);
   const [selectedApp, setSelectedApp] = useState<AppProject | null>(null);
   const [pendingAppId, setPendingAppId] = useState<string | null>(initialNavState.appId);
-  const [restoringNav, setRestoringNav] = useState(Boolean(initialNavState.appId && initialNavState.screen !== 'f1'));
+  const [restoringNav, setRestoringNav] = useState(
+    Boolean(hasSupabaseConfig && initialNavState.appId && initialNavState.screen !== 'f1')
+  );
   const [prefillFilters, setPrefillFilters] = useState<Partial<FilterState> | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [checkingAuth, setCheckingAuth] = useState(!authDisabled && hasSupabaseConfig);
   const [chatHooks, setChatHooks] = useState<import('@/types/database').Hook[]>([]);
   const [chatFeatures, setChatFeatures] = useState<string[]>([]);
   const [chatRecentIdeas, setChatRecentIdeas] = useState<import('@/types/database').GeneratedIdea[]>([]);
@@ -80,14 +85,14 @@ export default function Home() {
     localStorage.setItem('ideagen_model', model);
   };
 
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
+
   // Check existing session on mount
   useEffect(() => {
-    if (authDisabled) {
-      setIsLoggedIn(true);
-      setUserName('Guest');
-      setCheckingAuth(false);
-      return;
-    }
+    if (!hasHydrated) return;
+    if (!hasSupabaseConfig || authDisabled) return;
 
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -117,12 +122,22 @@ export default function Home() {
     });
 
     return () => subscription.unsubscribe();
-  }, [authDisabled]);
+  }, [authDisabled, hasHydrated, hasSupabaseConfig]);
 
   useEffect(() => {
     let cancelled = false;
 
     const restoreSelectedApp = async () => {
+      if (!hasHydrated) {
+        setRestoringNav(false);
+        return;
+      }
+
+      if (!hasSupabaseConfig) {
+        setRestoringNav(false);
+        return;
+      }
+
       if (currentScreen === 'f1' || !pendingAppId) {
         setRestoringNav(false);
         return;
@@ -151,7 +166,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [currentScreen, pendingAppId, selectedApp?.id]);
+  }, [currentScreen, hasHydrated, hasSupabaseConfig, pendingAppId, selectedApp?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || restoringNav) return;
@@ -177,6 +192,9 @@ export default function Home() {
 
   // Load ChatAgent context when app is selected
   useEffect(() => {
+    if (!hasHydrated) return;
+    if (!hasSupabaseConfig || !selectedApp) return;
+
     if (selectedApp) {
       Promise.all([
         getHooks(selectedApp.id),
@@ -190,7 +208,7 @@ export default function Home() {
         setChatRecentIdeas(ideas.slice(0, 24));
       }).catch(() => {});
     }
-  }, [selectedApp?.id]);
+  }, [hasHydrated, hasSupabaseConfig, selectedApp?.id]);
 
   const handleLogin = (name: string) => {
     setUserName(name);
@@ -225,10 +243,48 @@ export default function Home() {
     setSelectedApp(updatedApp);
   };
 
-  if (checkingAuth || restoringNav) {
+  if (!hasHydrated || checkingAuth || restoringNav) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+      </div>
+    );
+  }
+
+  if (!hasSupabaseConfig) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
+        <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-white/5 backdrop-blur p-8 md:p-10 shadow-2xl">
+          <p className="text-sm uppercase tracking-[0.24em] text-amber-300 mb-3">Local setup required</p>
+          <h1 className="text-3xl md:text-4xl font-semibold mb-4">App dang khong chay vi thieu env cua Supabase</h1>
+          <p className="text-slate-300 leading-7">
+            Dev server van chay, nhung frontend dang dung o buoc ket noi du lieu.
+            Ban can tao file <code className="rounded bg-white/10 px-2 py-1 text-sm">.env.local</code> tu
+            <code className="rounded bg-white/10 px-2 py-1 text-sm ml-2">.env.example</code> va dien cac bien ben duoi.
+          </p>
+
+          <div className="mt-6 rounded-2xl bg-black/30 border border-white/10 p-5">
+            <p className="text-sm text-slate-300 mb-3">Missing vars</p>
+            <div className="space-y-2">
+              {missingSupabaseEnvVars.map((name) => (
+                <div key={name} className="font-mono text-sm rounded-lg bg-amber-400/10 border border-amber-300/20 px-3 py-2 text-amber-200">
+                  {name}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-black/30 border border-white/10 p-5 font-mono text-sm leading-7 text-slate-200 overflow-x-auto">
+            <div>cp .env.example .env.local</div>
+            <div>npm run dev</div>
+          </div>
+
+          <p className="mt-6 text-sm text-slate-400">
+            Bat buoc: <code className="rounded bg-white/10 px-2 py-1">NEXT_PUBLIC_SUPABASE_URL</code>,
+            <code className="rounded bg-white/10 px-2 py-1 ml-2">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>,
+            <code className="rounded bg-white/10 px-2 py-1 ml-2">SUPABASE_SERVICE_ROLE_KEY</code>.
+          </p>
+        </div>
       </div>
     );
   }

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
 import {
+  buildCreativeBriefOutputSpec,
   buildFrameworkInjection,
-  buildIdeaOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
   estimateHookDurationSeconds,
+  normalizeCreativeBriefOutput,
   normalizeIdeaOutput,
   parseJsonLoose,
   TOOL_COMPATIBILITY_GUARDRAILS,
@@ -16,7 +17,7 @@ export const maxDuration = 300;
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS = 90000;
-const GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS = 15000;
+const GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS = 30000;
 const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
 const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|painful\b|awkward\b|annoying\b|sao\b|vẫn\b|đừng\b|không cần\b|thay vì|bao giờ|tệ nhất|mệt|phiền|khổ)/i;
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
@@ -127,10 +128,9 @@ function repairIdeaTrackingFields(
 ): Record<string, unknown> {
   const next = { ...item };
   const meta = { ...asRecord(item.meta) };
-  const id = asText(item.id);
   const globalIdeaIndex = context.batchStartIndex + context.ideaIndex;
 
-  next.id = TRACKING_ID_PATTERN.test(id) ? id : `P0-A0-I${globalIdeaIndex}`;
+  next.id = `P0-A0-I${globalIdeaIndex}`;
   meta.builderVersion = asText(meta.builderVersion) || 'prompt_system_builder_v1';
   meta.pillar = asText(meta.pillar) || context.pillar;
   meta.pillarIndex = Number(meta.pillarIndex ?? 0) || 0;
@@ -253,6 +253,19 @@ function buildIdeaFingerprint(item: Record<string, unknown>) {
     .join('\n');
 }
 
+function ideaHookLine(idea: Record<string, unknown>): string {
+  const meta = asRecord(idea.meta);
+  const hook = asRecord(idea.hook);
+  return asText(meta.hookPrimary) || asText(hook.textOverlay) || asText(hook.voiceover) || asText(hook.voice);
+}
+
+function hasSameHookFrame(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const left = ideaHookLine(a);
+  const right = ideaHookLine(b);
+  if (!left || !right) return false;
+  return normalizeCompareText(left) === normalizeCompareText(right) || jaccardSimilarity(left, right) >= 0.72;
+}
+
 function dedupeIdeas(
   candidates: Record<string, unknown>[],
   existing: Record<string, unknown>[]
@@ -263,7 +276,7 @@ function dedupeIdeas(
     const candidateFingerprint = buildIdeaFingerprint(candidate);
     const isUnique = [...existing, ...unique].every(item => (
       jaccardSimilarity(candidateFingerprint, buildIdeaFingerprint(item)) < 0.82
-    ));
+    )) && ![...existing, ...unique].some(item => hasSameHookFrame(candidate, item));
 
     if (isUnique) unique.push(candidate);
   }
@@ -437,7 +450,22 @@ function resolveModel(selected?: string): string {
 }
 
 function resolveIdeaModels(selected?: string): string[] {
-  return [resolveModel(selected)];
+  const primary = resolveModel(selected);
+  const fallbackModels = primary.startsWith('gemini/')
+    ? [
+        primary,
+        'openai/gpt-5.4',
+        'openai/gpt-5.4-mini',
+        'gemini/gemini-2.5-pro',
+      ]
+    : [
+        primary,
+        'openai/gpt-5.4',
+        'openai/gpt-5.4-mini',
+        'gemini/gemini-2.5-pro',
+      ];
+
+  return Array.from(new Set(fallbackModels));
 }
 
 export async function POST(request: NextRequest) {
@@ -453,23 +481,58 @@ export async function POST(request: NextRequest) {
     const appName = asText(requestBody.appName) || 'App';
     const appCategory = asText(requestBody.appCategory) || 'General';
     const ideaDirection = asText(requestBody.ideaDirection) || undefined;
+    const appKnowledge = asText(requestBody.appKnowledge);
+    const previousIdeas = asText(requestBody.previousIdeas);
     const selectedModel = asText(requestBody.selectedModel) || undefined;
     const requestedQty = Math.min(toPositiveInt(quantity, 3), MAX_IDEAS_PER_REQUEST);
-    const targetLanguage = 'English';
+    const targetLanguage = 'Vietnamese';
     const batchPlans = buildIdeaBatchPlans(requestedQty);
     const aggregatedIdeas: Record<string, unknown>[] = [];
     const warnings: string[] = [];
-    let fallbackCount = 0;
+    const fallbackCount = 0;
+    const knowledgeBlock = appKnowledge
+      ? `\n## APP BRAIN\n${appKnowledge.slice(0, 2200)}${appKnowledge.length > 2200 ? '\n[...truncated]' : ''}\n`
+      : '';
+    const recentIdeasBlock = previousIdeas
+      ? `\n## RECENT IDEA HISTORY\n${previousIdeas.slice(0, 1400)}${previousIdeas.length > 1400 ? '\n[...truncated]' : ''}\n`
+      : '';
 
     for (const plan of batchPlans) {
+      const hookPainpoint = asText(hook.painpoint) || 'General user friction';
+      const hookCoreUser = asText(hook.core_user) || 'General viewer';
+      const hookPsp = asText(hook.hook_concept) || asText(hook.description) || appName;
+      const hookAngle = [asText(hook.title), asText(hook.description), ideaDirection].filter(Boolean).join(' | ');
+      const painpointPrecisionBlock = `
+## PAINPOINT PRECISION CONTRACT
+- Exact core user: ${hookCoreUser}
+- Exact pain point pillar: ${hookPainpoint}
+- Winning hook angle/DNA: ${hookAngle || 'No locked angle'}
+- Exact PSP/app action: ${hookPsp}
+
+Hard requirements:
+- Do not reduce the pain point to a broad symptom. hook_primary and visual_scene_1 must include at least 2 concrete anchors from the winning hook/pain point.
+- The first 3 seconds must show the specific trigger/context that makes this user care now.
+- Hook must include psp_bridge so the winning hook tension connects to the PSP before the Body/demo.
+- visual_scene_2 must show the selected PSP/app action tied to the same problem. No generic app demo.
+- If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
+- If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
+- Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
+- Better Vietnamese health hook style examples: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- If returning multiple ideas, no two hook_primary lines may use the same sentence frame.`;
+
       const frameworkInjection = buildFrameworkInjection({
         appName,
         category: appCategory,
-        coreUsers: [asText(hook.core_user)].filter(Boolean),
+        coreUsers: [hookCoreUser].filter(Boolean),
         primaryEmotion: asText(hook.emotion) || 'Curiosity',
         visualTheme: `${asText(hook.creative_type) || asText(hook.subtitle) || 'UGC'}; use the winning hook as DNA, then expand it into a full brief.`,
-        psp: asText(hook.hook_concept) || asText(hook.description) || appName,
-        pillars: [asText(hook.painpoint) || 'General user friction'].filter(Boolean),
+        psp: hookPsp,
+        pillars: [hookPainpoint].filter(Boolean),
+        performanceData: [
+          appKnowledge ? 'App Brain memory block attached below in supporting context.' : 'No App Brain memory attached.',
+          previousIdeas ? 'Recent idea history block attached below in supporting context.' : 'No recent full-idea history attached.',
+          'Winning hook metadata is attached below and should be treated as the strongest source of strategic DNA.',
+        ],
         anglesPerPillar: 1,
         ideasPerAngle: plan.batchQuantity,
         language: `Vietnamese strategy notes + ${targetLanguage} copy`,
@@ -492,6 +555,11 @@ export async function POST(request: NextRequest) {
 
 ${frameworkInjection}
 
+## SUPPORTING CONTEXT
+${knowledgeBlock || '- No App Brain memory attached.'}
+${recentIdeasBlock || '- No recent idea history attached.'}
+${painpointPrecisionBlock}
+
 ## WINNING HOOK DNA
 - Title: "${hook.title}"
 - Description: ${hook.description || 'N/A'}
@@ -507,10 +575,11 @@ ${priorIdeasBlock}
 Create ${plan.batchQuantity} full ideas inspired by the winning hook for batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}/${batchPlans.length}.
 - Keep the same strategic DNA and problem-solution logic.
 - Change situation, character, setting, and opening mechanism enough that they are not shallow rewrites.
+- Hook must sell through to PSP with psp_bridge; Body is only the demo/proof continuation.
 - Each output must include hook, body, and CTA, but keep runtime flexible and social-first instead of forcing a fixed 15s/30s/60s bucket.
 - If the user provided an idea direction, prioritize it without breaking the winning DNA.
 
-${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLanguage, compact: true })}
+${buildCreativeBriefOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLanguage })}
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
@@ -520,6 +589,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       const responseTokenBudget = Math.max(2600, plan.batchQuantity * 1500);
       let text: string | null = null;
       let parsed: unknown = null;
+      let modelUsed = modelCandidates[0];
 
       for (const [candidateIndex, model] of modelCandidates.entries()) {
         const candidateText = await askAI(prompt, {
@@ -536,6 +606,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         if (candidateParsed !== null) {
           text = candidateText;
           parsed = candidateParsed;
+          modelUsed = model;
           break;
         }
 
@@ -544,88 +615,173 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       if (!text) {
         console.error('[generate-ideas-from-hook] AI returned null for batch', plan);
-        const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
-          quantity: plan.batchQuantity,
-          startIndex: aggregatedIdeas.length,
-          duration,
-          appName,
-          ideaDirection,
-        });
-        aggregatedIdeas.push(...fallbackIdeas);
-        fallbackCount += fallbackIdeas.length;
-        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: AI returned null; backend used schema-safe fallback.`);
+        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: AI returned null; no fallback was saved.`);
         continue;
       }
 
       if (!parsed) {
         console.error('[generate-ideas-from-hook] Failed to parse batch:', text.substring(0, 300));
-        const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
-          quantity: plan.batchQuantity,
-          startIndex: aggregatedIdeas.length,
-          duration,
-          appName,
-          ideaDirection,
-        });
-        aggregatedIdeas.push(...fallbackIdeas);
-        fallbackCount += fallbackIdeas.length;
-        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: parse failed; backend used schema-safe fallback.`);
+        warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: parse failed; no fallback was saved.`);
         continue;
       }
 
-      const arr = Array.isArray(parsed) ? parsed : [parsed];
-      const validation = normalizeAndValidateIdeas(arr, {
+      let briefOutput = normalizeCreativeBriefOutput(parsed, {
         duration,
         appName,
-        pillar: asText(hook.painpoint) || 'General user friction',
+        pillar: hookPainpoint,
+        coreUser: hookCoreUser,
+        emotion: asText(hook.emotion) || 'Create a clear viewer emotion',
+        psp: hookPsp,
+        angle: hookAngle,
+        ideaDescription: ideaDirection,
+        language: targetLanguage,
+      });
+      let validation = normalizeAndValidateIdeas(briefOutput.items, {
+        duration,
+        appName,
+        pillar: hookPainpoint,
         batchStartIndex: plan.batchStartIndex,
       });
+      validation.invalidReasons.unshift(...briefOutput.invalidReasons);
+      let dedupedBatch = dedupeIdeas(validation.valid, aggregatedIdeas).slice(0, plan.batchQuantity);
+
+      if (validation.invalidReasons.length > 0 || dedupedBatch.length < plan.batchQuantity) {
+        const retryNotes = [
+          validation.invalidReasons.length > 0
+            ? `Fix these rule violations:\n- ${validation.invalidReasons.slice(0, 6).join('\n- ')}`
+            : '',
+          dedupedBatch.length < plan.batchQuantity
+            ? `Return ${plan.batchQuantity} valid, unique ideas. Do not reuse the same opening scene or generic fallback hook.`
+            : '',
+        ].filter(Boolean).join('\n\n');
+
+        const retryText = await askAI(`${prompt}
+
+[RETRY - CREATIVE BRIEF RULES FAILED]
+Regenerate the full JSON array. Follow the HTML output spec exactly.
+- hook_primary must be 6-16 words and create a clear pattern interrupt.
+- hook_alt_1 and hook_alt_2 must use different rhetorical approaches.
+- visual_scene_1/2/3 must be concrete and shootable.
+- script_vo must be 60 words or fewer.
+${retryNotes}`, {
+          model: modelUsed,
+          temperature: 0.88,
+          max_tokens: responseTokenBudget,
+          useCreativePersona: false,
+          timeoutMs: GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS,
+        });
+
+        if (retryText) {
+          const retryParsed = parseJson(retryText);
+          const retryBriefOutput = normalizeCreativeBriefOutput(retryParsed, {
+            duration,
+            appName,
+            pillar: hookPainpoint,
+            coreUser: hookCoreUser,
+            emotion: asText(hook.emotion) || 'Create a clear viewer emotion',
+            psp: hookPsp,
+            angle: hookAngle,
+            ideaDescription: ideaDirection,
+            language: targetLanguage,
+          });
+          const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
+            duration,
+            appName,
+            pillar: hookPainpoint,
+            batchStartIndex: plan.batchStartIndex,
+          });
+          retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
+          const retryDedupedBatch = dedupeIdeas(retryValidation.valid, aggregatedIdeas).slice(0, plan.batchQuantity);
+
+          if (
+            retryDedupedBatch.length > dedupedBatch.length
+            || (dedupedBatch.length === 0 && retryDedupedBatch.length > 0)
+            || (retryDedupedBatch.length === dedupedBatch.length && retryValidation.invalidReasons.length < validation.invalidReasons.length)
+          ) {
+            briefOutput = retryBriefOutput;
+            validation = retryValidation;
+            dedupedBatch = retryDedupedBatch;
+          }
+        }
+      }
+
+      if (dedupedBatch.length < plan.batchQuantity) {
+        const alternateModel = modelCandidates.find(model => model !== modelUsed);
+        if (alternateModel) {
+          const alternateText = await askAI(`${prompt}
+
+[ALTERNATE MODEL RETRY - NEED CLEAN FULL BATCH]
+Return ${plan.batchQuantity} valid, unique ideas in the exact JSON schema.
+- Vietnamese user-facing copy.
+- No generic template or fallback.
+- No shallow paraphrase of existing ideas.
+- Hook, visual_scene_1, body, and CTA must stay tied to the winning hook context and selected pain point.`, {
+            model: alternateModel,
+            temperature: 0.86,
+            max_tokens: responseTokenBudget,
+            useCreativePersona: false,
+            timeoutMs: GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS,
+          });
+
+          if (alternateText) {
+            const alternateParsed = parseJson(alternateText);
+            const alternateBriefOutput = normalizeCreativeBriefOutput(alternateParsed, {
+              duration,
+              appName,
+              pillar: hookPainpoint,
+              coreUser: hookCoreUser,
+              emotion: asText(hook.emotion) || 'Create a clear viewer emotion',
+              psp: hookPsp,
+              angle: hookAngle,
+              ideaDescription: ideaDirection,
+              language: targetLanguage,
+            });
+            const alternateValidation = normalizeAndValidateIdeas(alternateBriefOutput.items, {
+              duration,
+              appName,
+              pillar: hookPainpoint,
+              batchStartIndex: plan.batchStartIndex,
+            });
+            alternateValidation.invalidReasons.unshift(...alternateBriefOutput.invalidReasons);
+            const alternateDedupedBatch = dedupeIdeas(alternateValidation.valid, aggregatedIdeas).slice(0, plan.batchQuantity);
+
+            if (
+              alternateDedupedBatch.length > dedupedBatch.length
+              || (alternateDedupedBatch.length === dedupedBatch.length && alternateValidation.invalidReasons.length < validation.invalidReasons.length)
+            ) {
+              briefOutput = alternateBriefOutput;
+              validation = alternateValidation;
+              dedupedBatch = alternateDedupedBatch;
+            }
+          }
+        }
+      }
 
       if (validation.invalidReasons.length > 0) {
         warnings.push(...validation.invalidReasons);
       }
 
-      const dedupedBatch = dedupeIdeas(validation.valid, aggregatedIdeas).slice(0, plan.batchQuantity);
+      dedupedBatch = dedupedBatch.map((idea, localIndex) => repairIdeaTrackingFields(
+        idea,
+        {
+          batchStartIndex: plan.batchStartIndex,
+          ideaIndex: localIndex,
+          pillar: hookPainpoint,
+        }
+      ));
       aggregatedIdeas.push(...dedupedBatch);
 
       if (dedupedBatch.length < plan.batchQuantity) {
         warnings.push(`Batch ${Math.floor(plan.batchStartIndex / MAX_IDEAS_PER_AI_BATCH) + 1}: only ${dedupedBatch.length}/${plan.batchQuantity} valid unique ideas.`);
-        const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
-          quantity: plan.batchQuantity - dedupedBatch.length,
-          startIndex: aggregatedIdeas.length,
-          duration,
-          appName,
-          ideaDirection,
-        });
-        aggregatedIdeas.push(...fallbackIdeas);
-        fallbackCount += fallbackIdeas.length;
       }
     }
 
     if (aggregatedIdeas.length < requestedQty) {
-      const missingCount = requestedQty - aggregatedIdeas.length;
-      const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
-        quantity: missingCount,
-        startIndex: aggregatedIdeas.length,
-        duration,
-        appName,
-        ideaDirection,
-      });
-      aggregatedIdeas.push(...fallbackIdeas);
-      fallbackCount += fallbackIdeas.length;
-      warnings.push(`Backend final top-up added ${missingCount} schema-safe ideas.`);
-    }
-
-    if (aggregatedIdeas.length === 0) {
-      const fallbackIdeas = normalizeFallbackIdeasFromHook(hook, {
-        quantity: requestedQty,
-        startIndex: 0,
-        duration,
-        appName,
-        ideaDirection,
-      });
-      aggregatedIdeas.push(...fallbackIdeas);
-      fallbackCount += fallbackIdeas.length;
-      warnings.push('AI returned no usable ideas; backend generated schema-safe fallback ideas.');
+      return NextResponse.json({
+        success: false,
+        error: `Chỉ tạo được ${aggregatedIdeas.length}/${requestedQty} full idea hợp lệ. Không lưu kết quả partial/fallback.`,
+        meta: { warnings, fallbackCount },
+      }, { status: 502 });
     }
 
     return NextResponse.json({
@@ -636,26 +792,13 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
   } catch (err) {
     console.error('[generate-ideas-from-hook] Exception:', err);
     const message = err instanceof Error ? err.message : 'Unknown error';
-    const fallbackHook = asRecord(requestBody.hook);
-    const fallbackQuantity = Math.min(toPositiveInt(requestBody.quantity, 3), MAX_IDEAS_PER_REQUEST);
-    const fallbackDuration = asText(requestBody.duration) || 'Short social-first runtime';
-    const fallbackAppName = asText(requestBody.appName) || 'App';
-    const fallbackIdeaDirection = asText(requestBody.ideaDirection) || undefined;
-    const fallbackIdeas = normalizeFallbackIdeasFromHook(fallbackHook, {
-      quantity: fallbackQuantity,
-      startIndex: 0,
-      duration: fallbackDuration,
-      appName: fallbackAppName,
-      ideaDirection: fallbackIdeaDirection,
-    });
-
     return NextResponse.json({
-      success: true,
-      data: fallbackIdeas,
+      success: false,
+      error: `Generate ideas from hook failed: ${message}. Không lưu fallback ideas.`,
       meta: {
-        warnings: [`Generate ideas from hook exception: ${message}. Backend returned schema-safe fallback ideas.`],
-        fallbackCount: fallbackIdeas.length,
+        warnings: [`Generate ideas from hook exception: ${message}.`],
+        fallbackCount: 0,
       },
-    });
+    }, { status: 500 });
   }
 }

@@ -65,6 +65,14 @@ export interface IdeaMeta {
   track?: string;
   trackReason?: string;
   priority?: string;
+  referencePattern?: string;
+  interruptMechanism?: string;
+  firstFrameAsset?: string;
+  pspBridge?: string;
+  proofObject?: string;
+  appDemoAction?: string;
+  editNotes?: string;
+  overlaySequence?: string[];
   sourceHookId?: string;
   sourceHookTitle?: string;
   sessionType?: string;

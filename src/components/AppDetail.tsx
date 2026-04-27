@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Lightbulb, Film, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles, PenTool } from 'lucide-react';
-import type { AppProject, Feature, FilterState, SyncLog, ScreenType } from '@/types/database';
+import { ArrowLeft, Pencil, Plus, X, Loader2, RefreshCw, CheckCircle, AlertCircle, BarChart3, Brain, Settings, Sparkles, PenTool } from 'lucide-react';
+import type { AppProject, Feature, FilterState, SyncLog } from '@/types/database';
 import { getFeatures, addFeature, updateFeature, updateApp, getSyncLogs, getIdeaSessions, type IdeaSession } from '@/lib/db';
 import { StrategyMap } from '@/components/StrategyMap';
 import { getProxiedIconUrl } from '@/lib/iconProxy';

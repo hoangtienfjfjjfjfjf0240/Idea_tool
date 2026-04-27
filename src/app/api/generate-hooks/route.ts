@@ -10,9 +10,9 @@ import { guardApiRequest } from '@/lib/apiGuards';
 export const maxDuration = 60;
 
 const MAX_HOOK_VARIATIONS = 20;
-const HOOK_MODEL_TIMEOUT_MS = 30000;
+const HOOK_MODEL_TIMEOUT_MS = 45000;
 const HOOK_FALLBACK_TIMEOUT_MS = 20000;
-const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
+const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash', 'openai/gpt-5.4-mini'];
 
 function toPositiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
@@ -342,9 +342,7 @@ function resolveHookModels(selected?: string): string[] {
   };
   const resolved = map[selected || ''];
 
-  // Modify Hook is hook-only and interactive. Gemini Pro is too slow here, so
-  // Gemini selections use Flash while OpenAI selections are respected.
-  const primary = resolved?.startsWith('openai/') ? resolved : FAST_HOOK_MODELS[0];
+  const primary = resolved || FAST_HOOK_MODELS[0];
   return Array.from(new Set([primary, ...FAST_HOOK_MODELS]));
 }
 
@@ -355,7 +353,7 @@ export async function POST(request: NextRequest) {
 
     const { hook, instruction, quantity = 3, appName, appCategory, selectedModel } = await request.json();
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
-    const targetLanguage = 'English';
+    const targetLanguage = 'Vietnamese';
 
     const prompt = `You are a senior performance creative strategist for mobile app ads.
 Create hook-only variations for a winning hook. This is not a full idea and must stay fast.
@@ -386,11 +384,11 @@ Create exactly ${requestedQuantity} hook-only variations.
 
 ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })}`;
 
-    let text: string | null = null;
-    let modelUsed = '';
     const candidateModels = resolveHookModels(selectedModel);
+    let lastError = 'AI hook generation timed out or gateway returned an error.';
+
     for (const [index, model] of candidateModels.entries()) {
-      text = await askAI(prompt, {
+      const text = await askAI(prompt, {
         model,
         temperature: 0.75,
         max_tokens: Math.max(2400, requestedQuantity * 900),
@@ -398,62 +396,53 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
         priority: 'high',
         timeoutMs: index === 0 ? HOOK_MODEL_TIMEOUT_MS : HOOK_FALLBACK_TIMEOUT_MS,
       });
-      if (text) {
-        modelUsed = model;
-        break;
+
+      if (!text) {
+        lastError = `Model ${model} không trả về text.`;
+        continue;
       }
+
+      const parsed = parseJson(text);
+      if (!parsed) {
+        lastError = `Model ${model} trả về text nhưng không parse được JSON.`;
+        continue;
+      }
+
+      const arr = Array.isArray(parsed) ? parsed : [parsed];
+      const validItems = dedupeHookVariations(arr.map((item: unknown, i: number) => {
+        const normalized = normalizeHookOutput(item);
+        const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
+        return {
+          id: `hook-${Date.now()}-${i}`,
+          title: normalized.title || `Bien the ${i + 1}`,
+          explanation: normalized.explanation || '',
+          meta: normalized.meta || {},
+          hook: {
+            script: normalizedHook.script || '',
+            textOverlay: normalizedHook.textOverlay || '',
+            visual: normalizedHook.visual || normalizedHook.script || '',
+            text: normalizedHook.text || normalizedHook.textOverlay || '',
+            voice: normalizedHook.voice || '',
+            viTranslation: normalizedHook.viTranslation || '',
+            viewerEmotion: normalizedHook.viewerEmotion || '',
+            painpointImpact: normalizedHook.painpointImpact || '',
+            whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',
+          },
+        };
+      }).filter(item => isUsableHookVariation(item, readText(instruction), hook)));
+
+      const data = validItems.slice(0, requestedQuantity);
+      if (data.length >= requestedQuantity) {
+        return NextResponse.json({ success: true, data, modelUsed: model });
+      }
+
+      lastError = `Model ${model} chỉ tạo được ${data.length}/${requestedQuantity} hook hợp lệ.`;
     }
 
-    if (!text) {
-      console.warn('[generate-hooks] AI unavailable; returning structured fallback hooks.');
-      return NextResponse.json({
-        success: true,
-        data: buildBetterFallbackHookVariations(hook, instruction, requestedQuantity),
-        fallback: true,
-        error: 'AI hook generation timed out or gateway returned an error.',
-      });
-    }
-
-    const parsed = parseJson(text);
-    if (!parsed) {
-      console.warn('[generate-hooks] Failed to parse AI output; returning structured fallback hooks.');
-      return NextResponse.json({
-        success: true,
-        data: buildBetterFallbackHookVariations(hook, instruction, requestedQuantity),
-        fallback: true,
-        error: 'Failed to parse AI hook response.',
-      });
-    }
-
-    const arr = Array.isArray(parsed) ? parsed : [parsed];
-    const validItems = dedupeHookVariations(arr.map((item: unknown, i: number) => {
-      const normalized = normalizeHookOutput(item);
-      const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
-      return {
-        id: `hook-${Date.now()}-${i}`,
-        title: normalized.title || `Bien the ${i + 1}`,
-        explanation: normalized.explanation || '',
-        meta: normalized.meta || {},
-        hook: {
-          script: normalizedHook.script || '',
-          textOverlay: normalizedHook.textOverlay || '',
-          visual: normalizedHook.visual || normalizedHook.script || '',
-          text: normalizedHook.text || normalizedHook.textOverlay || '',
-          voice: normalizedHook.voice || '',
-          viTranslation: normalizedHook.viTranslation || '',
-          viewerEmotion: normalizedHook.viewerEmotion || '',
-          painpointImpact: normalizedHook.painpointImpact || '',
-          whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',
-        },
-      };
-    }).filter(item => isUsableHookVariation(item, readText(instruction), hook)));
-
-    const data = validItems.slice(0, requestedQuantity);
-    if (data.length < requestedQuantity) {
-      data.push(...buildBetterFallbackHookVariations(hook, instruction, requestedQuantity - data.length, data.length));
-    }
-
-    return NextResponse.json({ success: true, data, modelUsed });
+    return NextResponse.json({
+      success: false,
+      error: `${lastError} Không lưu kết quả partial/fallback.`,
+    }, { status: 502 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }

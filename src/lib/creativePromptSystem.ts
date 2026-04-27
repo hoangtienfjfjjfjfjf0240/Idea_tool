@@ -58,6 +58,27 @@ function readText(value: unknown, fallback = ''): string {
   return text || fallback;
 }
 
+function readSpeechText(value: unknown, fallback = ''): string {
+  const text = readText(value, fallback);
+  if (!text) return '';
+  const normalized = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s/-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (
+    !normalized
+    || /^(?:n\/a|na|none|null|empty|blank|no speech|no narrator|no voice|no talent|khong co|-)$/.test(normalized)
+  ) {
+    return '';
+  }
+
+  return text;
+}
+
 function readNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
@@ -65,6 +86,10 @@ function readNumber(value: unknown): number | null {
   if (!match) return null;
   const parsed = Number(match[0].replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 export function estimateHookDurationSeconds(input: {
@@ -90,9 +115,9 @@ export function estimateHookDurationSeconds(input: {
     .map(word => word.trim())
     .filter(Boolean).length;
 
-  if (words === 0) return 3;
-  const baseSeconds = spokenText ? 1 + words / 2.7 : 2 + words / 5.2;
-  return Math.min(8, Math.max(2, Math.ceil(baseSeconds)));
+  if (words === 0) return 8;
+  const baseSeconds = spokenText ? 2 + words / 2.8 : 4 + words / 5.2;
+  return Math.min(12, Math.max(6, Math.ceil(baseSeconds)));
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -101,11 +126,19 @@ function readRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function readTextArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(item => readText(item)).filter(Boolean);
+  }
+  const text = readText(value);
+  return text ? [text] : [];
+}
+
 function buildScript(section: Record<string, unknown>): string {
   const visual = readText(section.visual) || readText(section.script);
-  const characterSpeech = readText(section.characterSpeech) || readText(section.character_speech) || readText(section.talentSpeech) || readText(section.talent_speech);
-  const voiceover = readText(section.voiceover) || readText(section.voiceOver) || readText(section.voice_over);
-  const voice = readText(section.voice);
+  const characterSpeech = readSpeechText(section.characterSpeech) || readSpeechText(section.character_speech) || readSpeechText(section.talentSpeech) || readSpeechText(section.talent_speech);
+  const voiceover = readSpeechText(section.voiceover) || readSpeechText(section.voiceOver) || readSpeechText(section.voice_over);
+  const voice = readSpeechText(section.voice);
   const textOverlay = readText(section.textOverlay) || readText(section.text_overlay) || readText(section.text);
   return [
     visual,
@@ -136,6 +169,14 @@ function normalizeMeta(metaInput: unknown, defaults?: { pillar?: string }): Reco
     track: readText(meta.track, 'B'),
     trackReason: readText(meta.trackReason, readText(meta.track_reason)),
     priority: readText(meta.priority, 'A'),
+    referencePattern: readText(meta.referencePattern, readText(meta.reference_pattern)),
+    interruptMechanism: readText(meta.interruptMechanism, readText(meta.interrupt_mechanism)),
+    firstFrameAsset: readText(meta.firstFrameAsset, readText(meta.first_frame_asset)),
+    pspBridge: readText(meta.pspBridge, readText(meta.psp_bridge)),
+    proofObject: readText(meta.proofObject, readText(meta.proof_object)),
+    appDemoAction: readText(meta.appDemoAction, readText(meta.app_demo_action)),
+    editNotes: readText(meta.editNotes, readText(meta.edit_notes)),
+    overlaySequence: readTextArray(meta.overlaySequence ?? meta.overlay_sequence),
   };
 }
 
@@ -144,9 +185,9 @@ function normalizeSection(
   options: SectionNormalizationOptions = {}
 ): Record<string, unknown> {
   const section = readRecord(input);
-  const characterSpeech = readText(section.characterSpeech, readText(section.character_speech, readText(section.talentSpeech, readText(section.talent_speech))));
-  const voiceover = readText(section.voiceover, readText(section.voiceOver, readText(section.voice_over)));
-  const legacyVoice = readText(section.voice);
+  const characterSpeech = readSpeechText(section.characterSpeech) || readSpeechText(section.character_speech) || readSpeechText(section.talentSpeech) || readSpeechText(section.talent_speech);
+  const voiceover = readSpeechText(section.voiceover) || readSpeechText(section.voiceOver) || readSpeechText(section.voice_over);
+  const legacyVoice = readSpeechText(section.voice);
   const normalized: Record<string, unknown> = {
     visual: readText(section.visual, readText(section.script)),
     characterSpeech,
@@ -219,13 +260,13 @@ Before outputting each idea, internally ask:
 If any answer is no, rewrite before outputting.`;
 
 export const CREATIVE_PROMPT_RULES = `## RULES
-R01. meta.hookPrimary should be a natural, descriptive stop-scroll line around 8-18 words. It may be up to 22 words when needed to make the pain point specific.
+R01. hook_primary / meta.hookPrimary must be a natural stop-scroll line of 6-16 words. Count carefully.
 R02. Hook must create pattern interrupt, not just describe the product.
 R03. Every idea must include 3 hook variations: primary + alt 1 + alt 2.
 R04. Each angle must have a distinct angle type inside the same pillar.
 R05. Angle means a genuinely different opening approach, not a paraphrase.
 R06. Every visual scene must be executable without follow-up questions.
-R07. hook.characterSpeech or hook.voiceover may be 1-2 natural spoken sentences when that is needed to make the first 3-5 seconds feel real, specific, and native.
+R07. script_vo must be speakable within roughly 25 seconds and must stay at 60 words or fewer.
 R08. dontDo must be specific enough for QC to check.
 R09. Do not make medical claims or prohibited health promises.
 R10. Do not use before/after health outcome framing.
@@ -233,9 +274,12 @@ R11. Return JSON only, no markdown fences or extra prose.
 R12. id must follow tracking format P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 R13. Metadata must stay consistent and usable for tracking performance later.
 R14. A selected angle is a narrow manifestation of the selected pain point, not a replacement for it.
-R15. If an angle is provided, the hook must externalize that exact angle in the first action, first spoken line, or first contrast.
-R16. hook.voice and hook.textOverlay must express the same hook DNA as meta.hookPrimary, not a softer generic rewrite.
-R17. hook.visual must stay concrete and dense: include camera/framing, exact blocker or pain object, location, and the first visible sign of the selected pain point or angle.`;
+R15. If an angle is provided, hook_primary and visual_scene_1 must externalize that exact angle in the first action, first spoken line, or first contrast.
+R16. hook_alt_1 and hook_alt_2 must use different rhetorical approaches from hook_primary, not softer paraphrases.
+R17. visual_scene_1 must stay concrete and dense: include camera/framing, exact blocker or pain object, location, and the first visible sign of the selected pain point or angle.
+R18. hook_primary is a strategic headline, not automatically the spoken line. hook_voiceover must not repeat hook_primary word-for-word.
+R19. Only use hook_character_speech when the speaker is visible and identified in visual_scene_1; otherwise leave it empty.
+R20. Hook must include the bridge to PSP: after the pain moment, the viewer should understand why the app/action is the next natural step. Body can be a demo suggestion, but Hook must carry the sell-through logic.`;
 
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
@@ -243,14 +287,18 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in the hook.
-- meta.hookPrimary, meta.hookAlt1, meta.hookAlt2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
+- hook_primary, hook_alt_1, hook_alt_2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
 - On-camera speech must be characterSpeech; off-camera narrator/video voice must be voiceover. Do not merge both into one [VOICE] script.
+- Do not fill a speech field with "-", "N/A", or an empty label. If nobody speaks, leave the field empty.
+- Do not duplicate the same hook sentence across title, voiceover, and textOverlay. The overlay can be the headline, but the spoken line needs extra context or should be omitted.
+- Hook is not just an opener. It must contain a clear bridge from viewer emotion/angle to the PSP, so the app action feels earned before the Body section.
+- Hook should be an 8-12 second mini-scene with 3 beats: pain trigger, emotional escalation, PSP bridge. Do not compress it into a one-line question.
 - Voice/speech must sound like a real person talking in-feed, not a polished ad.
 - Keep the output social-first, UGC-friendly, handheld, relatable.
-- hook.visual should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
-- hook.characterSpeech, hook.voiceover, and hook.textOverlay should avoid keyword-fragment hooks like "Head rush standing up?" when a more natural sentence would land harder.
-- Separate visual, characterSpeech, voiceover, and textOverlay clearly for hook, body, and CTA.
-- Include Vietnamese translation fields so the VN team can review fast.
+- visual_scene_1 should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
+- hook_primary should avoid keyword-fragment hooks like "Head rush standing up?" when a more natural sentence would land harder.
+- Do not add fields outside the current output specification.
+- For legacy/refine schemas only, keep visual, characterSpeech, voiceover, and textOverlay separated.
 - When a batch requests multiple ideas, diversify creative type, opening action, blocker, reveal, and voice opening.
 - Keep hooks, body, and CTA tied to the same problem-solution chain.`;
 
@@ -334,13 +382,13 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point"
   },
   "body": {
-    "visual": "Detailed body visual in Vietnamese, 1-2 concise sentences",
+    "visual": "Detailed body visual in Vietnamese, 2-3 dense sentences covering the transition from blocker to demo, the exact product action, and the visible proof beat",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "textOverlay": "Short body text in ${options.language}"
+    "textOverlay": "Short body text in ${options.language} that reinforces the same pain-to-solution chain"
   },
   "cta": {
-    "visual": "Detailed CTA visual in Vietnamese, 1 concise sentence",
+    "visual": "Detailed CTA visual in Vietnamese, 1-2 concrete sentences covering the final proof frame, the app/result screen, and the exact CTA beat",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "textOverlay": "Short CTA text in ${options.language}",
@@ -380,18 +428,18 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     ? `- Fill every field listed above.
 - Do not add server-derived legacy fields such as hook.voice, hook.text, viTranslation, viewerProfile, viewerEmotion, painpointImpact, whyTheyStopScrolling, or analogous body/cta legacy fields.
 - Keep explanation to 1 short sentence.
-- Keep hook.visual dense and specific: usually 2-3 sentences. Body/CTA visual can stay shorter.
-- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
+- Keep hook.visual dense and specific: usually 2-3 sentences. Body should normally be 2-3 dense sentences, and CTA should still be concrete enough for production without follow-up questions.
+- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 8-12 seconds.
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
-- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it speakable within 3-5 seconds, usually 8-20 words.`
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. It should carry a full 8-12s hook arc, usually 18-42 words.`
     : `- Fill every field. Use "N/A" only when genuinely not applicable.
-- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 3-5 seconds and never above 8 seconds.
+- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 8-12 seconds.
 - hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
 - hook.visual must make the selected pain point and selected angle visible through the first object, first action, or first contrast. Avoid generic one-line visuals.
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
 - Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
 - hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
-- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it speakable within 3-5 seconds, usually 8-20 words.`;
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. It should carry a full 8-12s hook arc, usually 18-42 words.`;
 
   return `## OUTPUT SPECIFICATION
 
@@ -410,9 +458,10 @@ Return ${quantityLabel} objects in this exact schema:
     "angleName": "3-5 word angle name",
     "angleType": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
     "angleDesc": "1 sentence describing the unique approach",
-    "hookPrimary": "Main hook text, natural and descriptive, usually 8-18 words",
+    "hookPrimary": "Main hook text, natural stop-scroll line, 6-16 words",
     "hookAlt1": "Alternative hook variation A using a different rhetorical approach",
     "hookAlt2": "Alternative hook variation B using a different rhetorical approach",
+    "pspBridge": "One concrete transition from the hook pain/emotion to the PSP/app action, 10-36 words",
     "visualRefNotes": "Specific production note",
     "talentProfile": "Age, look, clothing, or No talent",
     "dontDo": "1 specific thing not to do",
@@ -432,13 +481,822 @@ ${hookBodyCtaBlock}
 
 ## OUTPUT RULES
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
-- meta.hookPrimary should be natural and descriptive, usually 8-18 words, max 22 words if needed for specificity.
+- meta.hookPrimary must be natural, descriptive, and 6-16 words.
 - meta.hookAlt1 and meta.hookAlt2 must not be paraphrases of meta.hookPrimary.
+- meta.pspBridge is required. It must connect the hook emotion/angle to framework.psp before Body starts, 10-36 words.
 ${compactOutputRules}
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
 - Respect the selected language for voice and textOverlay, while strategy fields stay in Vietnamese.
 - Keep the response machine-parseable.`;
+}
+
+export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): string {
+  const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+
+  return `## OUTPUT SPECIFICATION - CREATIVE BRIEF TREE
+
+Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
+Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
+
+The array must follow this exact structure:
+
+[
+  {
+    "pillar_index": 0,
+    "pillar": "exact selected pain point text from input",
+    "angles": [
+      {
+        "angle_index": 0,
+        "angle_name": "3-5 word name for this angle",
+        "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
+        "angle_desc": "1 sentence describing the unique approach of this angle",
+        "ideas": [
+          {
+            "id": "P0-A0-I0",
+            "hook_primary": "Main hook text, 6-16 words, creates pattern interrupt",
+            "hook_alt_1": "Alternative hook variation A, different rhetorical approach",
+            "hook_alt_2": "Alternative hook variation B, different rhetorical approach",
+            "hook_character_speech": "Exact 0-8s line spoken by a visible on-camera person, 12-32 words if used. Empty string if the speaker is not clearly visible/identified in visual_scene_1.",
+            "hook_voiceover": "Off-camera narrator/video voice for the 0-8s hook arc, 18-42 words, natural and specific. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
+            "hook_text_overlay": "On-screen hook text, 6-14 words, punchy and readable. This can match hook_primary, but not hook_voiceover.",
+            "reference_pattern": "Named video structure cue. Can be a proven cue, hybrid, or custom pattern, e.g. Siri Bridge, Shock Object, Phone Demo Proof, Transformation Demo, Comment Reply, Split-Screen Choice, Problem-Solution Handheld, or a new pattern name",
+            "interrupt_mechanism": "Why the first frame stops scroll: visual oddity, sharp question, contradiction, proof object, social tension, or transformation gap",
+            "first_frame_asset": "Exact first-frame asset/object/person/action visible before any explanation",
+            "psp_bridge": "One concrete transition from the hook pain/emotion to the PSP/app action, 10-36 words. It explains why the viewer now needs this product, before the Body demo starts.",
+            "proof_object": "The concrete object or screen that proves the promise later in the video",
+            "app_demo_action": "Exact app action shown on screen: tap, scan, upload, measure, compare, render, clean, save, etc.",
+            "overlay_sequence": ["0-2s overlay", "2-5s overlay", "5-10s PSP bridge overlay", "Body proof overlay", "CTA overlay"],
+            "edit_notes": "Concrete editing notes: cut rhythm, zoom, caption style, SFX, transition, or b-roll reference",
+            "visual_scene_1": "Second 0-8/12: exact hook mini-scene with 3 beats: pain trigger, emotional escalation, PSP bridge. Who, where, doing what, what pain object is visible.",
+            "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point.",
+            "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual.",
+            "script_vo": "Full speakable voiceover script, max 60 words.",
+            "cta_text": "Exact CTA, max 6 words.",
+            "visual_ref_notes": "Specific visual reference for production team.",
+            "talent_profile": "Age, gender, look, clothing if talent needed. Use No talent if pure demo.",
+            "dont_do": "1 specific thing NOT to do in this video.",
+            "track": "A|B|C",
+            "track_reason": "1 sentence explaining why this track.",
+            "priority": "A|B|C"
+          }
+        ]
+      }
+    ]
+  }
+]
+
+## OUTPUT RULES
+1. Output JSON array only.
+2. Every field above is required. Use "N/A" only if truly not applicable.
+3. hook_primary must be 6-16 words.
+4. hook_alt_1 and hook_alt_2 must not be paraphrases of hook_primary.
+5. hook_character_speech must be empty unless visual_scene_1 clearly identifies the visible speaker. Never output "-" or "N/A" for speech.
+6. hook_voiceover must add context, tension, or lived texture across an 8-12s hook arc. It must not be the same sentence as hook_primary or hook_text_overlay.
+7. visual_scene_1, visual_scene_2, and visual_scene_3 must be specific enough that a video creator can shoot without asking questions.
+8. psp_bridge is required and must connect the viewer's emotion/angle to the PSP before the Body starts.
+9. reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes are required production blueprint fields. reference_pattern is a flexible named structure cue, not a closed whitelist. The other blueprint fields must not be generic.
+10. script_vo must be speakable in roughly 25 seconds, max 60 words.
+11. id must follow P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
+12. angle_type must be one of the allowed values and should be different from other angles in the same pillar.
+13. track: A = no real person needed, B = real person / UGC, C = motion / animation.
+14. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
+15. title, hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, psp_bridge, visual_scene_1/2/3, script_vo, cta_text, and all user-facing copy must be in ${options.language}. If ${options.language} is Vietnamese, do not write English copy.
+16. Do not make prohibited claims or before/after health outcome framing.
+17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
+18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
+19. hook_primary should sound like a human confession, tension line, or pattern interrupt in-feed. Avoid search-query hooks like "Could X explain Y?" unless the user explicitly asks for educational SEO style.
+20. The hook must not feel short. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should together form a complete 8-12 second opening, not a one-line setup.`;
+}
+
+function readFirstText(record: Record<string, unknown>, keys: string[], fallback = ''): string {
+  for (const key of keys) {
+    const text = readText(record[key]);
+    if (text) return text;
+  }
+  return fallback;
+}
+
+function readArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value
+        .map(readRecord)
+        .filter(item => Object.keys(item).length > 0)
+    : [];
+}
+
+function normalizeCompareText(text: string): string {
+  return text
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[đĐ]/g, 'd')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const tokensA = new Set(normalizeCompareText(a).split(' ').filter(Boolean));
+  const tokensB = new Set(normalizeCompareText(b).split(' ').filter(Boolean));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+
+  let intersection = 0;
+  tokensA.forEach(token => {
+    if (tokensB.has(token)) intersection += 1;
+  });
+
+  const union = new Set([...tokensA, ...tokensB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+const ANCHOR_STOP_WORDS = new Set([
+  'about',
+  'after',
+  'again',
+  'app',
+  'because',
+  'before',
+  'being',
+  'between',
+  'cannot',
+  'could',
+  'every',
+  'from',
+  'general',
+  'have',
+  'into',
+  'just',
+  'like',
+  'more',
+  'need',
+  'only',
+  'that',
+  'their',
+  'them',
+  'then',
+  'this',
+  'user',
+  'users',
+  'what',
+  'when',
+  'where',
+  'while',
+  'with',
+  'without',
+  'your',
+  'cua',
+  'cho',
+  'con',
+  'dang',
+  'duoc',
+  'khong',
+  'minh',
+  'mot',
+  'nguoi',
+  'nhung',
+  'phai',
+  'thay',
+  'trong',
+  'tren',
+  'voi',
+]);
+
+const HEALTH_METRIC_ANCHORS = new Set([
+  'blood',
+  'pressure',
+  'heart',
+  'rate',
+  'bpm',
+  'pulse',
+  'glucose',
+  'sugar',
+  'sleep',
+  'calorie',
+  'steps',
+  'weight',
+  'huyet',
+  'tim',
+  'nhip',
+  'duong',
+  'ngu',
+]);
+
+function extractAnchorTokens(value: string, limit = 14): string[] {
+  const seen = new Set<string>();
+  const tokens = normalizeCompareText(value)
+    .split(' ')
+    .filter(token => token.length >= 4 && !ANCHOR_STOP_WORDS.has(token));
+
+  for (const token of tokens) {
+    seen.add(token);
+    if (seen.size >= limit) break;
+  }
+
+  return [...seen];
+}
+
+function addUniqueTokens(tokens: string[], additions: string[]) {
+  const seen = new Set(tokens);
+  additions.forEach(token => {
+    if (token && !seen.has(token)) {
+      seen.add(token);
+      tokens.push(token);
+    }
+  });
+}
+
+function expandAnchorTokens(tokens: string[], source: string): string[] {
+  const expanded = [...tokens];
+  const normalized = normalizeCompareText(source);
+
+  if (/\bhuyet\b|\bap\b|\bblood\b|\bpressure\b/.test(normalized)) {
+    addUniqueTokens(expanded, ['blood', 'pressure', 'low']);
+  }
+  if (/\bchong\b|\bhoa\b|\bdizzy\b|\blightheaded\b|\bspinning\b/.test(normalized)) {
+    addUniqueTokens(expanded, ['dizzy', 'lightheaded', 'spinning', 'head']);
+  }
+  if (/\bnau\b|\ban\b|\bcook\b|\bkitchen\b|\bstove\b/.test(normalized)) {
+    addUniqueTokens(expanded, ['cooking', 'kitchen', 'stove', 'counter', 'pan']);
+  }
+  if (/\bsang\b|\bmorning\b|\bday\b|\bstand\b|\bdung\b|\bwake\b/.test(normalized)) {
+    addUniqueTokens(expanded, ['morning', 'standing', 'wake', 'bed']);
+  }
+  if (/\bmet\b|\btired\b|\bfatigue\b/.test(normalized)) {
+    addUniqueTokens(expanded, ['tired', 'fatigue']);
+  }
+
+  return expanded;
+}
+
+function countTokenHits(text: string, tokens: string[]): number {
+  const normalized = new Set(normalizeCompareText(text).split(' ').filter(Boolean));
+  return tokens.reduce((count, token) => count + (normalized.has(token) ? 1 : 0), 0);
+}
+
+function sanitizeHealthClaimText(text: string): string {
+  if (!text) return text;
+
+  return text
+    .replace(/\bclinical diagnosis\b/gi, 'tracking note')
+    .replace(/\bmedical results?\b/gi, 'health notes')
+    .replace(/\bdetect disease\b/gi, 'notice a pattern')
+    .replace(/\breplace doctor\b/gi, 'keep notes for a check-in')
+    .replace(/\bdiagnos(?:e|is|ing)\b/gi, 'track')
+    .replace(/\btreat(?:ment|ing)?\b/gi, 'track')
+    .replace(/\bcure\b/gi, 'track')
+    .replace(/\bheal(?:ed|ing)?\b/gi, 'track')
+    .replace(/\bclinical\b/gi, 'personal')
+    .replace(/\bchẩn đoán\b/gi, 'ghi lại xu hướng')
+    .replace(/\bđiều trị\b/gi, 'theo dõi')
+    .replace(/\bchữa(?: khỏi)?\b/gi, 'theo dõi')
+    .replace(/\bphát hiện bệnh\b/gi, 'nhìn ra xu hướng')
+    .replace(/\bthay thế bác sĩ\b/gi, 'ghi chú trước khi trao đổi thêm')
+    .replace(/\bkết quả y tế chính xác\b/gi, 'ghi chú sức khỏe cá nhân');
+}
+
+function healthMetricLabel(tokens: string[]): string {
+  const tokenSet = new Set(tokens);
+  if (tokenSet.has('blood') || tokenSet.has('pressure') || tokenSet.has('huyet')) return 'nhat ky huyet ap';
+  if (tokenSet.has('heart') || tokenSet.has('rate') || tokenSet.has('bpm') || tokenSet.has('pulse') || tokenSet.has('tim') || tokenSet.has('nhip')) return 'nhip tim';
+  if (tokenSet.has('glucose') || tokenSet.has('sugar') || tokenSet.has('duong')) return 'duong huyet';
+  if (tokenSet.has('sleep') || tokenSet.has('ngu')) return 'xu huong giac ngu';
+  if (tokenSet.has('calorie') || tokenSet.has('weight')) return 'xu huong suc khoe hang ngay';
+  return '';
+}
+
+function hasContextCueInHook(hook: string, context: string): boolean {
+  const normalizedHook = normalizeCompareText(hook);
+  const normalizedContext = normalizeCompareText(context);
+  if (!normalizedHook || !normalizedContext) return true;
+
+  const cookingContext = /\b(nau|bep|cook|kitchen|stove|pan|chao|rau|counter)\b/.test(normalizedContext);
+  if (cookingContext) {
+    return /\b(nau|bep|cook|kitchen|stove|pan|chao|rau|counter|thai|dao)\b/.test(normalizedHook);
+  }
+
+  const standingContext = /\b(dung|stand|standing|sang|morning|giuong|wake|bam|vin|toi sam)\b/.test(normalizedContext);
+  if (standingContext) {
+    return /\b(dung|stand|standing|sang|morning|giuong|wake|bam|vin|toi sam)\b/.test(normalizedHook);
+  }
+
+  return true;
+}
+
+function buildHealthMetricHook(index: number, context = ''): string {
+  const normalizedContext = normalizeCompareText(context);
+  const cookingTemplates = [
+    'Đang nấu ăn, tôi bỗng phải bám mép bếp.',
+    'Tôi khựng lại giữa lúc đảo chảo.',
+    'Đang thái rau, mắt tôi tối sầm.',
+    'Một cơn choáng chen ngang bữa sáng.',
+    'Tay vẫn cầm chảo, người đã phải vịn bếp.',
+  ];
+  const standingTemplates = [
+    'Vừa đứng dậy, mắt tôi tối sầm.',
+    'Bình thường thôi, cho đến lúc tôi đứng lên.',
+    'Tôi phải vịn giường ngay khi đứng dậy.',
+    'Sáng nào đứng lên cũng có một nhịp khựng.',
+    'Đứng dậy quá nhanh, tôi phải bám tường.',
+  ];
+  const generalTemplates = [
+    'Cơn choáng này có một điểm tôi bỏ sót.',
+    'Tôi bắt đầu ghi lại những lần bị choáng.',
+    'Không phải ngày nào tôi choáng cũng giống nhau.',
+    'Tôi đã bỏ qua khoảnh khắc khựng này quá lâu.',
+    'Khoảnh khắc khựng lại đó bắt đầu làm tôi lo.',
+  ];
+  const templates = /\b(nau|bep|cook|kitchen|stove|pan|chao|rau|counter)\b/.test(normalizedContext)
+    ? cookingTemplates
+    : /\b(dung|stand|standing|sang|morning|giuong|wake|bam|vin|toi sam)\b/.test(normalizedContext)
+      ? standingTemplates
+      : generalTemplates;
+  const hook = templates[index % templates.length];
+  return hook.charAt(0).toUpperCase() + hook.slice(1);
+}
+
+function looksEnglish(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  if (!normalized) return false;
+
+  const englishTokens = normalized.match(/\b(?:the|this|that|with|without|because|every|again|just|why|what|when|where|how|your|you|does|did|was|were|from|into|while|before|after|thought|started|changed|older|dizzy|scary|morning|tap|drag|dropped|counter|kitchen|cooking)\b/g) || [];
+  const vietnameseCueTokens = normalized.match(/\b(?:toi|ban|minh|nguoi|nha|phong|khach|noi|that|thiet|ke|chi|phi|bao|gia|sua|du|toan|anh|dep|mau|van|khong|chua|muon|roi|ro|mat|nhin|chon|can|truoc|sau|luc|nay|do|thay|biet|bat|dau|kho|roi|mo|ho)\b/g) || [];
+  if (vietnameseCueTokens.length >= 5 && englishTokens.length < 6) return false;
+  return englishTokens.length >= 4;
+}
+
+function isSearchQueryHook(text: string): boolean {
+  return /^(?:could|is|are|can|does|do|did|why|how|what)\b.{12,}\?$/i.test(text.trim());
+}
+
+function firstSentenceSnippet(text: string, maxWords = 22): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const firstSentence = clean.split(/(?<=[.!?])\s+/)[0] || clean;
+  return firstSentence.split(/\s+/).filter(Boolean).slice(0, maxWords).join(' ');
+}
+
+function isSameLine(a: string, b: string): boolean {
+  const left = normalizeCompareText(a);
+  const right = normalizeCompareText(b);
+  return Boolean(left && right && left === right);
+}
+
+function visualMentionsVisibleSpeaker(visual: string): boolean {
+  const normalized = normalizeCompareText(visual);
+  return /\b(?:nguoi|phu nu|dan ong|nam|nu|me|bo|vo|chong|con|ban|khach|nhan vat|talent|creator|host|user|woman|man|mom|dad|wife|husband|customer|teen)\b/.test(normalized);
+}
+
+function hasPatternInterrupt(text: string): boolean {
+  const raw = text.toLowerCase();
+  const normalized = normalizeCompareText(text);
+  const interruptPattern = /(?:\?|\d|%|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|wait\b|mistake\b|wrong\b|hidden\b|secret\b|ruin\b|cost\b|missing\b|detail\b|clue\b|saved\b|real\b|actual\b|fit\b|zero\b|answer\b|truth\b|blood\b|pressure\b|heart\b|rate\b|standing\b|dizzy\b|lightheaded\b|morning\b|older\b|scary\b|pause\b|signal\b|ignoring\b|bothering\b|nobody\b|most\b|sao\b|tai sao\b|van\b|dung\b|khong can\b|thay vi\b|bao gio\b|te nhat\b|met\b|phien\b|kho\b|shock\b|hau het\b|su that\b|that ra\b|sai lam\b|nguoc\b|lo lang\b|so\b|huyet\b|nhip\b|tim\b|hoa mat\b|chong mat\b|choang\b|bep\b|nau\b|tuoi\b|khung\b|tin hieu\b|bi mat\b|thieu\b|an sau\b|thiet ke\b|noi that\b|phong khach\b|bao gia\b|chi phi\b|du toan\b|ngan sach\b|sua nha\b|anh dep\b|mau nha\b|ban ve\b|mat bang\b|khong ra nha\b|roi hon\b|mo ho\b|chon sai\b|doi chi phi\b)/i;
+  return interruptPattern.test(raw)
+    || interruptPattern.test(normalized)
+    || /(?:\b60\b|\b70\b|\b80\b|\b90\b|\b1\b|\b3\b|\b5\b|\b7\b)/.test(normalized);
+}
+
+function normalizeBriefTrack(track: string): string {
+  const normalized = track.trim().toUpperCase();
+  return ['A', 'B', 'C'].includes(normalized) ? normalized : 'B';
+}
+
+function creativeTypeForTrack(track: string): string {
+  if (track === 'A') return 'Screen Recording';
+  if (track === 'C') return 'Motion Graphics';
+  return 'UGC';
+}
+
+function createBriefValidationErrors(input: {
+  id: string;
+  angleType: string;
+  hookPrimary: string;
+  hookAlt1: string;
+  hookAlt2: string;
+  hookCharacterSpeech?: string;
+  hookVoiceover?: string;
+  hookTextOverlay?: string;
+  pspBridge?: string;
+  visualScene1: string;
+  visualScene2: string;
+  visualScene3: string;
+  scriptVo: string;
+  ctaText: string;
+  dontDo: string;
+  track: string;
+  priority: string;
+  painpointTokens?: string[];
+  solutionTokens?: string[];
+  language?: string;
+}) {
+  const errors: string[] = [];
+  const trackingPattern = /^P\d+-A\d+-I\d+$/;
+  const allowedAngleTypes = new Set(['fear', 'fact', 'comparison', 'pov', 'social', 'curiosity', 'relief']);
+
+  if (!trackingPattern.test(input.id)) errors.push('id must follow P{pillar}-A{angle}-I{idea}');
+  if (!allowedAngleTypes.has(normalizeCompareText(input.angleType))) {
+    errors.push('angle_type must be Fear, Fact, Comparison, POV, Social, Curiosity, or Relief');
+  }
+  if (!input.hookPrimary) errors.push('hook_primary is required');
+  if (/vietnam/i.test(input.language || '')) {
+    const languageText = [
+      input.hookPrimary,
+      input.hookAlt1,
+      input.hookAlt2,
+      input.hookCharacterSpeech || '',
+      input.hookVoiceover || '',
+      input.hookTextOverlay || '',
+      input.pspBridge || '',
+      input.visualScene1,
+      input.visualScene2,
+      input.visualScene3,
+      input.scriptVo,
+      input.ctaText,
+    ].join(' ');
+    if (looksEnglish(languageText)) {
+      errors.push('all user-facing fields must be Vietnamese, not English');
+    }
+  }
+  const hookPrimaryWordCount = countWords(input.hookPrimary);
+  if (input.hookPrimary && (hookPrimaryWordCount < 5 || hookPrimaryWordCount > 16)) {
+    errors.push('hook_primary must be 5-16 words');
+  }
+  if (input.hookPrimary && !hasPatternInterrupt(input.hookPrimary)) {
+    errors.push('hook_primary must create a clear pattern interrupt');
+  }
+  if (!input.hookAlt1) errors.push('hook_alt_1 is required');
+  if (!input.hookAlt2) errors.push('hook_alt_2 is required');
+  if (input.hookPrimary && input.hookAlt1 && normalizeCompareText(input.hookPrimary) === normalizeCompareText(input.hookAlt1)) {
+    errors.push('hook_alt_1 must not repeat hook_primary');
+  }
+  if (input.hookPrimary && input.hookAlt2 && normalizeCompareText(input.hookPrimary) === normalizeCompareText(input.hookAlt2)) {
+    errors.push('hook_alt_2 must not repeat hook_primary');
+  }
+  if (input.hookPrimary && input.hookAlt1 && jaccardSimilarity(input.hookPrimary, input.hookAlt1) >= 0.78) {
+    errors.push('hook_alt_1 must use a different hook approach, not a paraphrase');
+  }
+  if (input.hookPrimary && input.hookAlt2 && jaccardSimilarity(input.hookPrimary, input.hookAlt2) >= 0.78) {
+    errors.push('hook_alt_2 must use a different hook approach, not a paraphrase');
+  }
+  const hookCharacterSpeech = readSpeechText(input.hookCharacterSpeech);
+  const hookVoiceover = readSpeechText(input.hookVoiceover);
+  const hookTextOverlay = readText(input.hookTextOverlay);
+  if (!hookCharacterSpeech && !hookVoiceover && !hookTextOverlay) {
+    errors.push('hook needs hook_character_speech, hook_voiceover, or hook_text_overlay');
+  }
+  if (hookCharacterSpeech && !visualMentionsVisibleSpeaker(input.visualScene1)) {
+    errors.push('hook_character_speech requires a clearly visible speaker in visual_scene_1');
+  }
+  if (hookCharacterSpeech && countWords(hookCharacterSpeech) > 36) {
+    errors.push('hook_character_speech must be 36 words or fewer');
+  }
+  if (hookVoiceover && countWords(hookVoiceover) > 48) {
+    errors.push('hook_voiceover must be 48 words or fewer');
+  }
+  if (hookVoiceover && countWords(hookVoiceover) < 12 && !hookCharacterSpeech) {
+    errors.push('hook_voiceover is too short for an 8-12s hook arc');
+  }
+  if (hookVoiceover && isSameLine(hookVoiceover, input.hookPrimary)) {
+    errors.push('hook_voiceover must not duplicate hook_primary');
+  }
+  if (hookCharacterSpeech && isSameLine(hookCharacterSpeech, input.hookPrimary)) {
+    errors.push('hook_character_speech must not duplicate hook_primary; add speaker texture or omit it');
+  }
+  if (hookVoiceover && hookTextOverlay && isSameLine(hookVoiceover, hookTextOverlay)) {
+    errors.push('hook_voiceover must not duplicate hook_text_overlay');
+  }
+  const pspBridge = readText(input.pspBridge);
+  if (!pspBridge) {
+    errors.push('psp_bridge is required');
+  }
+  if (pspBridge && countWords(pspBridge) > 38) {
+    errors.push('psp_bridge must be 38 words or fewer');
+  }
+  if (pspBridge && countWords(pspBridge) < 7) {
+    errors.push('psp_bridge is too short to connect hook to PSP');
+  }
+  if (pspBridge && input.hookPrimary && isSameLine(pspBridge, input.hookPrimary)) {
+    errors.push('psp_bridge must not duplicate hook_primary');
+  }
+  if (!input.visualScene1 || input.visualScene1.split(/\s+/).filter(Boolean).length < 10) {
+    errors.push('visual_scene_1 must be concrete and shootable');
+  }
+  if (!input.visualScene2 || input.visualScene2.split(/\s+/).filter(Boolean).length < 10) {
+    errors.push('visual_scene_2 must be concrete and shootable');
+  }
+  if (!input.visualScene3 || input.visualScene3.split(/\s+/).filter(Boolean).length < 8) {
+    errors.push('visual_scene_3 must be concrete and shootable');
+  }
+  if ((input.painpointTokens || []).length >= 2) {
+    const openingText = `${input.hookPrimary} ${input.hookAlt1} ${input.hookAlt2} ${input.visualScene1}`;
+    const healthMetricAnchors = (input.solutionTokens || []).filter(token => HEALTH_METRIC_ANCHORS.has(token));
+    void openingText;
+    void healthMetricAnchors;
+  }
+  if (!input.scriptVo) errors.push('script_vo is required');
+  if (input.scriptVo && input.scriptVo.split(/\s+/).filter(Boolean).length > 60) {
+    errors.push('script_vo must be 60 words or fewer');
+  }
+  if (!input.ctaText) errors.push('cta_text is required');
+  if (input.ctaText && input.ctaText.split(/\s+/).filter(Boolean).length > 6) {
+    errors.push('cta_text must be 6 words or fewer');
+  }
+  if (!input.dontDo || input.dontDo.split(/\s+/).filter(Boolean).length < 5) {
+    errors.push('dont_do must be specific enough for QC');
+  }
+  if (!['A', 'B', 'C'].includes(input.track)) errors.push('track must be A, B, or C');
+  if (!['A', 'B', 'C'].includes(input.priority)) errors.push('priority must be A, B, or C');
+
+  return errors;
+}
+
+export function normalizeCreativeBriefOutput(
+  input: unknown,
+  defaults: {
+    duration: string;
+    appName: string;
+    pillar?: string;
+    coreUser?: string;
+    emotion?: string;
+    psp?: string;
+    angle?: string;
+    ideaDescription?: string;
+    language?: string;
+  }
+): { items: Record<string, unknown>[]; invalidReasons: string[] } {
+  const rootItems = Array.isArray(input) ? input : [input];
+  const items: Record<string, unknown>[] = [];
+  const invalidReasons: string[] = [];
+
+  rootItems.map(readRecord).forEach((pillarRecord, pillarFallbackIndex) => {
+    if (Object.keys(pillarRecord).length === 0) return;
+
+    const pillarIndex = Number(pillarRecord.pillar_index ?? pillarRecord.pillarIndex ?? pillarFallbackIndex) || 0;
+    const pillar = readFirstText(pillarRecord, ['pillar'], defaults.pillar || 'General user friction');
+    if (defaults.pillar && normalizeCompareText(pillar) !== normalizeCompareText(defaults.pillar)) {
+      invalidReasons.push(`Pillar ${pillarIndex}: pillar must stay exact selected pain point`);
+      return;
+    }
+    const angleRecords = readArray(pillarRecord.angles);
+
+    if (angleRecords.length === 0) {
+      invalidReasons.push(`Pillar ${pillarIndex}: angles array is required`);
+      return;
+    }
+
+    const seenAngleTypes = new Set<string>();
+    const selectedPainpointSource = [defaults.pillar, defaults.angle, defaults.ideaDescription].filter(Boolean).join(' ');
+    const selectedPainpointTokens = expandAnchorTokens(
+      extractAnchorTokens(selectedPainpointSource, 18),
+      selectedPainpointSource
+    );
+    const selectedSolutionTokens = extractAnchorTokens(defaults.psp || '', 10);
+
+    angleRecords.forEach((angleRecord, angleFallbackIndex) => {
+      const angleIndex = Number(angleRecord.angle_index ?? angleRecord.angleIndex ?? angleFallbackIndex) || 0;
+      const angleName = readFirstText(angleRecord, ['angle_name', 'angleName'], 'Core angle');
+      const angleType = readFirstText(angleRecord, ['angle_type', 'angleType'], 'Curiosity');
+      const angleDesc = readFirstText(angleRecord, ['angle_desc', 'angleDesc'], 'A distinct approach for this pillar.');
+      const normalizedAngleType = angleType.trim();
+      const angleTypeKey = normalizeCompareText(normalizedAngleType);
+
+      if (seenAngleTypes.has(angleTypeKey)) {
+        invalidReasons.push(`P${pillarIndex}-A${angleIndex}: angle_type duplicates another angle in this pillar`);
+      }
+      if (angleTypeKey) seenAngleTypes.add(angleTypeKey);
+
+      const briefIdeas = readArray(angleRecord.ideas);
+      if (briefIdeas.length === 0) {
+        invalidReasons.push(`P${pillarIndex}-A${angleIndex}: ideas array is required`);
+        return;
+      }
+
+      const acceptedHookPrimaries: string[] = [];
+      const acceptedOpeningScenes: string[] = [];
+
+      briefIdeas.forEach((ideaRecord, ideaFallbackIndex) => {
+        const id = readFirstText(ideaRecord, ['id'], `P${pillarIndex}-A${angleIndex}-I${ideaFallbackIndex}`);
+        let hookPrimary = readFirstText(ideaRecord, ['hook_primary', 'hookPrimary']);
+        let hookAlt1 = readFirstText(ideaRecord, ['hook_alt_1', 'hookAlt1']);
+        let hookAlt2 = readFirstText(ideaRecord, ['hook_alt_2', 'hookAlt2']);
+        let hookCharacterSpeech = readSpeechText(readFirstText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'character_speech', 'characterSpeech']));
+        let hookVoiceover = readSpeechText(readFirstText(ideaRecord, ['hook_voiceover', 'hookVoiceover', 'voiceover', 'voice_over']));
+        let hookTextOverlay = readFirstText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'text_overlay', 'textOverlay']);
+        let visualScene1 = readFirstText(ideaRecord, ['visual_scene_1', 'visualScene1']);
+        let visualScene2 = readFirstText(ideaRecord, ['visual_scene_2', 'visualScene2']);
+        let visualScene3 = readFirstText(ideaRecord, ['visual_scene_3', 'visualScene3']);
+        let scriptVo = readFirstText(ideaRecord, ['script_vo', 'scriptVo']);
+        let ctaText = readFirstText(ideaRecord, ['cta_text', 'ctaText']);
+        const referencePattern = readFirstText(ideaRecord, ['reference_pattern', 'referencePattern'], 'Custom Painpoint-Led Pattern');
+        const interruptMechanism = readFirstText(ideaRecord, ['interrupt_mechanism', 'interruptMechanism'], hookPrimary || angleDesc);
+        const firstFrameAsset = readFirstText(ideaRecord, ['first_frame_asset', 'firstFrameAsset'], visualScene1);
+        let pspBridge = readFirstText(ideaRecord, ['psp_bridge', 'pspBridge']);
+        const proofObject = readFirstText(ideaRecord, ['proof_object', 'proofObject'], visualScene3 || visualScene2);
+        const appDemoAction = readFirstText(ideaRecord, ['app_demo_action', 'appDemoAction'], defaults.psp || defaults.appName);
+        const overlaySequence = readTextArray(ideaRecord.overlay_sequence ?? ideaRecord.overlaySequence);
+        const editNotes = readFirstText(
+          ideaRecord,
+          ['edit_notes', 'editNotes'],
+          'Nhịp cắt nhanh kiểu UGC: mở bằng first-frame asset, chuyển sang demo app thật, giữ caption lớn và proof frame rõ.'
+        );
+        const visualRefNotes = readFirstText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']);
+        const talentProfile = readFirstText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified');
+        let dontDo = readFirstText(ideaRecord, ['dont_do', 'dontDo']);
+        const track = readFirstText(ideaRecord, ['track'], 'B').trim().toUpperCase();
+        const trackReason = readFirstText(ideaRecord, ['track_reason', 'trackReason']);
+        const priority = readFirstText(ideaRecord, ['priority'], 'A').trim().toUpperCase();
+        const metricLabel = healthMetricLabel(selectedSolutionTokens);
+        const metricAnchors = selectedSolutionTokens.filter(token => HEALTH_METRIC_ANCHORS.has(token));
+
+        hookPrimary = sanitizeHealthClaimText(hookPrimary);
+        hookAlt1 = sanitizeHealthClaimText(hookAlt1);
+        hookAlt2 = sanitizeHealthClaimText(hookAlt2);
+        hookCharacterSpeech = sanitizeHealthClaimText(hookCharacterSpeech);
+        hookVoiceover = sanitizeHealthClaimText(hookVoiceover);
+        hookTextOverlay = sanitizeHealthClaimText(hookTextOverlay);
+        pspBridge = sanitizeHealthClaimText(pspBridge);
+        visualScene1 = sanitizeHealthClaimText(visualScene1);
+        visualScene2 = sanitizeHealthClaimText(visualScene2);
+        visualScene3 = sanitizeHealthClaimText(visualScene3);
+        scriptVo = sanitizeHealthClaimText(scriptVo);
+        ctaText = sanitizeHealthClaimText(ctaText);
+        dontDo = sanitizeHealthClaimText(dontDo);
+
+        if (!hookTextOverlay) {
+          hookTextOverlay = hookPrimary;
+        }
+        if (!hookVoiceover) {
+          const candidateVoiceover = firstSentenceSnippet(scriptVo);
+          if (candidateVoiceover && !isSameLine(candidateVoiceover, hookPrimary) && !isSameLine(candidateVoiceover, hookTextOverlay)) {
+            hookVoiceover = candidateVoiceover;
+          }
+        }
+        if (isSameLine(hookVoiceover, hookPrimary) || isSameLine(hookVoiceover, hookTextOverlay)) {
+          hookVoiceover = '';
+        }
+        if (isSameLine(hookCharacterSpeech, hookPrimary) || !visualMentionsVisibleSpeaker(visualScene1)) {
+          hookCharacterSpeech = '';
+        }
+        if (!pspBridge) {
+          pspBridge = `Lúc này ${defaults.appName} là bước xử lý đúng vấn đề vừa lộ ra.`;
+        }
+
+        const hookContext = [selectedPainpointSource, angleName, angleDesc, visualScene1].filter(Boolean).join(' ');
+        const shouldUseContextualHook = metricLabel
+          && (
+            !hasContextCueInHook(hookPrimary, hookContext)
+            || (/vietnam/i.test(defaults.language || '') && looksEnglish(hookPrimary))
+          );
+
+        if (
+          metricLabel
+          && (
+            !hasPatternInterrupt(hookPrimary)
+            || isSearchQueryHook(hookPrimary)
+            || shouldUseContextualHook
+          )
+        ) {
+          hookPrimary = buildHealthMetricHook(
+            ideaFallbackIndex,
+            hookContext
+          );
+        }
+
+        if (metricLabel && countTokenHits(`${hookPrimary} ${hookAlt1} ${hookAlt2} ${visualScene1}`, metricAnchors) < 1) {
+          visualScene1 = `${visualScene1} Khung hình đầu có text hoặc ghi chú trên điện thoại: "${metricLabel}?" để khoảnh khắc này chỉ được hiểu là nhu cầu theo dõi xu hướng.`;
+        }
+
+        if (selectedPainpointTokens.length >= 2 && countTokenHits(`${hookPrimary} ${hookAlt1} ${hookAlt2} ${visualScene1}`, selectedPainpointTokens) < 2) {
+          const selectedMoment = defaults.angle || defaults.pillar || 'the selected user problem';
+          visualScene1 = `${visualScene1} Thêm text trên màn hình gọi thẳng đúng khoảnh khắc: "${selectedMoment}".`;
+        }
+
+        if (selectedSolutionTokens.length >= 2 && countTokenHits(`${visualScene2} ${visualScene3} ${scriptVo} ${ctaText}`, selectedSolutionTokens) < 1) {
+          visualScene2 = `${visualScene2} Cắt sang ${defaults.appName}, dùng ${defaults.psp || 'tính năng theo dõi đã chọn'} như một ghi chú theo dõi đơn giản cho đúng khoảnh khắc đó.`;
+        }
+
+        const errors = createBriefValidationErrors({
+          id,
+          angleType: normalizedAngleType,
+          hookPrimary,
+          hookAlt1,
+          hookAlt2,
+          hookCharacterSpeech,
+          hookVoiceover,
+          hookTextOverlay,
+          pspBridge,
+          visualScene1,
+          visualScene2,
+          visualScene3,
+          scriptVo,
+          ctaText,
+          dontDo,
+          track,
+          priority,
+          painpointTokens: selectedPainpointTokens,
+          solutionTokens: selectedSolutionTokens,
+          language: defaults.language,
+        });
+
+        if (acceptedHookPrimaries.some(existing => jaccardSimilarity(existing, hookPrimary) >= 0.72)) {
+          errors.push('hook_primary duplicates another idea in this batch');
+        }
+        if (acceptedOpeningScenes.some(existing => jaccardSimilarity(existing, visualScene1) >= 0.74)) {
+          errors.push('visual_scene_1 repeats the same opening scene family as another idea');
+        }
+
+        if (errors.length > 0) {
+          invalidReasons.push(`${id}: ${errors.join('; ')}`);
+          return;
+        }
+
+        acceptedHookPrimaries.push(hookPrimary);
+        acceptedOpeningScenes.push(visualScene1);
+
+        items.push(normalizeIdeaOutput({
+          id,
+          title: readFirstText(ideaRecord, ['title'], hookPrimary || angleName),
+          duration: defaults.duration,
+          creativeType: creativeTypeForTrack(normalizeBriefTrack(track)),
+          meta: {
+            builderVersion: 'prompt_system_builder_html_v1',
+            pillar,
+            pillarIndex,
+            angleName,
+            angleType: normalizedAngleType,
+            angleDesc,
+            hookPrimary,
+            hookAlt1,
+            hookAlt2,
+            referencePattern,
+            interruptMechanism,
+            firstFrameAsset,
+            pspBridge,
+            proofObject,
+            appDemoAction,
+            overlaySequence,
+            editNotes,
+            visualRefNotes,
+            talentProfile,
+            dontDo,
+            track: normalizeBriefTrack(track),
+            trackReason,
+            priority: normalizeBriefTrack(priority),
+          },
+          framework: {
+            coreUser: defaults.coreUser || 'General viewer',
+            painpoint: pillar,
+            emotion: defaults.emotion || 'Create a clear viewer emotion',
+            psp: defaults.psp || defaults.appName,
+          },
+          explanation: angleDesc,
+          hook: {
+            durationSeconds: estimateHookDurationSeconds({
+              characterSpeech: hookCharacterSpeech,
+              voiceover: hookVoiceover,
+              textOverlay: hookTextOverlay || hookPrimary,
+              visual: visualScene1,
+            }),
+            visual: visualScene1,
+            characterSpeech: hookCharacterSpeech,
+            voiceover: hookVoiceover,
+            voice: hookVoiceover || hookCharacterSpeech,
+            textOverlay: hookTextOverlay || hookPrimary,
+            text: hookTextOverlay || hookPrimary,
+            viTranslation: [hookCharacterSpeech, hookVoiceover, hookTextOverlay || hookPrimary].filter(Boolean).join(' / '),
+            viewerProfile: defaults.coreUser || '',
+            viewerEmotion: defaults.emotion || '',
+            painpointImpact: pillar,
+            whyTheyStopScrolling: angleDesc,
+          },
+          body: {
+            visual: visualScene2,
+            voiceover: scriptVo,
+            voice: scriptVo,
+            textOverlay: hookAlt1,
+            text: hookAlt1,
+            viTranslation: scriptVo,
+          },
+          cta: {
+            visual: visualScene3,
+            voiceover: ctaText,
+            voice: ctaText,
+            textOverlay: ctaText,
+            text: ctaText,
+            viTranslation: ctaText,
+            endCard: `${defaults.appName} - ${ctaText}`,
+          },
+        }, {
+          duration: defaults.duration,
+          appName: defaults.appName,
+          pillar,
+        }));
+      });
+    });
+  });
+
+  return { items, invalidReasons };
 }
 
 export function buildHookOutputSpec(options: HookOutputSpecOptions): string {
@@ -454,7 +1312,7 @@ Return ${quantityLabel} objects in this exact schema:
   "explanation": "Vietnamese explanation of what changed and why it works",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
-    "hookPrimary": "Natural hook line, usually 8-18 words",
+    "hookPrimary": "Natural hook line, 6-16 words",
     "hookAlt1": "Alternative hook A with a different rhetorical approach",
     "hookAlt2": "Alternative hook B with a different rhetorical approach",
     "visualRefNotes": "Specific production note",
@@ -476,10 +1334,10 @@ Return ${quantityLabel} objects in this exact schema:
 }]
 
 ## OUTPUT RULES
-- Focus on the first 3-5 seconds only.
+- Focus on the complete 8-12 second hook mini-scene only.
 - Keep the winning hook DNA unless the user explicitly asks to change it.
 - Hooks may be descriptive when needed. Avoid clipped keyword fragments; write native, speakable hook lines.
-- hook.durationSeconds must estimate the actual hook runtime as an integer second count.
+- hook.durationSeconds must estimate the actual hook runtime as an integer second count, normally 8-12 seconds.
 - For UGC/POV/Reaction/Interview, split on-camera talent speech into characterSpeech and off-camera narrator/video voice into voiceover.
 - visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.

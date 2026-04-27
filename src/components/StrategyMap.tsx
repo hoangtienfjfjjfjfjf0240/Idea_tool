@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff } from 'lucide-react';
+import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff, Search } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, StrategyMapState, StrategyMapCustomNodeState, StrategyWorkflowLevel } from '@/types/database';
 import { addFilterOption, getFilterOptions, getIdeaSessions, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
@@ -32,6 +32,7 @@ const NODE_CLEARANCE = NODE_W + 24;
 const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 1.8;
 const FIT_VIEW_EDIT_MAX = 1.35;
+const READABLE_VIEW_MIN_SCALE = 0.68;
 const STRATEGY_MAP_LOCAL_BACKUP_PREFIX = 'idea_tool_strategy_map_backup:';
 
 type WorkflowLevel = StrategyWorkflowLevel;
@@ -224,6 +225,15 @@ const LEVEL_AXIS_LABELS: Record<WorkflowLevel, string> = {
   painPoint: 'PAINPOINT',
   angle: 'ANGLE',
 };
+
+const BRANCH_FILTER_FIELDS: Array<{ key: keyof FilterState; label: string; level: WorkflowLevel }> = [
+  { key: 'coreUser', label: 'Core user', level: 'coreUser' },
+  { key: 'solution', label: 'PSP', level: 'psp' },
+  { key: 'emotion', label: 'Emotion', level: 'emotion' },
+  { key: 'visualType', label: 'Visual', level: 'visual' },
+  { key: 'painPoint', label: 'Painpoint', level: 'painPoint' },
+  { key: 'angle', label: 'Angle', level: 'angle' },
+];
 
 const FALLBACK_OPTIONS: Record<WorkflowLevel, string[]> = {
   root: [],
@@ -632,15 +642,31 @@ function getWeekNumber(weekKey: string): number {
   return parseInt(weekKey.split('-W')[1]);
 }
 
-// Generate all weeks from current week through the end of the current year
-function generateWeekTimeline(): { key: string; label: string }[] {
+// Generate weeks from the oldest history week through the end of the visible planning year.
+function generateWeekTimeline(historyWeekKeys: string[] = []): { key: string; label: string }[] {
   const now = new Date();
   const currentWeek = getWeekInfo(now);
-  const endDate = new Date(now.getFullYear(), 11, 31, 12, 0, 0, 0);
+  const historyMondays = historyWeekKeys
+    .map(key => {
+      const [yearStr, wStr] = key.split('-W');
+      const year = Number.parseInt(yearStr, 10);
+      const week = Number.parseInt(wStr, 10);
+      if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
+      return getMondayOfWeek(year, week);
+    })
+    .filter((date): date is Date => !!date && !Number.isNaN(date.getTime()));
+  const startTime = Math.min(
+    currentWeek.monday.getTime(),
+    ...historyMondays.map(date => date.getTime())
+  );
+  const endYear = Math.max(
+    now.getFullYear(),
+    ...historyMondays.map(date => date.getFullYear())
+  );
+  const endDate = new Date(endYear, 11, 31, 12, 0, 0, 0);
   const result: { key: string; label: string }[] = [];
 
-  // Start from current week's Monday
-  let monday = new Date(currentWeek.monday);
+  let monday = new Date(startTime);
 
   while (monday <= endDate) {
     const key = getWeekKey(monday);
@@ -728,6 +754,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [strategyStateHydrated, setStrategyStateHydrated] = useState(false);
   const [strategyStateStatus, setStrategyStateStatus] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
   const [showOnlyUngenerated, setShowOnlyUngenerated] = useState(false);
+  const [mapSearchQuery, setMapSearchQuery] = useState('');
   const treeContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -895,9 +922,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     };
   }, [selectedWeek, app.id]);
 
-  // ===== Full weekly timeline: current week → end of 2026 =====
-  const allWeeks = useMemo(() => generateWeekTimeline(), []);
-
   // ===== Count ideas per week (for badges) =====
   const weekIdeaCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -907,6 +931,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     });
     return counts;
   }, [sessions]);
+
+  // ===== Full weekly timeline: history weeks + current week → year end =====
+  const allWeeks = useMemo(() => generateWeekTimeline(Array.from(weekIdeaCounts.keys())), [weekIdeaCounts]);
 
   const optionValuesByLevel = useMemo(() => {
     const values: Record<WorkflowLevel, Set<string>> = {
@@ -1391,18 +1418,21 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     };
   }, []);
 
-  const fitView = useCallback((options?: { animate?: boolean; mode?: 'auto' | 'edit' }) => {
+  const fitView = useCallback((options?: { animate?: boolean; mode?: 'auto' | 'edit' | 'readable' }) => {
     const animate = options?.animate ?? true;
     const mode = options?.mode ?? 'edit';
     const widthScale = (viewportWidth - FIT_PADDING * 2) / contentBounds.width;
     const heightScale = (viewportHeight - FIT_PADDING - 18) / contentBounds.height;
+    const fitAllScale = Math.min(widthScale, heightScale, 1);
     const targetScale = mode === 'auto'
-      ? Math.min(widthScale, heightScale, 1)
-      : widthScale;
+      ? fitAllScale
+      : mode === 'readable'
+        ? Math.max(fitAllScale, READABLE_VIEW_MIN_SCALE)
+        : widthScale;
     const nextScale = clamp(
       targetScale,
       ZOOM_MIN,
-      mode === 'auto' ? 1 : Math.min(ZOOM_MAX, FIT_VIEW_EDIT_MAX)
+      mode === 'edit' ? Math.min(ZOOM_MAX, FIT_VIEW_EDIT_MAX) : 1
     );
     const availableHeight = viewportHeight - 18 - FIT_PADDING;
     const nextPan = clampPanToViewport({
@@ -1429,7 +1459,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     if (!viewportWidth || !viewportHeight) return;
     if (!autoFitPendingRef.current && (viewScale > 0 || viewPan.x !== 0 || viewPan.y !== 0)) return;
     const fitId = window.requestAnimationFrame(() => {
-      fitView({ animate: false, mode: 'auto' });
+      fitView({ animate: false, mode: 'readable' });
       autoFitPendingRef.current = false;
     });
     return () => window.cancelAnimationFrame(fitId);
@@ -1536,6 +1566,43 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     fitView({ mode: 'auto' });
     autoFitPendingRef.current = false;
   }, [fitView]);
+
+  const handleReadableMap = useCallback(() => {
+    autoFitPendingRef.current = false;
+    fitView({ mode: 'readable' });
+  }, [fitView]);
+
+  const focusWorkflowNode = useCallback((nodeId: string) => {
+    const flat = workflowFlatNodeById.get(nodeId);
+    if (!flat) return;
+
+    const nextScale = clamp(Math.max(viewScale, READABLE_VIEW_MIN_SCALE), ZOOM_MIN, ZOOM_MAX);
+    setViewScale(nextScale);
+    setViewPan(clampPanToViewport({
+      x: Math.round(viewportWidth / 2 - flat.absX * nextScale),
+      y: Math.round(viewportHeight * 0.38 - (flat.absY + NODE_H / 2) * nextScale),
+    }, nextScale, { centerWhenSmaller: false }));
+    autoFitPendingRef.current = false;
+  }, [clampPanToViewport, viewScale, viewportHeight, viewportWidth, workflowFlatNodeById]);
+
+  const normalizedMapSearchQuery = useMemo(() => normalizeWorkflowKeyPart(mapSearchQuery), [mapSearchQuery]);
+  const searchMatches = useMemo(() => {
+    if (!normalizedMapSearchQuery) return [];
+    return flatNodes.filter(({ node }) => {
+      const searchable = [
+        node.label,
+        node.level,
+        node.filters?.coreUser?.join(' '),
+        node.filters?.solution?.join(' '),
+        node.filters?.emotion?.join(' '),
+        node.filters?.visualType?.join(' '),
+        node.filters?.painPoint?.join(' '),
+        node.filters?.angle?.join(' '),
+      ].filter(Boolean).join(' ');
+      return normalizeWorkflowKeyPart(searchable).includes(normalizedMapSearchQuery);
+    });
+  }, [flatNodes, normalizedMapSearchQuery]);
+  const searchMatchNodeIds = useMemo(() => new Set(searchMatches.map(({ node }) => node.id)), [searchMatches]);
 
   const handleViewportWheelAt = useCallback((clientX: number, clientY: number, deltaY: number) => {
     autoFitPendingRef.current = false;
@@ -1688,8 +1755,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     if (activePath.join('/') === fullPath.join('/')) { setActivePath([]); setSelectedNode(null); return; }
     const collectDesc = (n: TreeNode): string[] => { let ids = [n.id]; n.children.forEach(c => { ids = ids.concat(collectDesc(c)); }); return ids; };
     setActivePath([...fullPath, ...collectDesc(node).slice(1)]);
-    // Show ideas panel for any node that has ideas attached
-    if (node.ideas.length > 0) setSelectedNode(node); else setSelectedNode(null);
+    setSelectedNode(node);
   };
 
   const getWorkflowNodeFilters = useCallback((nodeId: string | null | undefined) => {
@@ -1964,6 +2030,19 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const detailLabel = selectedNode?.label || '';
   const detailIdeaCount = selectedNode?.ideaCount || detailIdeas.length;
   const selectedBranchNodeId = selectedCustomNodeId || selectedNode?.id || null;
+  const selectedBranchNode = selectedCustomNode || selectedNode;
+  const selectedBranchStatus = selectedBranchNodeId
+    ? branchStatusByNodeId.get(selectedBranchNodeId) || 'ungenerated'
+    : null;
+  const selectedBranchStatusTheme = selectedBranchStatus ? BRANCH_STATUS_THEME[selectedBranchStatus] : null;
+  const selectedBranchLevelTheme = selectedBranchNode ? LEVEL_COLORS[selectedBranchNode.level] : null;
+  const selectedBranchFilterRows = BRANCH_FILTER_FIELDS.map(field => {
+    const values = activeCreateFilters?.[field.key];
+    const cleanValues = Array.isArray(values)
+      ? values.map(value => String(value || '').trim()).filter(Boolean)
+      : [];
+    return cleanValues.length > 0 ? { ...field, values: cleanValues } : null;
+  }).filter((row): row is { key: keyof FilterState; label: string; level: WorkflowLevel; values: string[] } => Boolean(row));
   const canHideSelectedBranch = !!selectedBranchNodeId && selectedBranchNodeId !== 'root';
   const hiddenBranchCount = hiddenNodeIds.length;
   const ungeneratedBranchCount = useMemo(() => (
@@ -2218,8 +2297,84 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         </div>
       </div>
 
+      {selectedBranchNode && selectedBranchNode.level !== 'root' && (
+        <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div
+            className="h-1 w-full"
+            style={{ background: selectedBranchLevelTheme?.gradient || 'linear-gradient(135deg, #64748b, #475569)' }}
+          />
+          <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span
+                  className="rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em]"
+                  style={{
+                    background: selectedBranchLevelTheme?.bg,
+                    borderColor: selectedBranchLevelTheme?.border,
+                    color: selectedBranchLevelTheme?.accent,
+                  }}
+                >
+                  {LEVEL_AXIS_LABELS[selectedBranchNode.level]}
+                </span>
+                {selectedBranchStatusTheme && (
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${selectedBranchStatusTheme.chipClassName}`}>
+                    <span>{selectedBranchStatusTheme.icon}</span> {selectedBranchStatusTheme.label}
+                  </span>
+                )}
+                <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                  {selectedBranchNode.ideaCount} idea
+                </span>
+              </div>
+              <h3 className="truncate text-sm font-black text-slate-900" title={selectedBranchNode.label}>
+                {selectedBranchNode.label}
+              </h3>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {selectedBranchFilterRows.map(row => {
+                  const style = LEVEL_COLORS[row.level];
+                  return (
+                    <span
+                      key={row.key}
+                      className="max-w-[260px] truncate rounded-full border px-2.5 py-1 text-[10px] font-bold"
+                      style={{ background: style.bg, borderColor: style.border, color: style.accent }}
+                      title={`${row.label}: ${row.values.join(', ')}`}
+                    >
+                      {row.label}: {row.values.slice(0, 2).join(', ')}
+                      {row.values.length > 2 ? ` +${row.values.length - 2}` : ''}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {canCreateFromBranch && activeCreateFilters && onCreateFromBranch && (
+                <button
+                  onClick={() => onCreateFromBranch(activeCreateFilters)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-orange-500 px-4 py-2 text-xs font-black text-white shadow-sm transition-all hover:shadow-lg hover:shadow-rose-100"
+                >
+                  <Sparkles size={14} /> Tạo idea từ nhánh
+                </button>
+              )}
+              {canHideSelectedBranch && (
+                <button
+                  onClick={handleHideSelectedBranch}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                >
+                  <EyeOff size={14} /> Ẩn nhánh
+                </button>
+              )}
+              <button
+                onClick={() => { setSelectedNode(null); setSelectedCustomNodeId(null); setActivePath([]); }}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-50"
+              >
+                <X size={14} /> Bỏ chọn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
-      <div className={`grid gap-2 mb-4 ${inline ? 'grid-cols-4 md:grid-cols-8' : 'grid-cols-4 md:grid-cols-8'}`}>
+      <div className={`grid gap-2 mb-4 ${inline ? 'grid-cols-2 sm:grid-cols-4 xl:grid-cols-8' : 'grid-cols-2 sm:grid-cols-4 xl:grid-cols-8'}`}>
         {[
           { n: stats.cu, label: 'Đối tượng', bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-600', icon: '👤' },
           { n: stats.psp, label: 'PSP', bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-600', icon: '💊' },
@@ -2257,6 +2412,38 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           <p className="text-[11px] text-gray-400">Level chạy theo trục Y. Kéo từ chấm dưới ra canvas để mở picker node kế tiếp.</p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="relative w-full sm:w-72">
+            <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={mapSearchQuery}
+              onChange={(event) => setMapSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && searchMatches[0]) {
+                  focusWorkflowNode(searchMatches[0].node.id);
+                }
+              }}
+              placeholder="Tìm painpoint, angle, visual..."
+              className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-8 text-[11px] font-semibold text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50"
+            />
+            {mapSearchQuery && (
+              <button
+                onClick={() => setMapSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                title="Xóa tìm kiếm"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {mapSearchQuery && (
+            <button
+              onClick={() => searchMatches[0] && focusWorkflowNode(searchMatches[0].node.id)}
+              disabled={searchMatches.length === 0}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {searchMatches.length > 0 ? `${searchMatches.length} kết quả` : '0 kết quả'}
+            </button>
+          )}
           {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as WorkflowLevel[]).map(level => {
             const style = LEVEL_COLORS[level];
             return (
@@ -2283,9 +2470,16 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
             <button
               onClick={handleFitMap}
               className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-[11px] font-black text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
-              title="Fit lại map"
+              title="Thu toàn bộ map vào khung"
             >
-              Fit
+              Fit all
+            </button>
+            <button
+              onClick={handleReadableMap}
+              className="rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 py-2 text-[11px] font-black text-indigo-600 transition-colors hover:bg-indigo-100"
+              title="Zoom về mức dễ đọc"
+            >
+              Đọc rõ
             </button>
             <button
               onClick={() => zoomBy(0.9)}
@@ -2465,6 +2659,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 const treeNode = isTreeNode(node) ? node : null;
                 const highlighted = treeNode ? isHigh(node.id) : selectedCustomNodeId === node.id || activePath.length === 0;
                 const isSelected = selectedNode?.id === node.id || selectedCustomNodeId === node.id;
+                const isSearchMatched = searchMatchNodeIds.has(node.id);
                 const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
                 const branchStatus = branchStatusByNodeId.get(node.id) || 'ungenerated';
                 const branchTheme = BRANCH_STATUS_THEME[branchStatus];
@@ -2504,8 +2699,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                       top: absY,
                       width: NODE_W,
                       height: NODE_H,
-                      zIndex: isSelected ? 20 : highlighted ? 10 : 1,
-                      opacity: highlighted ? 1 : 0.88,
+                      zIndex: isSelected ? 20 : isSearchMatched ? 16 : highlighted ? 10 : 1,
+                      opacity: highlighted || isSearchMatched ? 1 : 0.88,
                       transform: draggedCustomNodeId === node.id ? 'scale(1.02)' : 'scale(1)',
                     }}
                   >
@@ -2520,9 +2715,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                       className="relative w-full h-full rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer"
                       style={{
                         background: style.bg,
-                        border: `2px solid ${isSelected ? style.accent : style.border}`,
+                        border: `2px solid ${isSelected || isSearchMatched ? style.accent : style.border}`,
                         boxShadow: isSelected
                           ? `0 0 0 3px ${style.accent}22, 0 8px 24px ${style.accent}20`
+                          : isSearchMatched ? `0 0 0 4px ${style.accent}22, 0 10px 26px ${style.accent}18`
                           : highlighted ? `0 2px 8px rgba(0,0,0,0.06)` : `0 1px 4px rgba(0,0,0,0.04)`,
                       }}
                     >

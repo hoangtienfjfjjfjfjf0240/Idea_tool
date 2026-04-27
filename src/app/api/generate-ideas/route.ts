@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI, getAIApiKey, getAIChatCompletionsUrl } from '@/lib/aiClient';
 import {
+  buildCreativeBriefOutputSpec,
   buildFrameworkInjection,
   buildIdeaOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
   estimateHookDurationSeconds,
+  normalizeCreativeBriefOutput,
   normalizeIdeaOutput,
   parseJsonLoose,
   TOOL_COMPATIBILITY_GUARDRAILS,
@@ -23,11 +25,11 @@ const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|neve
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
 const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
-const MAX_IDEAS_PER_AI_BATCH = 5;
+const MAX_IDEAS_PER_AI_BATCH = 2;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 65000;
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 25000;
-const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 15000;
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 60000;
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 75000;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 type IdeaBatchPlan = {
@@ -107,9 +109,8 @@ function repairIdeaTrackingFields(
 ): Record<string, unknown> {
   const next = { ...item };
   const meta = { ...asRecord(item.meta) };
-  const id = asText(item.id);
 
-  next.id = TRACKING_ID_PATTERN.test(id) ? id : `P0-A${context.angleIndex}-I${context.ideaIndex}`;
+  next.id = `P0-A${context.angleIndex}-I${context.ideaIndex}`;
   meta.builderVersion = asText(meta.builderVersion) || 'prompt_system_builder_v1';
   meta.pillar = asText(meta.pillar) || context.pillar;
   meta.pillarIndex = Number(meta.pillarIndex ?? 0) || 0;
@@ -209,7 +210,7 @@ function detectLang(coreUsers: string[]): string {
   if (hasWord('french') || hasWord('pháp') || hasWord('france') || hasWord('français')) return 'FR (Pháp)';
   if (hasWord('thai') || hasWord('thái') || hasWord('malay') || hasWord('indonesia') || hasWord('sea')) return 'SEA (Đa ngôn ngữ ĐNA)';
   if (hasWord('korean') || hasWord('hàn') || hasWord('korea')) return 'KO (Hàn Quốc)';
-  return 'EN (Tiếng Anh)';
+  return 'Vietnamese';
 }
 
 // Map frontend model names to gateway model identifiers
@@ -562,7 +563,7 @@ YOUR SLOT ${slotNumber} LANE:
 
 Hard guardrails for this slot:
 - Stay on the exact selected pain point and angle. Do not replace the angle with a generic benefit.
-- Do not write a generic "user holds phone and checks which style/vibe fits" idea unless the lane adds a new conflict object, social pressure, proof object, timer, teardown, or tactile cue.
+- Do not write a generic "user holds phone and checks the app" idea unless the lane adds a new conflict object, social pressure, proof object, timer, teardown, or tactile cue.
 - The first frame must make this lane visibly different from the other slots.
 - The title, hook.visual, hook voice, body proof, and CTA payoff must all reflect this lane.
 - If the result sounds like a basic app demo, rewrite it into the assigned lane before output.`;
@@ -585,6 +586,19 @@ function ideaSignature(idea: Record<string, unknown>): string {
     asText(body.voiceover),
     asText(body.voice),
   ].filter(Boolean).join(' ');
+}
+
+function ideaHookLine(idea: Record<string, unknown>): string {
+  const meta = asRecord(idea.meta);
+  const hook = asRecord(idea.hook);
+  return asText(meta.hookPrimary) || asText(hook.textOverlay) || asText(hook.voiceover) || asText(hook.voice);
+}
+
+function hasSameHookFrame(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const left = ideaHookLine(a);
+  const right = ideaHookLine(b);
+  if (!left || !right) return false;
+  return normalizeCompareText(left) === normalizeCompareText(right) || jaccardSimilarity(left, right) >= 0.72;
 }
 
 function creativeTypeKey(idea: Record<string, unknown>): string {
@@ -629,7 +643,10 @@ function jaccardSimilarity(a: string, b: string): number {
 function hasNearDuplicateIdeas(ideas: Record<string, unknown>[]): boolean {
   for (let i = 0; i < ideas.length; i++) {
     for (let j = i + 1; j < ideas.length; j++) {
-      if (jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.82) {
+      if (
+        hasSameHookFrame(ideas[i], ideas[j])
+        || jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.82
+      ) {
         return true;
       }
     }
@@ -657,7 +674,7 @@ function dedupeIdeas(candidates: Record<string, unknown>[], existing: Record<str
     const isOverusedPov = creativeKey === 'pov' && (creativeCounts.pov || 0) >= maxPovPerRequest;
     const isUnique = [...existing, ...unique].every(item => (
       jaccardSimilarity(signature, ideaSignature(item)) < 0.82
-    ));
+    )) && ![...existing, ...unique].some(item => hasSameHookFrame(candidate, item));
 
     if (isUnique && !isOverusedPov) {
       unique.push(candidate);
@@ -696,7 +713,7 @@ function getIdeaBatchTimeoutMs(model: string, batchQuantity: number) {
 }
 
 function getIdeaResponseTokenBudget(batchQuantity: number) {
-  return Math.max(2200, batchQuantity * 1200);
+  return Math.max(3200, batchQuantity * 1800);
 }
 
 function trimPromptText(text: string, maxLength = 160) {
@@ -718,6 +735,64 @@ function buildInRequestIdeaHistory(ideas: Record<string, unknown>[]) {
    bodyVisual="${trimPromptText(asText(body.visual) || asText(body.script), 140)}"`;
     })
     .join('\n');
+}
+
+function buildWinningPatternLibraryBlock(context: {
+  appName: string;
+  category: string;
+  psp: string;
+  painpoint: string;
+  angle: string;
+}) {
+  return `\n[REFERENCE VIDEO DNA - EXAMPLES ONLY, NOT A CLOSED TEMPLATE MENU]
+These are distilled from the user's sample/winning content to show the expected level of specificity, pacing, proof, and first-frame thinking.
+Do not force ideas into these exact formats. Use them as creative cues. If another structure fits the selected pain point better, create a new named pattern or a hybrid pattern.
+
+1. Siri Bridge
+- Hook: a real person asks Siri/phone a painfully specific question.
+- Beat: Siri/assistant recommends the app as the shortcut.
+- Demo: open app, perform one visible action, show result/proof screen.
+- Best for: home design, phone utilities, habit/health tracking when the user feels stuck.
+
+2. Shock Object / Visual Metaphor
+- Hook: an odd, tactile, slightly uncomfortable macro visual stops scroll before explanation.
+- Beat: overlay connects the object to the real user pain.
+- Demo: cut hard to phone/app action.
+- Best for: health/wellness anxiety, hidden risk, messy storage, ugly room/problem reveal.
+
+3. Phone Demo Proof
+- Hook: hand-held phone screen, finger already doing the action.
+- Beat: one clear app action: scan, measure, compare, render, delete, save, track.
+- Proof: result screen held long enough to read.
+- Best for: any feature where the proof is in the UI.
+
+4. Transformation Demo
+- Hook: ugly/empty/confusing starting point.
+- Beat: user performs one app action.
+- Proof: visual before-to-render or messy-to-clean transformation. For health, use trend/logging proof only, not health outcome before/after.
+- Best for: interior design, cleaner, photo, productivity.
+
+5. Split-Screen Choice
+- Hook: two/three possible paths or guesses shown side by side.
+- Beat: force the viewer to choose before revealing the app action.
+- Proof: app resolves uncertainty.
+- Best for: cost estimate, design options, symptom tracking, duplicate cleanup.
+
+For this request:
+- App: ${context.appName}
+- Category: ${context.category}
+- Selected pain point: ${context.painpoint}
+- Selected angle: ${context.angle || 'No locked angle'}
+- PSP/app action to prove: ${context.psp}
+
+Mandatory adaptation:
+- Each idea must output a reference_pattern name, but it can be a library cue, a hybrid, or a newly invented pattern that fits the pain point.
+- Do not copy sample videos literally. Do not overuse Siri, shock objects, phone demos, or split-screen if they do not naturally fit the selected angle.
+- first_frame_asset must be a concrete visual asset from the first 0.5 seconds.
+- psp_bridge must connect the hook emotion/angle to the PSP before the Body/demo.
+- proof_object must be a concrete screen/object visible in the proof section.
+- app_demo_action must name the exact tap/scan/upload/render/track/compare action.
+- overlay_sequence must read like real video captions, not strategy notes.\n`;
 }
 
 function buildVariationWindowBlock(batchStartIndex: number, batchQuantity: number, totalRequestedQuantity: number) {
@@ -762,123 +837,123 @@ function buildFallbackIdeasForFilters(options: {
   const patterns = [
     {
       creativeType: 'UGC',
-      hookPrimary: 'Why does this still happen?',
-      hookAlt1: 'The hidden blocker is here',
-      hookAlt2: 'Stop missing this cue',
-      hookVoice: 'Why does this still happen every time?',
-      bodyVoice: 'Show the exact blocker first, then reveal the product fix in one clear action.',
-      ctaVoice: `Try ${options.appName} with this setup.`,
-      bodyOverlay: 'Reveal the blocker',
-      ctaOverlay: `Try ${options.appName}`,
-      scene: 'handheld close-up on the exact object causing friction',
+      hookPrimary: 'Sao chuyện này cứ lặp lại?',
+      hookAlt1: 'Điểm kẹt nằm ngay đây',
+      hookAlt2: 'Đừng bỏ qua dấu hiệu này',
+      hookVoice: 'Sao lần nào chuyện này cũng lặp lại vậy?',
+      bodyVoice: 'Cho thấy đúng điểm kẹt trước, rồi mở app để ghi lại cùng tình huống trong một thao tác rõ ràng.',
+      ctaVoice: `Thử theo dõi trong ${options.appName}.`,
+      bodyOverlay: 'Lộ rõ điểm kẹt',
+      ctaOverlay: `Thử ${options.appName}`,
+      scene: 'cận cảnh handheld vào đúng vật thể hoặc hành động đang gây khó chịu',
     },
     {
       creativeType: 'Reaction',
-      hookPrimary: 'What changed in one tap?',
-      hookAlt1: 'The reaction says it all',
-      hookAlt2: 'One tap changed this',
-      hookVoice: 'Wait, what changed in one tap?',
-      bodyVoice: 'Cut to the reaction, then show the app action that made the change obvious.',
-      ctaVoice: `Open ${options.appName} and test it.`,
-      bodyOverlay: 'One action, clear result',
-      ctaOverlay: 'Test it now',
-      scene: 'reaction shot after the first visible result appears on screen',
+      hookPrimary: 'Một thao tác làm rõ điều gì?',
+      hookAlt1: 'Nhìn phản ứng là hiểu',
+      hookAlt2: 'Một lần ghi lại là khác',
+      hookVoice: 'Khoan, chỉ một thao tác mà rõ ra điều gì vậy?',
+      bodyVoice: 'Cắt sang phản ứng của nhân vật, rồi cho thấy thao tác trong app giúp họ nhìn lại vấn đề rõ hơn.',
+      ctaVoice: `Mở ${options.appName} và thử ghi lại.`,
+      bodyOverlay: 'Một thao tác, rõ hơn',
+      ctaOverlay: 'Thử ngay',
+      scene: 'cảnh phản ứng khi thông tin quan trọng vừa hiện rõ trên màn hình',
     },
     {
       creativeType: 'Split Screen',
-      hookPrimary: 'Without this, it drags',
-      hookAlt1: 'One side feels stuck',
-      hookAlt2: 'The contrast is obvious',
-      hookVoice: 'Without this, the same task drags.',
-      bodyVoice: 'Use a split frame to compare the slow path with the app-assisted path.',
-      ctaVoice: `Compare it inside ${options.appName}.`,
-      bodyOverlay: 'Slow path vs fix',
-      ctaOverlay: 'Compare your result',
-      scene: 'split-screen contrast between the messy route and the cleaner app route',
+      hookPrimary: 'Không ghi lại thì cứ đoán mãi',
+      hookAlt1: 'Một bên vẫn bị kẹt',
+      hookAlt2: 'Nhìn đối chiếu là rõ',
+      hookVoice: 'Không ghi lại thì tình huống này cứ bị đoán mò mãi.',
+      bodyVoice: 'Dùng split-screen để so sánh lúc chỉ đoán cảm giác với lúc có app ghi lại cùng vấn đề.',
+      ctaVoice: `So sánh trong ${options.appName}.`,
+      bodyOverlay: 'Đoán mò vs ghi lại',
+      ctaOverlay: 'So sánh ngay',
+      scene: 'split-screen giữa một bên xử lý theo cảm giác và một bên mở app để ghi lại',
     },
     {
       creativeType: 'Challenge',
-      hookPrimary: 'Can you spot the blocker?',
-      hookAlt1: 'Most people miss this',
-      hookAlt2: 'Find the problem first',
-      hookVoice: 'Can you spot the blocker before I show it?',
-      bodyVoice: 'Turn the pain point into a quick challenge, then show the fix after the viewer guesses.',
-      ctaVoice: `Try the challenge in ${options.appName}.`,
-      bodyOverlay: 'Spot the blocker',
-      ctaOverlay: 'Try the challenge',
-      scene: 'challenge-style opening with the blocker visible but not explained yet',
+      hookPrimary: 'Bạn thấy điểm bất thường chưa?',
+      hookAlt1: 'Nhiều người bỏ lỡ chỗ này',
+      hookAlt2: 'Tìm vấn đề trước đã',
+      hookVoice: 'Bạn thấy điểm bất thường trước khi tôi chỉ ra không?',
+      bodyVoice: 'Biến painpoint thành một thử thách ngắn, rồi cho thấy app giúp ghi lại đúng chi tiết vừa bị bỏ qua.',
+      ctaVoice: `Thử kiểm tra trong ${options.appName}.`,
+      bodyOverlay: 'Tìm dấu hiệu',
+      ctaOverlay: 'Thử kiểm tra',
+      scene: 'mở đầu kiểu challenge, dấu hiệu đã xuất hiện nhưng chưa được giải thích',
     },
     {
       creativeType: 'Social Proof',
-      hookPrimary: 'Everyone notices this late',
-      hookAlt1: 'This comment was right',
-      hookAlt2: 'The late clue matters',
-      hookVoice: 'Everyone notices this way too late.',
-      bodyVoice: 'Frame the idea as a comment reply, then prove the comment with a quick demo.',
-      ctaVoice: `Use ${options.appName} for your next test.`,
-      bodyOverlay: 'The comment was right',
-      ctaOverlay: 'Make your next test',
-      scene: 'comment-reply opener with a real-world proof shot immediately after',
+      hookPrimary: 'Ai cũng nhận ra quá muộn',
+      hookAlt1: 'Bình luận này nói đúng',
+      hookAlt2: 'Dấu hiệu muộn vẫn quan trọng',
+      hookVoice: 'Nhiều người chỉ nhận ra chuyện này khi nó đã lặp lại quá nhiều lần.',
+      bodyVoice: 'Dựng như một video trả lời bình luận, sau đó chứng minh bằng demo ghi lại tình huống thật.',
+      ctaVoice: `Dùng ${options.appName} cho lần theo dõi tiếp theo.`,
+      bodyOverlay: 'Bình luận nói đúng',
+      ctaOverlay: 'Theo dõi lần tới',
+      scene: 'mở đầu dạng reply comment, ngay sau đó là cảnh chứng minh ngoài đời thật',
     },
     {
       creativeType: 'ASMR',
-      hookPrimary: 'Why it feels harder',
-      hookAlt1: 'The texture gives it away',
-      hookAlt2: 'Listen to the problem',
-      hookVoice: 'This is why it feels harder than it should.',
-      bodyVoice: 'Use a tactile sound or texture cue to make the pain point feel concrete.',
-      ctaVoice: `Check the cleaner path in ${options.appName}.`,
-      bodyOverlay: 'Feel the friction',
-      ctaOverlay: 'Check the cleaner path',
-      scene: 'macro texture or sound cue that makes the friction obvious',
+      hookPrimary: 'Vì sao nó khó chịu vậy?',
+      hookAlt1: 'Cảm giác đã lộ ra rồi',
+      hookAlt2: 'Nghe là thấy vấn đề',
+      hookVoice: 'Đây là lý do cảm giác đó khó chịu hơn mình tưởng.',
+      bodyVoice: 'Dùng âm thanh hoặc texture cận cảnh để biến painpoint thành một cảm giác cụ thể.',
+      ctaVoice: `Xem cách ghi lại rõ hơn trong ${options.appName}.`,
+      bodyOverlay: 'Cảm giác khó chịu',
+      ctaOverlay: 'Ghi lại rõ hơn',
+      scene: 'macro texture hoặc âm thanh cận cảnh khiến điểm khó chịu hiện rõ',
     },
     {
       creativeType: 'Trend Format',
-      hookPrimary: 'Never miss this cue',
-      hookAlt1: 'The cue appears first',
-      hookAlt2: 'This cue changes it',
-      hookVoice: 'Never miss this cue again.',
-      bodyVoice: 'Use a fast trend-style cut to repeat the cue, then show the app payoff.',
-      ctaVoice: `Make the cue obvious with ${options.appName}.`,
-      bodyOverlay: 'Cue first, fix second',
-      ctaOverlay: 'Make it obvious',
-      scene: 'fast trend-style cut built around one repeated visual cue',
+      hookPrimary: 'Đừng bỏ lỡ dấu hiệu này',
+      hookAlt1: 'Dấu hiệu xuất hiện trước',
+      hookAlt2: 'Một dấu hiệu làm rõ mọi thứ',
+      hookVoice: 'Đừng bỏ lỡ dấu hiệu này thêm lần nào nữa.',
+      bodyVoice: 'Dùng nhịp cắt trend nhanh để lặp lại dấu hiệu, rồi cho thấy app ghi lại nó ra sao.',
+      ctaVoice: `Làm dấu hiệu rõ hơn với ${options.appName}.`,
+      bodyOverlay: 'Dấu hiệu trước, app sau',
+      ctaOverlay: 'Làm rõ dấu hiệu',
+      scene: 'nhịp cắt trend nhanh xoay quanh một dấu hiệu thị giác được lặp lại',
     },
     {
       creativeType: 'Interview',
-      hookPrimary: 'Would you notice this?',
-      hookAlt1: 'This answer changes it',
-      hookAlt2: 'Ask this first',
-      hookVoice: 'Would you notice this before it becomes a problem?',
-      bodyVoice: 'Use a quick street-test or friend-test question, then prove the answer with the app flow.',
-      ctaVoice: `Run the same check in ${options.appName}.`,
-      bodyOverlay: 'Ask before solving',
-      ctaOverlay: 'Run the check',
-      scene: 'interview-style opener where one person points at the exact blocker',
+      hookPrimary: 'Bạn có để ý chuyện này không?',
+      hookAlt1: 'Câu trả lời làm rõ vấn đề',
+      hookAlt2: 'Hỏi câu này trước',
+      hookVoice: 'Bạn có để ý chuyện này trước khi nó thành vấn đề không?',
+      bodyVoice: 'Dùng một câu hỏi nhanh kiểu hỏi bạn bè, rồi chứng minh bằng flow ghi lại trong app.',
+      ctaVoice: `Kiểm tra lại trong ${options.appName}.`,
+      bodyOverlay: 'Hỏi trước khi đoán',
+      ctaOverlay: 'Kiểm tra lại',
+      scene: 'mở đầu kiểu phỏng vấn, một người chỉ thẳng vào đúng điểm kẹt',
     },
     {
       creativeType: 'UGC',
-      hookPrimary: 'This shortcut is hidden',
-      hookAlt1: 'The shortcut starts here',
-      hookAlt2: 'Skip the slow version',
-      hookVoice: 'This shortcut is hidden in the moment everyone ignores.',
-      bodyVoice: 'Show the slow manual path for one beat, then switch into the cleaner app path.',
-      ctaVoice: `Try the shortcut with ${options.appName}.`,
-      bodyOverlay: 'Skip the slow path',
-      ctaOverlay: 'Try the shortcut',
-      scene: 'over-the-shoulder UGC shot with the slow manual workaround visible first',
+      hookPrimary: 'Lối tắt nằm ngay khoảnh khắc này',
+      hookAlt1: 'Lối tắt bắt đầu ở đây',
+      hookAlt2: 'Bỏ qua cách đoán mò',
+      hookVoice: 'Lối tắt nằm ngay khoảnh khắc mà nhiều người bỏ qua.',
+      bodyVoice: 'Cho thấy cách xử lý thủ công trong một nhịp, rồi chuyển sang app để ghi lại rõ hơn.',
+      ctaVoice: `Thử cách này với ${options.appName}.`,
+      bodyOverlay: 'Bỏ qua đoán mò',
+      ctaOverlay: 'Thử cách này',
+      scene: 'cảnh UGC quay qua vai, thấy rõ cách xử lý thủ công chậm chạp trước',
     },
     {
       creativeType: 'POV',
-      hookPrimary: 'Still stuck at this step?',
-      hookAlt1: 'This step kills momentum',
-      hookAlt2: 'Watch the fix land',
-      hookVoice: 'Still stuck at this step?',
-      bodyVoice: 'Move from the stuck moment into a simple before-choice-after-action flow.',
-      ctaVoice: `Build your version in ${options.appName}.`,
-      bodyOverlay: 'Fix the stuck step',
-      ctaOverlay: 'Build your version',
-      scene: 'single POV frame where the viewer sees the blocker from their own angle',
+      hookPrimary: 'Vẫn bị kẹt ở bước này?',
+      hookAlt1: 'Bước này làm mất nhịp',
+      hookAlt2: 'Xem cách gỡ nó',
+      hookVoice: 'Bạn vẫn bị kẹt ở bước này à?',
+      bodyVoice: 'Đi từ khoảnh khắc bị kẹt sang một flow đơn giản: nhận ra, chọn cách ghi lại, rồi xem lại dữ liệu.',
+      ctaVoice: `Tạo cách theo dõi của bạn trong ${options.appName}.`,
+      bodyOverlay: 'Gỡ bước bị kẹt',
+      ctaOverlay: 'Tạo cách theo dõi',
+      scene: 'khung POV đơn, người xem nhìn thấy điểm kẹt từ chính góc nhìn của nhân vật',
     },
   ];
 
@@ -887,7 +962,7 @@ function buildFallbackIdeasForFilters(options: {
     const pattern = patterns[displayIndex % patterns.length];
     const rawIdea = {
       id: `P0-A${normalizedAngleIndex}-I${displayIndex}`,
-      title: `Idea ${displayIndex + 1}: ${pattern.hookPrimary}`,
+      title: `Ý tưởng ${displayIndex + 1}: ${pattern.hookPrimary}`,
       duration: options.duration,
       creativeType: pattern.creativeType,
       meta: {
@@ -900,11 +975,11 @@ function buildFallbackIdeasForFilters(options: {
         hookPrimary: pattern.hookPrimary,
         hookAlt1: pattern.hookAlt1,
         hookAlt2: pattern.hookAlt2,
-        visualRefNotes: `${visualType} for ${targetMarket}; open on ${pattern.scene}.`,
+        visualRefNotes: `${visualType} cho ${targetMarket}; mở đầu bằng ${pattern.scene}.`,
         talentProfile: coreUser,
-        dontDo: 'Do not show a generic app screen without the selected pain object.',
+        dontDo: 'Không được chỉ quay màn hình app chung chung mà thiếu vật thể hoặc khoảnh khắc painpoint đã chọn.',
         track: visualType.toLowerCase().includes('motion') ? 'C' : 'B',
-        trackReason: `Fallback keeps the selected angle "${angleName}" visible through ${pattern.scene}.`,
+        trackReason: `Mẫu cứu hộ giữ angle "${angleName}" hiển thị qua ${pattern.scene}.`,
         priority: 'A',
       },
       framework: {
@@ -913,30 +988,30 @@ function buildFallbackIdeasForFilters(options: {
         emotion,
         psp,
       },
-      explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
+      explanation: `Mẫu cứu hộ có cấu trúc vì batch AI trả quá ít idea hợp lệ. Nó vẫn giữ "${painpoint}" và angle "${angleName}" nhưng đổi cách mở đầu.`,
       hook: {
         durationSeconds: estimateHookDurationSeconds({
-          visual: `Open with ${pattern.scene}. The first frame clearly shows "${painpoint}" for ${coreUser}, in a ${targetMarket} context, before any app UI appears.`,
+          visual: `Mở bằng ${pattern.scene}. Khung đầu cho thấy rõ "${painpoint}" của ${coreUser} trong bối cảnh ${targetMarket}, trước khi xuất hiện UI app.`,
           voice: pattern.hookVoice,
           textOverlay: pattern.hookPrimary,
         }),
-        visual: `Open with ${pattern.scene}. The first frame clearly shows "${painpoint}" for ${coreUser}, in a ${targetMarket} context, before any app UI appears.`,
+        visual: `Mở bằng ${pattern.scene}. Khung đầu cho thấy rõ "${painpoint}" của ${coreUser} trong bối cảnh ${targetMarket}, trước khi xuất hiện UI app.`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
         viTranslation: `Giữ đúng painpoint "${painpoint}" và mở bằng angle "${angleName}".`,
         viewerProfile: coreUser,
-        viewerEmotion: `Viewer feels ${emotion} because the blocker is visible before the explanation.`,
-        painpointImpact: `The pain point becomes concrete through the first visible object or action.`,
-        whyTheyStopScrolling: `The hook asks a direct question and makes the blocker visible immediately.`,
+        viewerEmotion: `Người xem thấy ${emotion} vì điểm kẹt xuất hiện trước phần giải thích.`,
+        painpointImpact: `Painpoint trở nên cụ thể qua vật thể hoặc hành động đầu tiên.`,
+        whyTheyStopScrolling: `Hook đặt câu hỏi trực diện và làm điểm kẹt hiện ra ngay lập tức.`,
       },
       body: {
-        visual: `Show the stuck moment for two quick beats, then move into ${options.appName} solving the exact same situation without changing the pain point.`,
+        visual: `Cho thấy khoảnh khắc bị kẹt trong hai nhịp nhanh, rồi chuyển sang ${options.appName} để ghi lại đúng tình huống đó mà không đổi painpoint.`,
         voice: pattern.bodyVoice,
         textOverlay: pattern.bodyOverlay,
         viTranslation: `Demo ${psp} như cách giải quyết trực tiếp cho painpoint đã chọn.`,
       },
       cta: {
-        visual: `End on the ${options.appName} result screen with the key action visible and no extra feature detour.`,
+        visual: `Kết thúc ở màn hình ${options.appName}, thấy rõ hành động chính và không lạc sang tính năng phụ.`,
         voice: pattern.ctaVoice,
         textOverlay: pattern.ctaOverlay,
         viTranslation: `Kêu gọi người xem test đúng tình huống này trong app.`,
@@ -989,6 +1064,7 @@ export async function POST(request: NextRequest) {
         extraContext: [
           'Task type: refine an existing idea, do not rewrite unrelated parts.',
           'Preserve the current JSON field structure and keep meta coherent after edits.',
+          'Hook must include or preserve meta.pspBridge: the short bridge from viewer emotion/angle to PSP before Body starts.',
         ],
       });
       const refinePrompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
@@ -999,6 +1075,8 @@ ${refineFramework}
 Refine one existing production brief using the user instruction below.
 - Apply only the requested changes.
 - Preserve the same problem-solution chain unless the user explicitly changes it.
+- Keep or add meta.pspBridge so Hook connects the pain/emotion to the PSP before Body.
+- Body is only the demo/proof continuation; do not make Body the first place where PSP becomes relevant.
 - Keep visual, voice, and textOverlay separated for hook, body, and CTA.
 - Return exactly 1 JSON object, not an array.
 
@@ -1173,6 +1251,13 @@ Trả JSON array of strings. KHÔNG markdown.`;
         ? `\n[IMPORTED VIDEO STRUCTURE]\n${structuredTrendNotes.join('\n')}\nLearn pacing and treatment, but do not copy the source structure verbatim.\n`
         : '';
       const seasonalVisualBlock = buildSeasonalVisualBlock(config.seasonalVisualContext);
+      const winningPatternBlock = buildWinningPatternLibraryBlock({
+        appName,
+        category: appCategory,
+        psp: featureContext,
+        painpoint: primaryPillar,
+        angle: angleContext,
+      });
 
       const refillIdeasOneByOne = async (
         missingCount: number,
@@ -1241,6 +1326,27 @@ Trả JSON array of strings. KHÔNG markdown.`;
           }
         );
 
+        const painpointPrecisionBlock = `
+## PAINPOINT PRECISION CONTRACT
+- Exact core user: ${coreUserValues.join('; ') || 'General viewer'}
+- Exact pain point pillar: ${primaryPillar}
+- Exact angle focus: ${angleContext || 'No locked angle'}
+- Exact PSP/app action: ${featureContext}
+- User direction: ${ideaDescription || 'None'}
+
+Hard requirements:
+- Do not reduce the pain point to a broad symptom. The hook and visual_scene_1 must include at least 2 concrete anchors from the selected pain point/angle, such as trigger moment, body signal, suspected cause, location, object, or user fear.
+- The first 3 seconds must show WHY this user cares now, not just that the symptom exists.
+- visual_scene_2 must show the selected PSP/app action solving or organizing the same problem. Do not jump to a generic app demo.
+- If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
+- If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
+- Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
+- Better Vietnamese health hook style examples: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Hook execution must not be a copy-paste stack: hook_primary is the headline, hook_text_overlay is the readable screen text, and hook_voiceover or hook_character_speech must add a different lived detail. If nobody visibly speaks, hook_character_speech must be an empty string.
+- Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
+- Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
+- For multiple ideas, every hook_primary must be meaningfully different. Do not reuse "Why do I..." or the same sentence frame across the batch.`;
+
         const frameworkInjection = buildFrameworkInjection({
           appName,
           category: appCategory,
@@ -1255,6 +1361,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
             truncatedPreviousIdeas ? 'Recent idea history block attached below in supporting context.' : 'No recent saved ideas',
             inRequestHistory ? 'Earlier ideas in this request are attached below in supporting context.' : 'No earlier ideas inside this request',
             structuredTrendNotes.length ? 'Imported video structure examples are attached below in supporting context.' : 'No imported video structure',
+            'Reference video DNA is attached below as examples only. Ideas may use, hybridize, or invent a better structure cue.',
             angleContext ? `Angle focus: ${angleContext}` : 'No locked angle',
           ],
           doList: [
@@ -1292,11 +1399,13 @@ ${recentIdeasBlock || '- No recent saved ideas.'}
 ${inRequestHistoryBlock || '- No earlier ideas in this request.'}
 ${trendingBlock || '- No trending hooks injected.'}
 ${importedTrendBlock || ''}
+${winningPatternBlock}
 ${marketContext}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
 ${singleIdeaSlotBlock || ''}
+${painpointPrecisionBlock}
 
 ## TASK
 Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
@@ -1305,11 +1414,14 @@ Generate ${plan.batchQuantity} production-ready full ideas for the selected filt
 - Each idea must stay inside the selected pillar and selected angle focus.
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
 - If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
+- Hook must include psp_bridge so the pain/emotion connects to the PSP before the Body section.
 - Hook, body, and CTA must follow one continuous problem-solution chain.
+- Body is a suggested demo/proof continuation; do not rely on Body alone to explain why the PSP matters.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
 - Creative type cap: output at most 1 POV idea in this batch. Use UGC, Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format for the rest.
+- Production blueprint: each idea must include reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes. reference_pattern can be custom/hybrid. psp_bridge belongs to Hook and must connect the emotion/angle to the PSP. The remaining fields must be concrete enough for a creator to edit the video without asking follow-up questions.
 
-${buildIdeaOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang, compact: true })}
+${buildCreativeBriefOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLang })}
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
@@ -1327,6 +1439,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         let text: string | null = null;
         let parsed: unknown = null;
         let modelUsed = modelCandidates[0];
+        let modelUsedIndex = 0;
 
         for (const [candidateIndex, model] of modelCandidates.entries()) {
           const candidateText = await askAI(prompt, {
@@ -1347,6 +1460,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             text = candidateText;
             parsed = candidateParsed;
             modelUsed = model;
+            modelUsedIndex = candidateIndex;
             break;
           }
 
@@ -1362,14 +1476,26 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           throw new Error('Không parse được response. Thử lại.');
         }
 
-        let arr = Array.isArray(parsed) ? parsed : [parsed];
-        let validation = normalizeAndValidateIdeas(arr, {
+        let parsedPreview: unknown = parsed;
+        let briefOutput = normalizeCreativeBriefOutput(parsed, {
+          duration,
+          appName,
+          pillar: primaryPillar,
+          coreUser: coreUserValues.join('; ') || 'General viewer',
+          emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
+          psp: featureContext,
+          angle: angleContext,
+          ideaDescription,
+          language: targetLang,
+        });
+        let validation = normalizeAndValidateIdeas(briefOutput.items, {
           duration,
           appName,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaStartIndex: requestStartIndex + plan.batchStartIndex,
         });
+        validation.invalidReasons.unshift(...briefOutput.invalidReasons);
         let valid = dedupeIdeas(validation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
         const duplicateDetected = valid.length > 1 && hasNearDuplicateIdeas(valid);
         const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < plan.batchQuantity;
@@ -1408,14 +1534,25 @@ ${retryNotes.join('\n\n')}`, {
 
           if (retryText) {
             const retryParsed = parseJson(retryText);
-            const retryArr = Array.isArray(retryParsed) ? retryParsed : retryParsed ? [retryParsed] : [];
-            const retryValidation = normalizeAndValidateIdeas(retryArr, {
+            const retryBriefOutput = normalizeCreativeBriefOutput(retryParsed, {
+              duration,
+              appName,
+              pillar: primaryPillar,
+              coreUser: coreUserValues.join('; ') || 'General viewer',
+              emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
+              psp: featureContext,
+              angle: angleContext,
+              ideaDescription,
+              language: targetLang,
+            });
+            const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
               duration,
               appName,
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
             });
+            retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
             const retryValid = dedupeIdeas(retryValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
             const retryHasDuplicates = retryValid.length > 1 && hasNearDuplicateIdeas(retryValid);
 
@@ -1424,28 +1561,98 @@ ${retryNotes.join('\n\n')}`, {
               || (duplicateDetected && retryValid.length > 0 && !retryHasDuplicates);
 
             if (shouldUseRetry && (retryValid.length > 0 || retryValidation.invalidReasons.length === 0)) {
-              arr = retryArr;
+              parsedPreview = retryParsed;
+              briefOutput = retryBriefOutput;
               validation = retryValidation;
               valid = retryValid;
             }
           }
         }
 
+        if (valid.length < plan.batchQuantity && modelCandidates.length > modelUsedIndex + 1) {
+          for (const [fallbackOffset, fallbackModel] of modelCandidates.slice(modelUsedIndex + 1).entries()) {
+            const fallbackText = await askAI(`${prompt}
+
+[MODEL FALLBACK - PREVIOUS MODEL OUTPUT WAS INVALID OR SHORT]
+Return exactly ${plan.batchQuantity} ideas. Keep the selected pain point and angle visible in the first scene.
+Do not output local fallback/template ideas. Do not make health claims.`, {
+              model: fallbackModel,
+              temperature: plan.batchQuantity > 1 ? 0.84 : 0.76,
+              max_tokens: responseTokenBudget,
+              useCreativePersona: false,
+              priority: 'high',
+              timeoutMs: GENERATE_IDEAS_RETRY_TIMEOUT_MS,
+            });
+
+            if (!fallbackText) continue;
+
+            const fallbackParsed = parseJson(fallbackText);
+            if (!fallbackParsed) {
+              console.warn('[generate-ideas] Parse failed for fallback model candidate:', fallbackModel);
+              continue;
+            }
+
+            const fallbackBriefOutput = normalizeCreativeBriefOutput(fallbackParsed, {
+              duration,
+              appName,
+              pillar: primaryPillar,
+              coreUser: coreUserValues.join('; ') || 'General viewer',
+              emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
+              psp: featureContext,
+              angle: angleContext,
+              ideaDescription,
+              language: targetLang,
+            });
+            const fallbackValidation = normalizeAndValidateIdeas(fallbackBriefOutput.items, {
+              duration,
+              appName,
+              pillar: primaryPillar,
+              angleIndex: Math.max(angleIndex - 1, 0),
+              ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+            });
+            fallbackValidation.invalidReasons.unshift(...fallbackBriefOutput.invalidReasons);
+            const fallbackValid = dedupeIdeas(fallbackValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
+            const fallbackHasDuplicates = fallbackValid.length > 1 && hasNearDuplicateIdeas(fallbackValid);
+
+            if (
+              fallbackValid.length > valid.length
+              || (fallbackValid.length === valid.length && valid.length > 0 && !fallbackHasDuplicates)
+            ) {
+              parsedPreview = fallbackParsed;
+              briefOutput = fallbackBriefOutput;
+              validation = fallbackValidation;
+              valid = fallbackValid;
+              modelUsed = fallbackModel;
+              modelUsedIndex = modelUsedIndex + 1 + fallbackOffset;
+            }
+
+            if (valid.length >= plan.batchQuantity && !fallbackHasDuplicates) break;
+          }
+        }
+
         if (valid.length === 0) {
-          console.error('[generate-ideas] No valid ideas:', JSON.stringify(arr[0]).substring(0, 200));
+          console.error('[generate-ideas] No valid ideas:', JSON.stringify(briefOutput.items[0] || parsedPreview).substring(0, 200));
           if (validation.invalidReasons.length > 0) {
             console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
           }
           throw new Error('AI trả về format sai. Thử lại.');
         }
 
-        return valid.slice(0, plan.batchQuantity);
+        return valid.slice(0, plan.batchQuantity).map((idea, localIndex) => repairIdeaTrackingFields(
+          idea,
+          {
+            angleIndex: Math.max(angleIndex - 1, 0),
+            ideaIndex: requestStartIndex + plan.batchStartIndex + localIndex,
+            pillar: primaryPillar,
+          }
+        ));
       };
 
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = requestedQuantity > 3 && selectedModel !== 'gemini-3-pro';
+      const shouldUseAiRefill = true;
+      const shouldUseLocalFallback = false;
 
       for (const plan of batchPlans) {
         try {
@@ -1463,7 +1670,7 @@ ${retryNotes.join('\n\n')}`, {
             batchIdeas.push(...recoveredIdeas);
 
             const stillMissing = plan.batchQuantity - batchIdeas.length;
-            if (stillMissing > 0) {
+            if (shouldUseLocalFallback && stillMissing > 0) {
               const fallbackIdeas = buildFallbackIdeasForFilters({
                 appName,
                 filters,
@@ -1499,7 +1706,7 @@ ${retryNotes.join('\n\n')}`, {
           aggregatedIdeas.push(...recoveredIdeas);
 
           const stillMissing = plan.batchQuantity - recoveredIdeas.length;
-          if (stillMissing > 0) {
+          if (shouldUseLocalFallback && stillMissing > 0) {
             const fallbackIdeas = buildFallbackIdeasForFilters({
               appName,
               filters,
@@ -1532,7 +1739,7 @@ ${retryNotes.join('\n\n')}`, {
         aggregatedIdeas.push(...recoveredIdeas);
 
         const stillMissing = requestedQuantity - aggregatedIdeas.length;
-        if (stillMissing > 0) {
+        if (shouldUseLocalFallback && stillMissing > 0) {
           const finalTopUp = buildFallbackIdeasForFilters({
             appName,
             filters,
@@ -1552,21 +1759,28 @@ ${retryNotes.join('\n\n')}`, {
       }
 
       if (aggregatedIdeas.length === 0) {
-        const emergencyIdeas = buildFallbackIdeasForFilters({
-          appName,
-          filters,
-          quantity: requestedQuantity,
-          duration,
-          startIndex: requestStartIndex,
-          angleIndex,
-          ideaDescription,
-        });
-        aggregatedIdeas.push(...emergencyIdeas);
-        fallbackCount += emergencyIdeas.length;
-        batchErrors.push('All AI batches failed; backend generated a full schema-safe fallback batch.');
+        return NextResponse.json({
+          success: false,
+          error: 'AI chưa tạo được idea hợp lệ. Vui lòng thử lại hoặc đổi model.',
+          meta: {
+            requestedQuantity,
+            generatedQuantity: 0,
+            batchCount: batchPlans.length,
+            partial: true,
+            fallbackCount,
+            warnings: batchErrors.length > 0 ? batchErrors : undefined,
+          },
+        }, { status: 502 });
       }
 
-      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity);
+      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity).map((idea, index) => repairIdeaTrackingFields(
+        idea,
+        {
+          angleIndex: Math.max(angleIndex - 1, 0),
+          ideaIndex: requestStartIndex + index,
+          pillar: primaryPillar,
+        }
+      ));
       return NextResponse.json({
         success: true,
         data: finalIdeas,
@@ -1636,6 +1850,27 @@ ${retryNotes.join('\n\n')}`, {
       : '';
     const diversityBlock = buildBatchDiversityBlock(quantity, angleContext, angleIndex, totalAngles);
 
+    const painpointPrecisionBlock = `
+## PAINPOINT PRECISION CONTRACT
+- Exact core user: ${coreUserValues.join('; ') || 'General viewer'}
+- Exact pain point pillar: ${primaryPillar}
+- Exact angle focus: ${angleContext || 'No locked angle'}
+- Exact PSP/app action: ${featureContext}
+- User direction: ${ideaDescription || 'None'}
+
+Hard requirements:
+- Do not reduce the pain point to a broad symptom. The hook and visual_scene_1 must include at least 2 concrete anchors from the selected pain point/angle, such as trigger moment, body signal, suspected cause, location, object, or user fear.
+- The first 3 seconds must show WHY this user cares now, not just that the symptom exists.
+- visual_scene_2 must show the selected PSP/app action solving or organizing the same problem. Do not jump to a generic app demo.
+- If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
+- If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
+- Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
+- Better Vietnamese health hook style examples: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Hook execution must not be a copy-paste stack: hook_primary is the headline, hook_text_overlay is the readable screen text, and hook_voiceover or hook_character_speech must add a different lived detail. If nobody visibly speaks, hook_character_speech must be an empty string.
+- Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
+- Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
+- For multiple ideas, every hook_primary must be meaningfully different. Do not reuse "Why do I..." or the same sentence frame across the batch.`;
+
     const frameworkInjection = buildFrameworkInjection({
       appName,
       category: appCategory,
@@ -1686,6 +1921,7 @@ ${marketContext}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
+${painpointPrecisionBlock}
 
 ## TASK
 Generate ${quantity} production-ready full ideas for the selected filter combination.
@@ -1696,7 +1932,7 @@ Generate ${quantity} production-ready full ideas for the selected filter combina
 - Hook, body, and CTA must follow one continuous problem-solution chain.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
 
-${buildIdeaOutputSpec({ quantity, duration, appName, language: targetLang })}
+${buildCreativeBriefOutputSpec({ quantity, duration, appName, language: targetLang })}
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
@@ -1744,13 +1980,25 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       });
     }
 
-    let arr = Array.isArray(parsed) ? parsed : [parsed];
-    let validation = normalizeAndValidateIdeas(arr, {
+    let parsedPreview: unknown = parsed;
+    let briefOutput = normalizeCreativeBriefOutput(parsed, {
+      duration,
+      appName,
+      pillar: primaryPillar,
+      coreUser: coreUserValues.join('; ') || 'General viewer',
+      emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
+      psp: featureContext,
+      angle: angleContext,
+      ideaDescription,
+      language: targetLang,
+    });
+    let validation = normalizeAndValidateIdeas(briefOutput.items, {
       duration,
       appName,
       pillar: primaryPillar,
       angleIndex: Math.max(angleIndex - 1, 0),
     });
+    validation.invalidReasons.unshift(...briefOutput.invalidReasons);
     let valid = validation.valid.slice(0, quantity);
     const duplicateDetected = quantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid);
     const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < quantity;
@@ -1786,13 +2034,24 @@ ${retryNotes.join('\n\n')}`, {
 
       if (retryText) {
         const retryParsed = parseJson(retryText);
-        const retryArr = Array.isArray(retryParsed) ? retryParsed : retryParsed ? [retryParsed] : [];
-        const retryValidation = normalizeAndValidateIdeas(retryArr, {
+        const retryBriefOutput = normalizeCreativeBriefOutput(retryParsed, {
+          duration,
+          appName,
+          pillar: primaryPillar,
+          coreUser: coreUserValues.join('; ') || 'General viewer',
+          emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
+          psp: featureContext,
+          angle: angleContext,
+          ideaDescription,
+          language: targetLang,
+        });
+        const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
           duration,
           appName,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
         });
+        retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
         const retryValid = retryValidation.valid.slice(0, quantity);
         const retryHasDuplicates = retryValid.length > 1 && hasNearDuplicateIdeas(retryValid);
 
@@ -1803,7 +2062,8 @@ ${retryNotes.join('\n\n')}`, {
         if (shouldUseRetry && (retryValid.length > 0 || retryValidation.invalidReasons.length === 0)) {
           text = retryText;
           parsed = retryParsed;
-          arr = retryArr;
+          parsedPreview = retryParsed;
+          briefOutput = retryBriefOutput;
           validation = retryValidation;
           valid = retryValid;
         }
@@ -1844,7 +2104,7 @@ Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`
     */
 
     if (valid.length === 0) {
-      console.error('[generate-ideas] No valid ideas:', JSON.stringify(arr[0]).substring(0, 200));
+      console.error('[generate-ideas] No valid ideas:', JSON.stringify(briefOutput.items[0] || parsedPreview).substring(0, 200));
       if (validation.invalidReasons.length > 0) {
         console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
       }

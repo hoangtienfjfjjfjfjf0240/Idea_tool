@@ -52,6 +52,65 @@ interface ImportedTrendAnalysis {
   modelUsed?: string;
 }
 
+const IMPORTED_TREND_GENERIC_MARKERS = [
+  'Imported video structure',
+  'Imported from video URL',
+  'Open with a strong, in-context visual hook.',
+  'Escalate the problem, then reveal the workaround or solution.',
+  'Close with a short payoff or CTA.',
+  'Handheld, social-first visual treatment.',
+  'Natural in-feed voice or sound design.',
+  'Short, mobile-first text overlay.',
+];
+
+function normalizeCompareText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isGenericImportedTrendAnalysis(analysis?: Partial<ImportedTrendAnalysis> | null) {
+  if (!analysis) return true;
+
+  const haystack = [
+    analysis.title,
+    analysis.summary,
+    analysis.hookPattern,
+    analysis.bodyPattern,
+    analysis.ctaPattern,
+    analysis.visualStyle,
+    analysis.audioStyle,
+    analysis.textOverlayStyle,
+    analysis.promptBooster,
+    ...(analysis.structureNotes || []),
+  ].map(normalizeCompareText);
+  const markerMatches = IMPORTED_TREND_GENERIC_MARKERS
+    .map(normalizeCompareText)
+    .filter(marker => haystack.some(value => value === marker || value.includes(marker))).length;
+  const keyMoments = analysis.keyMoments || [];
+  const hasSpecificMoments = keyMoments.length >= 2 && keyMoments.some(moment => normalizeCompareText(moment).length > 18);
+
+  return markerMatches >= 4 || (markerMatches >= 2 && !hasSpecificMoments);
+}
+
+function getGeneratedIdeaDedupKey(item: GeneratedIdeaApiItem) {
+  const parts = [
+    item.title,
+    item.meta?.hookPrimary,
+    item.hook?.textOverlay,
+    item.hook?.text_overlay,
+    item.hook?.voice,
+    item.hook?.visual,
+    item.body?.textOverlay,
+    item.body?.text_overlay,
+  ];
+  return normalizeCompareText(parts.filter(Boolean).join(' | ')).slice(0, 220);
+}
+
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
 
 type IdeaApiSection = {
@@ -397,6 +456,96 @@ function saveCategories(appId: string, cats: CategoryConfig[]) {
   );
 }
 
+const HISTORY_ALL_WEEKS = 'all';
+const HISTORY_TODAY = 'today';
+const HISTORY_THIS_WEEK = 'this-week';
+const HISTORY_THIS_MONTH = 'this-month';
+const HISTORY_DAY_PREFIX = 'day:';
+const HISTORY_WEEK_PREFIX = 'week:';
+const HISTORY_MONTH_PREFIX = 'month:';
+
+function toHistoryDate(value?: string | Date | null) {
+  const date = value instanceof Date ? value : value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function startOfHistoryWeek(date: Date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const day = start.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + offset);
+  return start;
+}
+
+function getHistoryWeekKey(value?: string | Date | null) {
+  const date = toHistoryDate(value);
+  const start = startOfHistoryWeek(date);
+  const year = start.getFullYear();
+  const month = String(start.getMonth() + 1).padStart(2, '0');
+  const day = String(start.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getHistoryDayKey(value?: string | Date | null) {
+  const date = toHistoryDate(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getHistoryMonthKey(value?: string | Date | null) {
+  const date = toHistoryDate(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function formatHistoryDay(dayKey: string) {
+  const date = new Date(`${dayKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return 'Ngày đã chọn';
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function formatHistoryMonth(monthKey: string) {
+  const date = new Date(`${monthKey}-01T00:00:00`);
+  if (Number.isNaN(date.getTime())) return 'Tháng đã chọn';
+  return date.toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
+}
+
+function getHistoryWeekRangeLabel(filterKey: string) {
+  if (filterKey === HISTORY_ALL_WEEKS) return 'Tất cả lịch sử';
+  if (filterKey === HISTORY_TODAY) return 'Hôm nay';
+  if (filterKey === HISTORY_THIS_WEEK) return 'Tuần này';
+  if (filterKey === HISTORY_THIS_MONTH) return 'Tháng này';
+  if (filterKey.startsWith(HISTORY_DAY_PREFIX)) return `Ngày ${formatHistoryDay(filterKey.slice(HISTORY_DAY_PREFIX.length))}`;
+  if (filterKey.startsWith(HISTORY_MONTH_PREFIX)) return `Tháng ${formatHistoryMonth(filterKey.slice(HISTORY_MONTH_PREFIX.length))}`;
+
+  const rawWeekKey = filterKey.startsWith(HISTORY_WEEK_PREFIX)
+    ? filterKey.slice(HISTORY_WEEK_PREFIX.length)
+    : filterKey;
+  const start = new Date(`${rawWeekKey}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return 'Tuần đã chọn';
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const format = (date: Date) => date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  const currentWeekKey = getHistoryWeekKey(new Date());
+  return `${rawWeekKey === currentWeekKey ? 'Tuần này' : 'Tuần'} ${format(start)} - ${format(end)}`;
+}
+
+function matchesHistoryDateFilter(idea: GeneratedIdea, filterKey: string) {
+  if (filterKey === HISTORY_ALL_WEEKS) return true;
+  const createdAt = idea.created_at;
+  if (filterKey === HISTORY_TODAY) return getHistoryDayKey(createdAt) === getHistoryDayKey(new Date());
+  if (filterKey === HISTORY_THIS_WEEK) return getHistoryWeekKey(createdAt) === getHistoryWeekKey(new Date());
+  if (filterKey === HISTORY_THIS_MONTH) return getHistoryMonthKey(createdAt) === getHistoryMonthKey(new Date());
+  if (filterKey.startsWith(HISTORY_DAY_PREFIX)) return getHistoryDayKey(createdAt) === filterKey.slice(HISTORY_DAY_PREFIX.length);
+  if (filterKey.startsWith(HISTORY_MONTH_PREFIX)) return getHistoryMonthKey(createdAt) === filterKey.slice(HISTORY_MONTH_PREFIX.length);
+  if (filterKey.startsWith(HISTORY_WEEK_PREFIX)) return getHistoryWeekKey(createdAt) === filterKey.slice(HISTORY_WEEK_PREFIX.length);
+  return getHistoryWeekKey(createdAt) === filterKey;
+}
+
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed, onAppKnowledgeUpdated }) => {
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
@@ -414,6 +563,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [editingItemText, setEditingItemText] = useState<{ original: string; current: string } | null>(null);
   const [savedHistory, setSavedHistory] = useState<GeneratedIdea[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyWeekFilter, setHistoryWeekFilter] = useState(HISTORY_TODAY);
   const [editingIdea, setEditingIdea] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState<any>(null);
   const [refiningIdea, setRefiningIdea] = useState<string | null>(null);
@@ -438,6 +588,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [selectedSeasonMonth, setSelectedSeasonMonth] = useState<string | null>(null);
   const [generatingAngles, setGeneratingAngles] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const usableImportedTrendAnalyses = useMemo(
+    () => importedTrendAnalyses.filter(analysis => !isGenericImportedTrendAnalysis(analysis)),
+    [importedTrendAnalyses]
+  );
 
   useEffect(() => {
     setOptions({
@@ -448,6 +603,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       videoStructure: [],
       visualType: [],
       targetMarket: [],
+    });
+  }, [app.id]);
+
+  useEffect(() => {
+    setImportedTrendAnalyses(prev => {
+      const filtered = prev.filter(analysis => !isGenericImportedTrendAnalysis(analysis));
+      return filtered.length === prev.length ? prev : filtered;
     });
   }, [app.id]);
 
@@ -500,8 +662,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       }
 
       const analysis = result.data as ImportedTrendAnalysis;
+      if (isGenericImportedTrendAnalysis(analysis)) {
+        throw new Error('Video import chỉ trả về template generic, không đưa vào prompt. Hãy thử video public ngắn hơn/direct MP4-WebM hoặc dán mô tả trend dạng text.');
+      }
+
       setImportedTrendAnalyses(prev => [analysis, ...prev.filter(item => item.sourceUrl !== analysis.sourceUrl)]);
-      appendTrendingTopics(analysis.suggestedTopics || []);
       setOptions(prev =>
         mergeOptionSelections(prev, {
           emotion: analysis.filterHints?.emotion || [],
@@ -519,6 +684,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   useEffect(() => {
     setCategories(loadCategories(app.id));
+    setHistoryWeekFilter(HISTORY_TODAY);
     loadOptions();
     loadHistory();
   }, [app.id]);
@@ -575,6 +741,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const ideas = await dbService.getIdeas(app.id);
     setSavedHistory(ideas);
   };
+
+  useEffect(() => {
+    if (savedHistory.length === 0) return;
+    setHistoryWeekFilter(prev => {
+      if (prev === HISTORY_ALL_WEEKS) return prev;
+      if (savedHistory.some(idea => matchesHistoryDateFilter(idea, prev))) return prev;
+      if (savedHistory.some(idea => matchesHistoryDateFilter(idea, HISTORY_TODAY))) return HISTORY_TODAY;
+      if (savedHistory.some(idea => matchesHistoryDateFilter(idea, HISTORY_THIS_WEEK))) return HISTORY_THIS_WEEK;
+      if (savedHistory.some(idea => matchesHistoryDateFilter(idea, HISTORY_THIS_MONTH))) return HISTORY_THIS_MONTH;
+      return `${HISTORY_MONTH_PREFIX}${getHistoryMonthKey(savedHistory[0]?.created_at)}`;
+    });
+  }, [savedHistory]);
 
   const getIdeaFavoriteKey = useCallback((idea: GeneratedIdea) => buildFavoriteFingerprint([
     'filter-generator',
@@ -727,6 +905,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setGenerationNotice(null);
     const controller = new AbortController();
     abortRef.current = controller;
     startProgress();
@@ -744,7 +923,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
       const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
-      const maxIdeasPerAngleRequest = 1;
+      const maxIdeasPerAngleRequest = 2;
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(quantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
@@ -764,7 +943,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const isGemini3Pro = selectedModel === 'gemini-3-pro';
       const maxConcurrent = Math.min(isGemini3Pro ? 3 : 5, generationTasks.length);
-      const maxAttemptsPerAngle = 2;
+      const maxAttemptsPerAngle = 4;
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = (attempt: number) => {
         if (isGemini3Pro && attempt > 1) return 'gpt-5.4-mini';
@@ -785,19 +964,50 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       };
 
       const requestAngleIdeas = async (task: { selectedAngle: string | null; angleIndex: number; startIndex: number; requestQuantity: number; filtersSnapshot: FilterState }) => {
+        const collected: GeneratedIdeaApiItem[] = [];
+        const collectedKeys = new Set<string>();
+        const buildCollectedIdeasSummary = () => collected.map((item, index) => {
+          const hookSummary = item.meta?.hookPrimary
+            || item.hook?.textOverlay
+            || item.hook?.voice
+            || item.hook?.visual
+            || item.hook?.script
+            || '';
+          return `${index + 1}. "${item.title || 'Idea'}" | type="${item.creativeType || ''}" | pain="${item.framework?.painpoint || ''}" | hook="${hookSummary}"`;
+        }).join('\n');
+        const collectUniqueItems = (items: GeneratedIdeaApiItem[]) => {
+          let added = 0;
+          for (const item of items) {
+            const key = getGeneratedIdeaDedupKey(item);
+            if (key && collectedKeys.has(key)) continue;
+            if (key) collectedKeys.add(key);
+            collected.push(item);
+            added += 1;
+            if (collected.length >= task.requestQuantity) break;
+          }
+          return added;
+        };
+        const mapCollectedResults = () => collected.slice(0, task.requestQuantity).map(item => ({
+          item,
+          filtersSnapshot: task.filtersSnapshot,
+        }));
+
         const attemptRequest = async (attempt = 1) => {
+          const missingQuantity = Math.max(1, task.requestQuantity - collected.length);
           const attemptModel = getAttemptModel(attempt);
           const retryModelLabel = attempt > 1 && isGemini3Pro ? ' bằng GPT mini' : '';
           const retryLabel = attempt > 1 ? ` (thử lại ${attempt}/${maxAttemptsPerAngle}${retryModelLabel})` : '';
-          const rangeStart = task.startIndex + 1;
-          const rangeEnd = task.startIndex + task.requestQuantity;
+          const rangeStart = task.startIndex + collected.length + 1;
+          const rangeEnd = task.startIndex + collected.length + missingQuantity;
           setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${rangeStart}-${rangeEnd}/${quantity}${retryLabel}...`);
 
           try {
             const inRunIdeasSummary = buildInRunIdeasSummary();
+            const collectedIdeasSummary = buildCollectedIdeasSummary();
             const previousIdeasForRequest = [
               previousIdeasSummary,
               inRunIdeasSummary ? `[IDEAS ALREADY GENERATED THIS RUN - DO NOT REPEAT]\n${inRunIdeasSummary}` : '',
+              collectedIdeasSummary ? `[IDEAS ALREADY GENERATED FOR THIS ANGLE - DO NOT REPEAT]\n${collectedIdeasSummary}` : '',
             ].filter(Boolean).join('\n\n');
 
             const res = await authenticatedFetch('/api/generate-ideas', {
@@ -808,14 +1018,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 appCategory: app.category,
                 filters: task.filtersSnapshot,
                 config: {
-                  quantity: task.requestQuantity,
+                  quantity: missingQuantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
                   ideaDescription,
                   visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
                   seasonalVisualContext,
                   totalVariations: quantity,
-                  variationIndex: task.startIndex + 1,
-                  startIndex: task.startIndex,
+                  variationIndex: task.startIndex + collected.length + 1,
+                  startIndex: task.startIndex + collected.length,
                   angleIndex: task.angleIndex + 1,
                   totalAngles: anglesToGenerate.length,
                   selectedAngle: task.selectedAngle,
@@ -824,8 +1034,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 appKnowledge: app.app_knowledge || null,
                 selectedModel: attemptModel,
                 trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
-                trendingStructures: importedTrendAnalyses.length > 0
-                  ? importedTrendAnalyses.map(item => item.promptBooster).filter(Boolean)
+                trendingStructures: usableImportedTrendAnalyses.length > 0
+                  ? usableImportedTrendAnalyses.map(item => item.promptBooster).filter(Boolean)
                   : null,
               }),
               signal: controller.signal,
@@ -844,14 +1054,21 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               throw new Error(`Angle ${task.angleIndex + 1} chỉ nhận fallback template từ API.`);
             }
 
-            if (aiItems.length < task.requestQuantity) {
-              throw new Error(`Angle ${task.angleIndex + 1} chỉ nhận ${aiItems.length}/${task.requestQuantity} ideas hợp lệ từ API.`);
+            const addedCount = collectUniqueItems(aiItems);
+            if (collected.length >= task.requestQuantity) {
+              return mapCollectedResults();
             }
 
-            return aiItems.slice(0, task.requestQuantity).map(item => ({
-              item,
-              filtersSnapshot: task.filtersSnapshot,
-            }));
+            if (attempt < maxAttemptsPerAngle) {
+              if (addedCount === 0) {
+                console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} returned only duplicate ideas, refilling.`);
+              }
+              return attemptRequest(attempt + 1);
+            }
+
+            const partialMessage = `Angle ${task.angleIndex + 1} chi gom duoc ${collected.length}/${task.requestQuantity} idea hop le sau ${maxAttemptsPerAngle} luot refill.`;
+            failedGenerationMessages.push(partialMessage);
+            return mapCollectedResults();
           } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
               throw error;
@@ -860,6 +1077,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} request failed.`, error);
             if (attempt < maxAttemptsPerAngle) {
               return attemptRequest(attempt + 1);
+            }
+
+            if (collected.length > 0) {
+              const partialMessage = `Angle ${task.angleIndex + 1} chi gom duoc ${collected.length}/${task.requestQuantity} idea hop le sau ${maxAttemptsPerAngle} luot refill.`;
+              failedGenerationMessages.push(partialMessage);
+              return mapCollectedResults();
             }
 
             throw error instanceof Error ? error : new Error(`Angle ${task.angleIndex + 1} request failed.`);
@@ -906,6 +1129,17 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       }
 
       const result = { success: allData.length > 0, data: allData, error: allData.length === 0 ? 'Không có kết quả' : null };
+
+      const missingIdeasCount = Math.max(0, totalRequestedIdeas - allData.length);
+      const partialNotice = missingIdeasCount > 0
+        ? `Đã tạo và lưu ${allData.length}/${totalRequestedIdeas} idea hợp lệ. Còn thiếu ${missingIdeasCount} idea vì API không trả đủ sau refill. ${failedGenerationMessages.slice(-2).join(' | ')}`
+        : null;
+
+      if (allData.length === 0) {
+        throw new Error(
+          `Không tạo được idea hợp lệ nào. ${failedGenerationMessages.slice(-3).join(' | ')}`
+        );
+      }
 
       let ideas: { title: string; duration: string; content: IdeaContent; filtersSnapshot: FilterState }[];
 
@@ -967,21 +1201,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       }));
 
       setShowHistory(false);
+      setHistoryWeekFilter(HISTORY_TODAY);
       setResults(tempResults);
       setSavedHistory(prev => [...tempResults, ...prev]);
+      setGenerationNotice(partialNotice);
       stopProgress();
       setIsGenerating(false);
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
-      if (tempResults.length < totalRequestedIdeas) {
-        const missingIdeasCount = totalRequestedIdeas - tempResults.length;
-        const errorDetail = failedGenerationMessages.slice(-3).join('\n');
-        window.setTimeout(() => {
-          alert(
-            `Chỉ tạo được ${tempResults.length}/${totalRequestedIdeas} idea. ${missingIdeasCount} request bị fallback/timeout sau retry, kết quả đã tạo vẫn được giữ.`
-            + (errorDetail ? `\n\nChi tiết gần nhất:\n${errorDetail}` : '')
-          );
-        }, 0);
-      }
 
       const sessionId = crypto.randomUUID();
       dbService.saveIdeas(app.id, ideas, sessionId, filters).then(async saved => {
@@ -1063,6 +1289,38 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const bodySpeech = getSectionSpokenLines(content.body);
     const ctaSpeech = getSectionSpokenLines(content.cta);
     const primaryHook = meta?.hookPrimary || '';
+    const overlaySequence = Array.isArray(meta?.overlaySequence) ? meta.overlaySequence : [];
+    const hookProductionNotes = [
+      meta?.referencePattern ? `[PATTERN] ${meta.referencePattern}` : '',
+      meta?.interruptMechanism ? `[INTERRUPT] ${meta.interruptMechanism}` : '',
+      meta?.firstFrameAsset ? `[FIRST FRAME] ${meta.firstFrameAsset}` : '',
+      meta?.pspBridge ? `[PSP BRIDGE] ${meta.pspBridge}` : '',
+    ].filter(Boolean);
+    const bodyProductionNotes = [
+      meta?.appDemoAction ? `[APP ACTION] ${meta.appDemoAction}` : '',
+      meta?.proofObject ? `[PROOF] ${meta.proofObject}` : '',
+    ].filter(Boolean);
+    const ctaProductionNotes = [
+      overlaySequence.length ? `[OVERLAY FLOW] ${overlaySequence.join(' | ')}` : '',
+      meta?.editNotes ? `[EDIT NOTES] ${meta.editNotes}` : '',
+    ].filter(Boolean);
+    const buildCopySection = (
+      label: string,
+      visual: string,
+      speech: { characterSpeech?: string; voiceover?: string; legacyVoice?: string },
+      textOverlay: string,
+      endCard = '',
+      productionNotes: string[] = []
+    ) => [
+      label,
+      visual ? `[VISUAL] ${visual}` : '',
+      ...productionNotes,
+      speech.characterSpeech ? `[NHAN VAT NOI] ${speech.characterSpeech}` : '',
+      speech.voiceover ? `[VOICE VIDEO] ${speech.voiceover}` : '',
+      speech.legacyVoice ? `[VOICE] ${speech.legacyVoice}` : '',
+      textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
+      endCard ? `End Card: ${endCard}` : '',
+    ].filter(Boolean);
     const sections = [
       `TIÊU ĐỀ: ${idea.title}`,
       '═══ FRAMEWORK ═══',
@@ -1080,33 +1338,54 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             '',
           ]
         : []),
-      `HOOK (${getHookDurationSeconds(content.hook)}s)`,
-      `[VISUAL] ${hookVisual}`,
-      `[NHAN VAT NOI] ${hookSpeech.characterSpeech || ''}`,
-      `[VOICE VIDEO] ${hookSpeech.voiceover || ''}`,
-      ...(hookSpeech.legacyVoice ? [`[VOICE] ${hookSpeech.legacyVoice}`] : []),
-      `[TEXT OVERLAY] ${content.hook?.textOverlay || content.hook?.text || ''}`,
+      ...buildCopySection(
+        `HOOK (${getHookDurationSeconds(content.hook)}s)`,
+        hookVisual,
+        hookSpeech,
+        content.hook?.textOverlay || content.hook?.text || '',
+        '',
+        hookProductionNotes
+      ),
       '',
-      'BODY (10-25s)',
-      `[VISUAL] ${bodyVisual}`,
-      `[NHAN VAT NOI] ${bodySpeech.characterSpeech || ''}`,
-      `[VOICE VIDEO] ${bodySpeech.voiceover || ''}`,
-      ...(bodySpeech.legacyVoice ? [`[VOICE] ${bodySpeech.legacyVoice}`] : []),
-      `[TEXT OVERLAY] ${content.body?.textOverlay || content.body?.text || ''}`,
+      ...buildCopySection(
+        'BODY (10-25s)',
+        bodyVisual,
+        bodySpeech,
+        content.body?.textOverlay || content.body?.text || '',
+        '',
+        bodyProductionNotes
+      ),
       '',
-      'CTA (3-5s)',
-      `[VISUAL] ${ctaVisual}`,
-      `[NHAN VAT NOI] ${ctaSpeech.characterSpeech || ''}`,
-      `[VOICE VIDEO] ${ctaSpeech.voiceover || ''}`,
-      ...(ctaSpeech.legacyVoice ? [`[VOICE] ${ctaSpeech.legacyVoice}`] : []),
-      `[TEXT OVERLAY] ${content.cta?.textOverlay || content.cta?.text || ''}`,
-      `End Card: ${content.cta?.endCard || ''}`,
+      ...buildCopySection(
+        'CTA (3-5s)',
+        ctaVisual,
+        ctaSpeech,
+        content.cta?.textOverlay || content.cta?.text || '',
+        content.cta?.endCard || '',
+        ctaProductionNotes
+      ),
     ];
 
     navigator.clipboard.writeText(sections.join('\n'));
   };
-  const cleanPreviewText = (value: unknown) =>
-    typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  const cleanPreviewText = (value: unknown) => {
+    if (typeof value !== 'string') return '';
+    const text = value.replace(/\s+/g, ' ').trim();
+    const normalized = text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w\s/-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (
+      !normalized
+      || /^(?:n\/a|na|none|null|empty|blank|no speech|no narrator|no voice|no talent|khong co|-)$/.test(normalized)
+    ) {
+      return '';
+    }
+    return text;
+  };
 
   const truncatePreviewText = (value: unknown, limit = 150) => {
     const text = cleanPreviewText(value);
@@ -1152,7 +1431,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         ? Number(rawDuration.match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(',', '.'))
         : NaN;
     if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
-      return Math.min(8, Math.max(2, Math.round(parsedDuration)));
+      return Math.min(12, Math.max(6, Math.round(parsedDuration)));
     }
 
     const characterSpeech = getSectionCharacterSpeech(rawHook);
@@ -1162,9 +1441,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const visual = cleanPreviewText(rawHook.visual ?? rawHook.script);
     const timingText = [characterSpeech, voiceover || voice, textOverlay].filter(Boolean).join(' ') || visual;
     const words = timingText.split(/\s+/).map(word => word.trim()).filter(Boolean).length;
-    if (words === 0) return 3;
+    if (words === 0) return 8;
     const hasSpokenHook = Boolean(characterSpeech || voiceover || voice || textOverlay);
-    return Math.min(8, Math.max(2, Math.ceil(hasSpokenHook ? 1 + words / 2.7 : 2 + words / 5.2)));
+    return Math.min(12, Math.max(6, Math.ceil(hasSpokenHook ? 2 + words / 2.8 : 4 + words / 5.2)));
   };
 
   const toggleIdeaSet = (
@@ -1213,11 +1492,117 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer(null);
   };
 
+  const handleDeleteIdea = async (idea: GeneratedIdea, ideaKey: string) => {
+    const ok = window.confirm(`Xóa idea "${idea.title}" khỏi lịch sử? Hành động này không hoàn tác.`);
+    if (!ok) return;
+
+    if (!idea.id.startsWith('temp-')) {
+      const response = await authenticatedFetch('/api/delete-idea', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ideaId: idea.id, appId: app.id }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        alert(payload?.error || 'Xóa idea thất bại. Vui lòng thử lại.');
+        return;
+      }
+    }
+
+    const removeIdea = (list: GeneratedIdea[]) => list.filter(item => item.id !== idea.id);
+    setResults(removeIdea);
+    setSavedHistory(removeIdea);
+    setFavoriteIdeas(prev => {
+      const next = new Set(prev);
+      next.delete(ideaKey);
+      return next;
+    });
+    setExpandedIdeas(prev => {
+      const next = new Set(prev);
+      next.delete(ideaKey);
+      return next;
+    });
+    if (editingIdea === idea.id) {
+      setEditingIdea(null);
+      setEditBuffer(null);
+    }
+    if (refiningIdea === idea.id) {
+      setRefiningIdea(null);
+      setRefineInstruction('');
+    }
+  };
+
+  const historyWeekOptions = useMemo(() => {
+    const dayCounts = new Map<string, number>();
+    const weekCounts = new Map<string, number>();
+    const monthCounts = new Map<string, number>();
+    savedHistory.forEach(idea => {
+      const dayKey = getHistoryDayKey(idea.created_at);
+      const weekKey = getHistoryWeekKey(idea.created_at);
+      const monthKey = getHistoryMonthKey(idea.created_at);
+      dayCounts.set(dayKey, (dayCounts.get(dayKey) || 0) + 1);
+      weekCounts.set(weekKey, (weekCounts.get(weekKey) || 0) + 1);
+      monthCounts.set(monthKey, (monthCounts.get(monthKey) || 0) + 1);
+    });
+
+    const fixedOptions = [
+      {
+        key: HISTORY_TODAY,
+        count: savedHistory.filter(idea => matchesHistoryDateFilter(idea, HISTORY_TODAY)).length,
+        label: `Hôm nay (${savedHistory.filter(idea => matchesHistoryDateFilter(idea, HISTORY_TODAY)).length})`,
+      },
+      {
+        key: HISTORY_THIS_WEEK,
+        count: savedHistory.filter(idea => matchesHistoryDateFilter(idea, HISTORY_THIS_WEEK)).length,
+        label: `Tuần này (${savedHistory.filter(idea => matchesHistoryDateFilter(idea, HISTORY_THIS_WEEK)).length})`,
+      },
+      {
+        key: HISTORY_THIS_MONTH,
+        count: savedHistory.filter(idea => matchesHistoryDateFilter(idea, HISTORY_THIS_MONTH)).length,
+        label: `Tháng này (${savedHistory.filter(idea => matchesHistoryDateFilter(idea, HISTORY_THIS_MONTH)).length})`,
+      },
+    ];
+
+    const monthOptions = Array.from(monthCounts.entries())
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([key, count]) => ({
+        key: `${HISTORY_MONTH_PREFIX}${key}`,
+        count,
+        label: `Tháng ${formatHistoryMonth(key)} (${count})`,
+      }));
+
+    const weekOptions = Array.from(weekCounts.entries())
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([key, count]) => ({
+        key: `${HISTORY_WEEK_PREFIX}${key}`,
+        count,
+        label: `${getHistoryWeekRangeLabel(`${HISTORY_WEEK_PREFIX}${key}`)} (${count})`,
+      }));
+
+    const dayOptions = Array.from(dayCounts.entries())
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([key, count]) => ({
+        key: `${HISTORY_DAY_PREFIX}${key}`,
+        count,
+        label: `Ngày ${formatHistoryDay(key)} (${count})`,
+      }));
+
+    return [...fixedOptions, ...monthOptions, ...weekOptions, ...dayOptions];
+  }, [savedHistory]);
+
+  const filteredHistory = useMemo(() => {
+    if (historyWeekFilter === HISTORY_ALL_WEEKS) return savedHistory;
+    return savedHistory.filter(idea => matchesHistoryDateFilter(idea, historyWeekFilter));
+  }, [historyWeekFilter, savedHistory]);
+
   const historyCount = savedHistory.length;
+  const filteredHistoryCount = filteredHistory.length;
   const favoriteCount = useMemo(() => {
-    const keys = new Set(savedHistory.map(getIdeaFavoriteKey).filter(key => favoriteIdeas.has(key)));
+    const favoriteSource = showHistory ? filteredHistory : (results.length > 0 ? results : savedHistory);
+    const keys = new Set(favoriteSource.map(getIdeaFavoriteKey).filter(key => favoriteIdeas.has(key)));
     return keys.size;
-  }, [favoriteIdeas, getIdeaFavoriteKey, savedHistory]);
+  }, [favoriteIdeas, filteredHistory, getIdeaFavoriteKey, results, savedHistory, showHistory]);
 
   useEffect(() => {
     if (favoriteCount === 0 && showFavoriteIdeas) {
@@ -1226,10 +1611,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   }, [favoriteCount, showFavoriteIdeas]);
 
   const visibleResults = useMemo(() => {
-    const source = showHistory ? savedHistory : results;
+    const source = showHistory ? filteredHistory : results;
     if (!showFavoriteIdeas) return source;
     return source.filter(idea => favoriteIdeas.has(getIdeaFavoriteKey(idea)));
-  }, [favoriteIdeas, getIdeaFavoriteKey, results, savedHistory, showFavoriteIdeas, showHistory]);
+  }, [favoriteIdeas, filteredHistory, getIdeaFavoriteKey, results, showFavoriteIdeas, showHistory]);
 
   const seasonalVisualContext = useMemo<SeasonalVisualContext | null>(() => {
     const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
@@ -1656,14 +2041,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 {trendImportError}
               </div>
             )}
-            {importedTrendAnalyses.length > 0 && (
+            {usableImportedTrendAnalyses.length > 0 && (
               <div className="mb-3 space-y-2">
-                {importedTrendAnalyses.map((analysis) => (
+                {usableImportedTrendAnalyses.map((analysis) => {
+                  const analysisTags = Array.from(new Set([
+                    analysis.creativeType,
+                    analysis.angleType,
+                    analysis.emotionalDriver,
+                  ].map(label => String(label || '').trim()).filter(Boolean)));
+
+                  return (
                   <div key={analysis.sourceUrl} className="rounded-xl border border-rose-200 bg-white p-3">
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-gray-800">{analysis.title}</p>
-                        <p className="truncate text-[11px] text-gray-400">{analysis.sourceLabel || analysis.sourceUrl}</p>
+                        <p className="truncate text-[11px] text-gray-400">
+                          {analysis.sourceLabel || analysis.sourceUrl}
+                          {analysis.modelUsed ? ` • ${analysis.modelUsed}` : ''}
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -1676,7 +2071,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                     <p className="mb-2 text-xs leading-relaxed text-gray-600">{analysis.summary}</p>
                     <div className="mb-2 flex flex-wrap gap-1.5">
-                      {[analysis.creativeType, analysis.angleType, analysis.emotionalDriver].filter(Boolean).map((label) => (
+                      {analysisTags.map((label) => (
                         <span key={label} className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
                           {label}
                         </span>
@@ -1689,8 +2084,19 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         </p>
                       ))}
                     </div>
+                    {analysis.keyMoments?.length > 0 && (
+                      <div className="mt-2 rounded-lg border border-rose-100 bg-rose-50/60 px-3 py-2">
+                        <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-rose-500">Key moments</p>
+                        <div className="space-y-1">
+                          {analysis.keyMoments.slice(0, 4).map(moment => (
+                            <p key={moment} className="text-[11px] leading-relaxed text-gray-600">• {moment}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {trendingTopics.length > 0 && (
@@ -1705,7 +2111,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 ))}
               </div>
             )}
-            {trendingTopics.length === 0 && importedTrendAnalyses.length === 0 && (
+            {trendingTopics.length === 0 && usableImportedTrendAnalyses.length === 0 && (
               <p className="text-xs text-gray-400 italic">Nhập trend text hoặc URL video để import luôn hook/body/CTA structure vào prompt.</p>
             )}
           </div>
@@ -1713,7 +2119,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           {/* Quantity */}
           <div className="grid grid-cols-1 gap-5">
             <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
-              <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><ListOrdered size={14} /> Số lượng Idea</label>
+              <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><ListOrdered size={14} /> Số lượng mỗi angle</label>
               <input type="number" min="1" max="10" value={quantity}
                 onChange={(e) => setQuantity(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
                 className="w-full text-center text-xl font-bold py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
@@ -1817,17 +2223,33 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             <Wand2 className="text-indigo-500" size={24} /> Kết Quả ({visibleResults.length})
           </h3>
           <p className="text-gray-400 text-sm mt-1">
-            {showHistory ? 'Tất cả ý tưởng đã tạo' : 'Ý tưởng theo bối cảnh đã chọn'}
+            {showHistory ? `Lịch sử ${getHistoryWeekRangeLabel(historyWeekFilter)}` : 'Ý tưởng theo bối cảnh đã chọn'}
             {showFavoriteIdeas ? ' • Đang lọc các idea đã thả tim' : ''}
             {' • '}<span className="text-emerald-500 font-medium">Đã lưu Supabase ✓</span>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {historyCount > 0 && (
+            <>
+              <select
+                value={historyWeekFilter}
+                onChange={event => {
+                  setHistoryWeekFilter(event.target.value);
+                  setShowHistory(true);
+                }}
+                className="text-sm px-3 py-2 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                title="Lọc lịch sử theo ngày, tuần hoặc tháng"
+              >
+                <option value={HISTORY_ALL_WEEKS}>Tất cả lịch sử ({historyCount})</option>
+                {historyWeekOptions.map(option => (
+                  <option key={option.key} value={option.key}>{option.label}</option>
+                ))}
+              </select>
             <button onClick={() => setShowHistory(prev => !prev)}
               className="text-sm flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600">
-              {showHistory ? 'Ẩn Lịch sử' : `📜 Lịch sử (${historyCount})`}
+              {showHistory ? 'Ẩn Lịch sử' : `📜 Lịch sử (${filteredHistoryCount}/${historyCount})`}
             </button>
+            </>
           )}
           {favoriteCount > 0 && (
             <button
@@ -1849,6 +2271,23 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         </div>
       </div>
 
+      {generationNotice && (
+        <div className="mb-5 flex items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{generationNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setGenerationNotice(null)}
+            className="rounded-lg p-1 text-amber-500 hover:bg-amber-100 hover:text-amber-700"
+            title="Đóng thông báo"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {visibleResults.length > 0 ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {visibleResults.map((idea, idx) => {
@@ -1864,7 +2303,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
             const primaryHook = c?.meta?.hookPrimary || '';
+            const showPrimaryHookLine = cleanPreviewText(primaryHook).toLowerCase() !== cleanPreviewText(hookText).toLowerCase();
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
+            const meta = c?.meta || {};
+            const overlaySequence = Array.isArray(meta.overlaySequence) ? meta.overlaySequence : [];
+            const hookProductionItems = [
+              meta.referencePattern ? ['Mẫu mở', meta.referencePattern] : null,
+              meta.interruptMechanism ? ['Lý do dừng', meta.interruptMechanism] : null,
+              meta.firstFrameAsset ? ['Frame đầu', meta.firstFrameAsset] : null,
+              meta.pspBridge ? ['Nối sang PSP', meta.pspBridge] : null,
+            ].filter(Boolean) as [string, string][];
+            const bodyProductionItems = [
+              meta.appDemoAction ? ['Thao tác app', meta.appDemoAction] : null,
+              meta.proofObject ? ['Bằng chứng', meta.proofObject] : null,
+            ].filter(Boolean) as [string, string][];
+            const ctaProductionItems = [
+              overlaySequence.length ? ['Caption flow', overlaySequence.join(' → ')] : null,
+              meta.editNotes ? ['Nhịp dựng', meta.editNotes] : null,
+            ].filter(Boolean) as [string, string][];
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -1903,6 +2359,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                           </button>
                           <button onClick={() => handleCopy(idea)} className="p-2 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Copy">
                             <Copy size={16} />
+                          </button>
+                          <button onClick={() => handleDeleteIdea(idea, ideaKey)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Xóa idea">
+                            <Trash2 size={16} />
                           </button>
                         </>
                       )}
@@ -1951,11 +2410,21 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
                         <p className="whitespace-pre-line">[VISUAL] {hookVisual || 'Hook visual will appear here.'}</p>
-                        <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {hookSpeech.characterSpeech || '—'}</p>
-                        <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover || '—'}</p>
+                        {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {hookSpeech.characterSpeech}</p>}
+                        {hookSpeech.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
                         {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
-                        <p className="text-gray-800">[TEXT OVERLAY] {hookText || '—'}</p>
-                        {primaryHook && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
+                        {hookText && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
+                        {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
+                        {hookProductionItems.length > 0 && (
+                          <div className="mt-3 space-y-1.5 border-t border-red-100 pt-3 text-xs">
+                            {hookProductionItems.map(([label, value]) => (
+                              <p key={label} className="text-gray-600">
+                                <span className="font-semibold text-red-500">{label}: </span>
+                                {value}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2050,6 +2519,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     const spokenLines = getSectionSpokenLines(secData);
                     const textOverlay = secData?.textOverlay || secData?.text || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
+                    const sectionProductionItems = sec.key === 'body' ? bodyProductionItems : ctaProductionItems;
                     return (
                       <div key={sec.key} className={`mb-3 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                         <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
@@ -2081,12 +2551,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         ) : (
                           <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
                             <p className="whitespace-pre-line">[VISUAL] {visualContent || '—'}</p>
-                            <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {spokenLines.characterSpeech || '—'}</p>
-                            <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover || '—'}</p>
+                            {spokenLines.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {spokenLines.characterSpeech}</p>}
+                            {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover}</p>}
                             {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {spokenLines.legacyVoice}</p>}
-                            <p className="text-gray-800">[TEXT OVERLAY] {textOverlay || '—'}</p>
+                            {textOverlay && <p className="text-gray-800">[TEXT OVERLAY] {textOverlay}</p>}
                             {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
                             {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}
+                            {sectionProductionItems.length > 0 && (
+                              <div className={`mt-3 space-y-1.5 border-t pt-3 text-xs ${sec.key === 'body' ? 'border-sky-100' : 'border-emerald-100'}`}>
+                                {sectionProductionItems.map(([label, value]) => (
+                                  <p key={label} className="text-gray-600">
+                                    <span className={`font-semibold ${sec.key === 'body' ? 'text-sky-600' : 'text-emerald-600'}`}>{label}: </span>
+                                    {value}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2102,9 +2582,19 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       ) : (
         <div className="text-center py-20 text-gray-400">
           <Wand2 size={48} className="mx-auto mb-4 text-gray-300" />
-          <p className="font-bold text-gray-500">{showFavoriteIdeas ? 'Chưa có idea nào được thả tim' : 'Chưa có ý tưởng nào'}</p>
+          <p className="font-bold text-gray-500">
+            {showFavoriteIdeas
+              ? 'Chưa có idea nào được thả tim'
+              : showHistory
+                ? `Chưa có ý tưởng trong ${getHistoryWeekRangeLabel(historyWeekFilter).toLowerCase()}`
+                : 'Chưa có ý tưởng nào'}
+          </p>
           <p className="text-sm">
-            {showFavoriteIdeas ? 'Tắt bộ lọc "Đã thả tim" hoặc thả tim ở các card để gom các idea đã chọn.' : 'Bấm "Tạo thêm" để bắt đầu.'}
+            {showFavoriteIdeas
+              ? 'Tắt bộ lọc "Đã thả tim" hoặc thả tim ở các card để gom các idea đã chọn.'
+              : showHistory
+                ? 'Chọn ngày/tháng khác hoặc chọn "Tất cả lịch sử" để xem thêm.'
+                : 'Bấm "Tạo thêm" để bắt đầu.'}
           </p>
         </div>
       )}
@@ -2144,7 +2634,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
           >
             <Eye size={14} />
-            Xem kết quả ({results.length > 0 ? results.length : savedHistory.length})
+            Xem kết quả ({results.length > 0 ? results.length : (filteredHistoryCount || savedHistory.length)})
           </button>
         )}
       </div>
