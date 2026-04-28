@@ -946,6 +946,49 @@ function buildInRequestIdeaHistory(ideas: Record<string, unknown>[]) {
     .join('\n');
 }
 
+function buildInteriorDecorPatternPack(context: {
+  appName: string;
+  category: string;
+  psp: string;
+  painpoint: string;
+  angle: string;
+}): string {
+  const haystack = normalizeCompareText([
+    context.appName,
+    context.category,
+    context.psp,
+    context.painpoint,
+    context.angle,
+  ].join(' '));
+  const isInteriorDecor = /\b(?:home|interior|decor|decorate|decoration|redesign|restyle|redecor|room|house|furniture|living room|bedroom|kitchen|garden|yard)\b/.test(haystack);
+  if (!isInteriorDecor) return '';
+
+  return `
+AI HOME / INTERIOR DECOR CATEGORY DNA - MANDATORY WHEN THIS CONTEXT MATCHES
+This pack is distilled from the user's winning AI Home and competitor interior videos. Use it even when no imported video is attached.
+
+Winning structure:
+1. 0-3s: show the real stuck space first. Do not open on app UI.
+   - blank room, ugly room, mismatched decor, empty corner, renovation mess, style confusion, or "I do not know where to start" moment.
+   - first_frame_asset must be a real room/garden/interior state plus one visible blocker: bare wall, random chair, clashing lamp, tape marks, boxes, missing rug, messy corner, or empty layout.
+2. Hook copy: simple, specific, slightly uncomfortable.
+   - Use one hook mechanism per idea: blank-room paralysis, style mismatch, years-vs-seconds contrast, too-many-styles confusion, no-designer/budget proof, or social comment about a bad room choice.
+   - Good rhythm examples to learn from, not copy: "The room is not the problem." / "Every style felt wrong." / "AI gave me a starting point." / "You do not need a designer for this first decision."
+3. 3-6s: the app proof must appear fast.
+   - show camera/photo upload/take photo -> choose room/style/restyle -> generate/compare. Name the exact tap and screen state.
+4. 6s onward: payoff is comparison, not vague beauty.
+   - show 3-5 style cards/renders, before-to-render in the same space, or saved favorites side by side.
+   - proof_object should be style carousel, compare screen, render grid, before/render split, or saved favorite result.
+
+Avoid:
+- generic "home makeover" hooks that do not show the stuck decision.
+- opening with only app UI before the room pain is visible.
+- pretty renders without the real original room.
+- repeating the same "my wife/mother-in-law could not decorate" line unless the setup creates a new social tension.
+- visual_scene_2 that says only "use the app"; it must show take photo/upload + choose style + render/compare.
+`;
+}
+
 function buildWinningPatternLibraryBlock(context: {
   appName: string;
   category: string;
@@ -953,6 +996,8 @@ function buildWinningPatternLibraryBlock(context: {
   painpoint: string;
   angle: string;
 }) {
+  const categoryPatternPack = buildInteriorDecorPatternPack(context);
+
   return `\n[REFERENCE VIDEO DNA - EXAMPLES ONLY, NOT A CLOSED TEMPLATE MENU]
 These are distilled from the user's sample/winning content to show the expected level of specificity, pacing, proof, and first-frame thinking.
 Do not force ideas into these exact formats. Use them as creative cues. If another structure fits the selected pain point better, create a new named pattern or a hybrid pattern.
@@ -986,6 +1031,8 @@ Do not force ideas into these exact formats. Use them as creative cues. If anoth
 - Beat: force the viewer to choose before revealing the app action.
 - Proof: app resolves uncertainty.
 - Best for: cost estimate, design options, symptom tracking, duplicate cleanup.
+
+${categoryPatternPack}
 
 For this request:
 - App: ${context.appName}
@@ -2118,6 +2165,13 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const importedTrendBlock = structuredTrendNotes.length
       ? `\n[IMPORTED VIDEO STRUCTURE — ƯU TIÊN HỌC CẤU TRÚC, KHÔNG COPY NGUYÊN XI]\n${structuredTrendNotes.join('\n')}\n→ Học nhịp hook/body/CTA, camera treatment, audio pattern và text overlay style. Vẫn phải bám đúng painpoint/emotion/filter của app.\n`
       : '';
+    const winningPatternBlock = buildWinningPatternLibraryBlock({
+      appName,
+      category: appCategory,
+      psp: featureContext,
+      painpoint: primaryPillar,
+      angle: angleContext,
+    });
     const seasonalVisualBlock = buildSeasonalVisualBlock(config.seasonalVisualContext);
     const variationIndex = Number(config.variationIndex || 0);
     const totalVariations = Number(config.totalVariations || quantity);
@@ -2253,6 +2307,7 @@ ${knowledgeBlock || '- No AI Brain memory yet.'}
 ${ideasBlock || '- No recent saved ideas.'}
 ${trendingBlock || '- No trending hooks injected.'}
 ${importedTrendBlock || ''}
+${winningPatternBlock}
 ${marketContext}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
