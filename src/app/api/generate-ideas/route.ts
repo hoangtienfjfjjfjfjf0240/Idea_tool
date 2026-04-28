@@ -76,16 +76,15 @@ IV. CƠ CHẾ THÍCH NGHI CẢM XÚC (Gây ra cho người xem)
 - Curiosity: Tập trung vào sự kỳ lạ, có thể là hành động, fact hoặc kiến thức gây tò mò.
 - Educational: Khẳng định kiến thức mới một cách quyết đoán, không dạy đời.
 
-V. QUY TẮC NGÔN NGỮ
-- User-facing copy phải viết bằng ngôn ngữ của target market đã chọn.
-- Bao gồm: lời thoại nhân vật, text on screen, voice-over, concept hook và CTA.
-- Mô tả visual và ghi chú sản xuất có thể viết tiếng Việt để team nội bộ đọc nhanh.
-- Cách nói, cách dùng từ, tone và vibe phải mang đúng tinh thần bản địa của thị trường mục tiêu.
-
-VI. HƯỚNG DẪN XỬ LÝ BIẾN SỐ ĐẦU VÀO
-- Lấy Painpoint làm mục tiêu tấn công cho Hook.
-- Sử dụng Feature, kể cả tính năng phóng đại/fake nếu brief yêu cầu, làm công cụ giải quyết ở Pivot.
-- Mô tả tình huống phải đủ kĩ để một người quay phim hoặc công cụ AI Video có thể hiểu và thực hiện chính xác hành động.`;
+V. LANGUAGE RULES
+- Every generated field rendered in an idea card must use the requested output language.
+- This includes title, visual, character speech, text on screen, voice-over/video voice, concept hook, CTA, visual_ref_notes, talent_profile, dont_do, and track_reason.
+- Target market only controls setting, behavior, props, culture, and vibe; it must not change the output language.
+- Do not write Vietnamese visual or production notes unless the requested output language is Vietnamese.
+VI. INPUT VARIABLE HANDLING
+- Use the Painpoint as the Hook attack target.
+- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
+- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.`;
 
 type IdeaBatchPlan = {
   batchQuantity: number;
@@ -131,8 +130,8 @@ function buildV7ExecutionContract(input: {
 - App: ${input.appName}
 - Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
 - Market language/culture reference: ${input.targetLang}
-- User-facing copy language: ${input.copyLanguage} for dialogue, on-screen text, voice-over, hook lines, and CTA.
-- Production notes and visual descriptions can stay Vietnamese for the internal team.
+- Output language: ${input.copyLanguage} for every generated idea field, including visual, dialogue, on-screen text, voice-over, hook lines, notes, and CTA.
+- Every generated field, including production notes and visual descriptions, must be in ${input.copyLanguage}.
 - Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
 - Painpoint to attack: ${input.primaryPillar}
 - Angle focus: ${input.angleContext || 'Creative freedom'}
@@ -142,8 +141,8 @@ function buildV7ExecutionContract(input: {
 
 Hard V7 requirements:
 - Ignore old rules about hook word count, hook 3-5s, 12-word hooks, and short one-line hook templates.
-- Mở đầu trực diện là nhịp chặn đầu tiên: cho thấy hậu quả, cú sốc hoặc visual lạ ngay giây 0.1.
-- Chuyển trục giải pháp phải xảy ra ngay sau đó: cho thấy hành động dùng app/feature với thao tác ngón tay cụ thể và UI/số liệu/biểu đồ thay đổi rõ.
+- The direct opening is the first stop-scroll beat: show consequence, shock, or an unusual visual at second 0.1.
+- The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
 - Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
 - All Text/Voice must be written in ${input.copyLanguage}. Social behavior, setting, props, and vibe must stay native to the selected market.
 - If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
@@ -153,10 +152,10 @@ Hard V7 requirements:
 
 function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested output language') {
   return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
-- Each idea must follow: Concept Name -> Market & User Adaptation -> Mở đầu trực diện (0-3s) -> Chuyển trục giải pháp (3-6s) -> Bằng chứng/CTA nối tiếp.
+- Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Opening (0-3s) -> Solution Pivot (3-6s) -> Proof/CTA continuation.
 - The first frame must be a pattern interruption, not setup.
-- Chuyển trục giải pháp phải dùng đúng Feature/PSP đã chọn làm công cụ xử lý.
-- Write user-facing copy in ${copyLanguage}: character dialogue, Text/Voice, text on screen, voice-over, and CTA. Production notes can stay Vietnamese.
+- The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
+- Write every generated field in ${copyLanguage}: title, visual, character dialogue, Text/Voice, text on screen, voice-over, CTA, production notes, and strategy notes.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
 - Do not use old hook word-count constraints or old 3-5s hook section rules.
 - Do not use rhetorical questions, wordplay, or vague metaphor hooks.
@@ -626,7 +625,7 @@ CÁCH DÙNG:
 - Áp dụng trực tiếp vào hook.visual, nhất là 1-2 câu mở cảnh đầu tiên: trang phục, props, màu sắc, ánh sáng, hành vi, dấu hiệu sự kiện.
 - Chọn 2-4 chi tiết tự nhiên nhất theo core user + target market; không cần nhồi toàn bộ list.
 - Đây là VISUAL DIRECTION, KHÔNG phải mô tả bổ sung. Không viết thành note riêng, không lặp lại như "[Visual Insights]" trong output.
-- Sự kiện/mùa chỉ làm hook nhìn đúng thời điểm; KHÔNG được thay thế painpoint đã chọn.
+- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
 - Nếu thị trường mục tiêu không hợp với tuyết/lạnh/ngày lễ Mỹ, hãy localize chi tiết mùa/sự kiện cho hợp văn hóa.`;
 }
 
@@ -759,11 +758,11 @@ ${plannedLanes}
 YOUR SLOT ${slotNumber} LANE:
 - Name: ${lane.name}
 - Required creativeType family: ${lane.creativeType}
-- Must do: ${lane.must}
-- Scene shift: ${lane.sceneShift}
+- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.
+- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
 
 Hard guardrails for this slot:
-- Stay on the exact selected pain point and angle. Do not replace the angle with a generic benefit.
+- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
 - Do not write a generic "user holds phone and checks the app" idea unless the lane adds a new conflict object, social pressure, proof object, timer, teardown, or tactile cue.
 - The first frame must make this lane visibly different from the other slots.
 - The title, hook.visual, hook voice, body proof, and CTA payoff must all reflect this lane.
@@ -982,8 +981,8 @@ Do not force ideas into these exact formats. Use them as creative cues. If anoth
 For this request:
 - App: ${context.appName}
 - Category: ${context.category}
-- Selected pain point: ${context.painpoint}
-- Selected angle: ${context.angle || 'No locked angle'}
+- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
+- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
 - PSP/app action to prove: ${context.psp}
 
 Mandatory adaptation:
@@ -1008,7 +1007,7 @@ function buildVariationWindowBlock(batchStartIndex: number, batchQuantity: numbe
   return `\n[VARIATION WINDOW TRONG LAN GEN HIEN TAI]
 Batch nay phai tao dung cac idea trong cua so ${rangeLabel}.
 - Khong duoc lap lai scene family da xuat hien o cac cua so truoc.
-- Moi idea moi van phai giu dung core user, painpoint, emotion, PSP, target market va angle dang chon.
+- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.
 - Neu da co idea truoc do rat giong ve opening action, location, camera reveal, props hoac cau noi mo dau thi phai doi sang huong khac.\n`;
 }
 
@@ -1255,7 +1254,7 @@ export async function POST(request: NextRequest) {
         pillars: [asText(originalFramework.painpoint)].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: 1,
-        language: 'User-facing copy must be English; internal visual/production notes can stay Vietnamese',
+        language: 'Every generated idea field must be English, including visual and production notes',
         priority: 'A',
         extraContext: [
           'Task type: refine an existing idea, do not rewrite unrelated parts.',
@@ -1565,7 +1564,7 @@ Hard requirements:
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
-- Better lived-moment health hook style examples, translated/adapted into ${outputLanguage}: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Better lived-moment health hook style examples in ${outputLanguage}: "I thought it was just my age." / "The dizzy moment was not the scariest part." / "My morning started with a sudden pause."
 - Hook execution must not be a copy-paste stack: hook_primary is the headline, hook_text_overlay is the readable screen text, and hook_voiceover or hook_character_speech must add a different lived detail. If nobody visibly speaks, hook_character_speech must be an empty string.
 - Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
@@ -1604,10 +1603,10 @@ Hard requirements:
           ideasPerAngle: plan.batchQuantity,
           trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
           language: useCreativeRulesV7
-            ? `User-facing copy in ${outputLanguage}. Internal visual/production notes can stay Vietnamese.`
+            ? `Every generated idea field in ${outputLanguage}, including visual and production notes.`
             : usePromptSystemBuilderHtml
-              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; visual/production notes can stay Vietnamese.`
-              : `Vietnamese strategy notes and ${outputLanguage} user-facing copy.`,
+              ? `Prompt System Builder HTML V1. Every generated idea field in ${outputLanguage}, including visual and production notes.`
+              : `Every generated idea field in ${outputLanguage}.`,
           priority: 'A',
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -1642,7 +1641,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects local setting and vibe only.
+- Every generated idea field must be ${outputLanguage}, including visual scenes and production notes. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Duration: ${duration}
@@ -2155,7 +2154,7 @@ Hard requirements:
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
-- Better lived-moment health hook style examples, translated/adapted into ${outputLanguage}: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Better lived-moment health hook style examples in ${outputLanguage}: "I thought it was just my age." / "The dizzy moment was not the scariest part." / "My morning started with a sudden pause."
 - Hook execution must not be a copy-paste stack: hook_primary is the headline, hook_text_overlay is the readable screen text, and hook_voiceover or hook_character_speech must add a different lived detail. If nobody visibly speaks, hook_character_speech must be an empty string.
 - Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
@@ -2185,7 +2184,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects local setting and vibe only.
+- Every generated idea field must be ${outputLanguage}, including visual scenes and production notes. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
@@ -2224,10 +2223,10 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       ideasPerAngle: quantity,
       trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
           language: useCreativeRulesV7
-            ? `User-facing copy in ${outputLanguage}. Internal visual/production notes can stay Vietnamese.`
+            ? `Every generated idea field in ${outputLanguage}, including visual and production notes.`
             : usePromptSystemBuilderHtml
-              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; visual/production notes can stay Vietnamese.`
-              : `Vietnamese strategy notes and ${outputLanguage} user-facing copy.`,
+              ? `Prompt System Builder HTML V1. Every generated idea field in ${outputLanguage}, including visual and production notes.`
+              : `Every generated idea field in ${outputLanguage}.`,
       priority: 'A',
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -2340,15 +2339,15 @@ ${rulesBlock}`;
         retryNotes.push(`Fix these rule violations:\n- ${validation.invalidReasons.slice(0, 5).join('\n- ')}`);
       }
       if (duplicateDetected) {
-        retryNotes.push(`Batch trước có các hook quá giống nhau. Hãy tạo lại TOÀN BỘ ${quantity} ideas.
-Bắt buộc mỗi idea khác scene family: đổi địa điểm, nhân vật phụ, object blocker, opening action, camera reveal, voice mở đầu và creativeType.
-Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`);
+        retryNotes.push(`The previous batch has hooks that are too similar. Regenerate all ${quantity} ideas.
+Each idea must use a different scene family: change the location, supporting character, blocker object, opening action, camera reveal, voice opening, and creativeType.
+Do not keep the same scene and only change small details.`);
       }
 
       const retryText = await askAI(`${prompt}
 
-[RETRY — INVALID HOẶC QUÁ YẾU]
-Tạo lại TOÀN BỘ ${quantity} ideas. Tuân thủ nghiêm ngặt hard rules.
+[RETRY - INVALID OR TOO WEAK]
+Regenerate all ${quantity} ideas and obey the hard rules strictly.
 ${retryNotes.join('\n\n')}`, {
         model: resolveModel(selectedModel),
         temperature: 0.95,
