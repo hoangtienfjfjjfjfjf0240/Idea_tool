@@ -347,11 +347,78 @@ function validateHealthMetricLockOutput(
   ];
 }
 
+function isInteriorDecorContext(context: {
+  appName: string;
+  category?: string;
+  psp?: string;
+  pillar?: string;
+  angle?: string;
+}): boolean {
+  const haystack = normalizeCompareText([
+    context.appName,
+    context.category || '',
+    context.psp || '',
+    context.pillar || '',
+    context.angle || '',
+  ].join(' '));
+  return /\b(?:home|interior|decor|decorate|decoration|redesign|restyle|redecor|room|house|furniture|living room|bedroom|kitchen|garden|yard)\b/.test(haystack);
+}
+
+function validateInteriorDecorClarityOutput(
+  item: Record<string, unknown>,
+  context: {
+    appName: string;
+    category?: string;
+    psp?: string;
+    pillar: string;
+    angle?: string;
+  }
+): string[] {
+  if (!isInteriorDecorContext(context)) return [];
+
+  const meta = asRecord(item.meta);
+  const hook = asRecord(item.hook);
+  const titleHookCopy = normalizeCompareText([
+    asText(item.title),
+    asText(meta.hookPrimary),
+    asText(meta.hookAlt1),
+    asText(meta.hookAlt2),
+    asText(hook.characterSpeech),
+    asText(hook.voiceover),
+    asText(hook.voice),
+    asText(hook.textOverlay),
+    asText(hook.text),
+  ].filter(Boolean).join(' '));
+  const hookVisual = normalizeCompareText(asText(hook.visual) || asText(hook.script));
+  const fullText = normalizeCompareText(collectIdeaStringsForMetricScan(item).join(' '));
+
+  const errors: string[] = [];
+  const roomAnchor = /\b(?:room|space|living room|bedroom|kitchen|corner|wall|sofa|chair|rug|lamp|floor|furniture|decor|interior|garden|yard|phong|nha|goc|tuong|ghe|tham|den|san|noi that|vuon)\b/;
+  const stuckAnchor = /\b(?:empty|blank|bare|ugly|wrong|mismatch|mismatched|clashing|random|messy|unfinished|stuck|no clue|dont know|do not know|where to start|too many|expensive|designer|xau|trong|trong tron|lech|sai|khong biet|boi roi|ket|chua biet)\b/;
+  const appProofAnchor = /\b(?:take photo|upload|camera|photo|scan|choose|select|restyle|redecor|redesign|render|generate|compare|style card|style carousel|saved favorite|before render|app screen|chup anh|tai anh|chon|tao render|so sanh)\b/;
+  const abstractHook = /\b(?:my style|own style|style coordination|style identity|fit three styles|every style|every option feels wrong|visualize)\b/;
+
+  if (abstractHook.test(titleHookCopy)) {
+    errors.push('AI Home hook/title is too abstract; rewrite around a visible room problem and app proof, not "my style/every style" language');
+  }
+  if (!roomAnchor.test(hookVisual) || !stuckAnchor.test(hookVisual)) {
+    errors.push('AI Home hook visual must show the original room/space plus a visible stuck problem before the app appears');
+  }
+  if (!appProofAnchor.test(fullText)) {
+    errors.push('AI Home idea must include clear app proof: take/upload photo, choose style, render/generate, or compare results');
+  }
+
+  return errors;
+}
+
 function normalizeAndValidateIdeas(
   items: unknown[],
   context: {
     duration: string;
     appName: string;
+    category?: string;
+    psp?: string;
+    angle?: string;
     pillar: string;
     angleIndex: number;
     ideaStartIndex?: number;
@@ -373,6 +440,7 @@ function normalizeAndValidateIdeas(
     const errors = [
       ...validateIdeaOutput(normalized),
       ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
+      ...validateInteriorDecorClarityOutput(normalized, context),
     ];
 
     if (errors.length === 0) valid.push(normalized);
@@ -973,15 +1041,27 @@ Winning structure:
 1. 0-3s: show the real stuck space first. Do not open on app UI.
    - blank room, ugly room, mismatched decor, empty corner, renovation mess, style confusion, or "I do not know where to start" moment.
    - first_frame_asset must be a real room/garden/interior state plus one visible blocker: bare wall, random chair, clashing lamp, tape marks, boxes, missing rug, messy corner, or empty layout.
-2. Hook copy: simple, specific, slightly uncomfortable.
+2. The viewer must understand the story without reading strategy notes.
+   - Every idea must be explainable in one plain sentence: "This person is stuck with [specific room problem], then AI Home gives them [specific design starting point/result]."
+   - The title, hook_primary, hook_voiceover/character_speech, and hook_text_overlay must all point to the same simple story. Do not make the title a vague concept statement.
+   - Good plain story spines: "empty room -> no starting point -> AI gives first direction"; "ugly room -> years of delay -> AI restyles in seconds"; "mismatched decor -> friend/spouse calls it out -> AI compares better options"; "expensive designer fear -> AI gives first layout/style ideas"; "too many saved ideas -> no decision -> AI narrows options."
+3. Hook copy: simple, specific, slightly uncomfortable.
    - Use one hook mechanism per idea: blank-room paralysis, style mismatch, years-vs-seconds contrast, too-many-styles confusion, no-designer/budget proof, or social comment about a bad room choice.
-   - Good rhythm examples to learn from, not copy: "The room is not the problem." / "Every style felt wrong." / "AI gave me a starting point." / "You do not need a designer for this first decision."
+   - Good rhythm examples to learn from, not copy: "The room is not the problem." / "I had no first move for this room." / "AI gave me a starting point." / "You do not need a designer for this first decision."
+   - Prefer concrete words: empty room, bare wall, ugly corner, wrong sofa, random lamp, saved ideas, first style, first layout, starting point, designer cost.
+   - Avoid abstract hooks/titles: "my style", "style coordination", "style identity", "fit three styles", "every style looks wrong", "every option feels wrong", "visualize" by itself. If using "style", tie it to a visible room problem and the app result.
    - If the hook is a person speaking to camera, reacting to a friend/spouse, or answering a social comment, hook_character_speech must contain that exact spoken line. Do not leave character speech empty for talking-head, reaction, interview, or dialogue setups.
-3. 3-6s: the app proof must appear fast.
+4. 3-6s: the app proof must appear fast.
    - show camera/photo upload/take photo -> choose room/style/restyle -> generate/compare. Name the exact tap and screen state.
-4. 6s onward: payoff is comparison, not vague beauty.
+5. 6s onward: payoff is comparison, not vague beauty.
    - show 3-5 style cards/renders, before-to-render in the same space, or saved favorites side by side.
    - proof_object should be style carousel, compare screen, render grid, before/render split, or saved favorite result.
+
+Before outputting each AI Home/interior idea, run this internal clarity check:
+- Can a non-marketer explain the idea after reading only the title + hook block?
+- Is the original room problem visible before the app?
+- Does the app proof answer the exact stuck moment?
+- If any answer is no, rewrite the idea into a simpler room-problem -> AI-proof story.
 
 Avoid:
 - generic "home makeover" hooks that do not show the stuck decision.
@@ -1807,6 +1887,9 @@ ${rulesBlock}`;
         let validation = normalizeAndValidateIdeas(briefOutput.items, {
           duration,
           appName,
+          category: appCategory,
+          psp: featureContext,
+          angle: angleContext,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaStartIndex: requestStartIndex + plan.batchStartIndex,
@@ -1866,6 +1949,9 @@ ${retryNotes.join('\n\n')}`, {
             const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
               duration,
               appName,
+              category: appCategory,
+              psp: featureContext,
+              angle: angleContext,
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
@@ -1926,6 +2012,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
             const fallbackValidation = normalizeAndValidateIdeas(fallbackBriefOutput.items, {
               duration,
               appName,
+              category: appCategory,
+              psp: featureContext,
+              angle: angleContext,
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
@@ -2384,6 +2473,9 @@ ${rulesBlock}`;
     let validation = normalizeAndValidateIdeas(briefOutput.items, {
       duration,
       appName,
+      category: appCategory,
+      psp: featureContext,
+      angle: angleContext,
       pillar: primaryPillar,
       angleIndex: Math.max(angleIndex - 1, 0),
       metricLock,
@@ -2439,6 +2531,9 @@ ${retryNotes.join('\n\n')}`, {
         const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
           duration,
           appName,
+          category: appCategory,
+          psp: featureContext,
+          angle: angleContext,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           metricLock,
