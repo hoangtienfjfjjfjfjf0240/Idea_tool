@@ -1297,7 +1297,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const content = idea.content as IdeaContent;
     const framework = content.framework;
     const meta = content.meta;
-    const hookVisual = content.hook?.visual || content.hook?.script || '';
+    const isBuilderIdea = isBuilderIdeaContent(content);
+    const hookVisual = normalizeHookTimingLabel(content.hook?.visual || content.hook?.script || '');
     const bodyVisual = content.body?.visual || content.body?.script || '';
     const ctaVisual = content.cta?.visual || content.cta?.script || '';
     const hookSpeech = getSectionSpokenLines(content.hook);
@@ -1312,15 +1313,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       endCard = ''
     ) => [
       label,
-      visual ? `[BỐI CẢNH] ${visual}` : '',
-      speech.characterSpeech ? `[NHÂN VẬT NÓI] ${speech.characterSpeech}` : '',
-      speech.voiceover ? `[LỜI DẪN VIDEO] ${speech.voiceover}` : '',
-      speech.legacyVoice ? `[LỜI THOẠI] ${speech.legacyVoice}` : '',
-      textOverlay ? `[CHỮ TRÊN MÀN HÌNH] ${textOverlay}` : '',
-      endCard ? `Màn hình kết: ${endCard}` : '',
+      visual ? `[VISUAL] ${visual}` : '',
+      speech.characterSpeech ? `[CHARACTER SPEECH] ${speech.characterSpeech}` : '',
+      speech.voiceover ? `[VOICE VIDEO] ${speech.voiceover}` : '',
+      speech.legacyVoice ? `[VOICE] ${speech.legacyVoice}` : '',
+      textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
+      endCard ? `End card: ${endCard}` : '',
     ].filter(Boolean);
     const sections = [
-      `TIÊU ĐỀ: ${idea.title}`,
+      `TITLE: ${idea.title}`,
       '═══ KHUNG Ý TƯỞNG ═══',
       `Người dùng chính: ${framework?.coreUser || ''}`,
       `Nỗi đau: ${framework?.painpoint || ''}`,
@@ -1337,7 +1338,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           ]
         : []),
       ...buildCopySection(
-        `HOOK (${getHookDurationSeconds(content.hook)}s)`,
+        `HOOK (${isBuilderIdea ? 3 : getHookDurationSeconds(content.hook)}s)`,
         hookVisual,
         hookSpeech,
         content.hook?.textOverlay || content.hook?.text || '',
@@ -1417,8 +1418,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     };
   };
 
+  const isBuilderIdeaContent = (content: unknown) => {
+    const meta = ((content as IdeaContent | undefined)?.meta || {}) as Record<string, unknown>;
+    return cleanPreviewText(meta.builderVersion).toLowerCase() === 'prompt_system_builder_html_v1';
+  };
+
+  const normalizeHookTimingLabel = (value: string) => value
+    .replace(/\b(?:second|sec|giây)\s*0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s?\b/gi, '0-3s')
+    .replace(/\b0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s\b/gi, '0-3s')
+    .replace(/\b8\s*[-–]\s*12\s*s\b/gi, '0-3s');
+
   const getHookDurationSeconds = (hook: Partial<IdeaContent['hook']> | IdeaApiSection | Record<string, unknown> | undefined): number => {
     const rawHook = (hook || {}) as Record<string, unknown> & IdeaApiSection;
+    const timingSource = cleanPreviewText(rawHook.visual ?? rawHook.script ?? rawHook.textOverlay ?? rawHook.text);
+    if (/\b(?:0\s*[-–]\s*(?:3|8|10|12)|8\s*[-–]\s*12)(?:\s*\/\s*12)?\s*s?\b/i.test(timingSource)) {
+      return 3;
+    }
     const rawDuration = rawHook.durationSeconds ?? rawHook.duration_seconds ?? rawHook.hookDurationSeconds ?? rawHook.hook_duration_seconds;
     const parsedDuration = typeof rawDuration === 'number'
       ? rawDuration
@@ -1426,7 +1441,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         ? Number(rawDuration.match(/\d+(?:[.,]\d+)?/)?.[0]?.replace(',', '.'))
         : NaN;
     if (Number.isFinite(parsedDuration) && parsedDuration > 0) {
-      return Math.min(12, Math.max(6, Math.round(parsedDuration)));
+      return Math.min(12, Math.max(3, Math.round(parsedDuration)));
     }
 
     const characterSpeech = getSectionCharacterSpeech(rawHook);
@@ -2293,8 +2308,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const isFavorite = favoriteIdeas.has(ideaKey);
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
             const angleTag = Array.isArray(idea.filters_snapshot?.angle) ? idea.filters_snapshot?.angle?.[0] : '';
-            const hookVisual = hookData?.visual || hookData?.script || '';
-            const hookDuration = getHookDurationSeconds(hookData);
+            const isBuilderIdea = isBuilderIdeaContent(c);
+            const hookVisual = normalizeHookTimingLabel(hookData?.visual || hookData?.script || '');
+            const hookDuration = isBuilderIdea ? 3 : getHookDurationSeconds(hookData);
             const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
             const primaryHook = c?.meta?.hookPrimary || '';
@@ -2388,11 +2404,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       </div>
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                        <p className="whitespace-pre-line">[BỐI CẢNH] {hookVisual || 'Mô tả hook sẽ hiển thị ở đây.'}</p>
-                        {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {hookSpeech.characterSpeech}</p>}
-                        {hookSpeech.voiceover && <p className="text-gray-800 whitespace-pre-line">[LỜI DẪN VIDEO] {hookSpeech.voiceover}</p>}
-                        {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[LỜI THOẠI] {hookSpeech.legacyVoice}</p>}
-                        {hookText && <p className="text-gray-800">[CHỮ TRÊN MÀN HÌNH] {hookText}</p>}
+                        <p className="whitespace-pre-line">[VISUAL] {hookVisual || 'Hook visual will appear here.'}</p>
+                        {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
+                        {hookSpeech.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
+                        {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
+                        {hookText && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>
                     )}
@@ -2518,11 +2534,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                           </div>
                         ) : (
                           <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                            <p className="whitespace-pre-line">[BỐI CẢNH] {visualContent || '—'}</p>
-                            {spokenLines.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {spokenLines.characterSpeech}</p>}
-                            {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[LỜI DẪN VIDEO] {spokenLines.voiceover}</p>}
-                            {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[LỜI THOẠI] {spokenLines.legacyVoice}</p>}
-                            {textOverlay && <p className="text-gray-800">[CHỮ TRÊN MÀN HÌNH] {textOverlay}</p>}
+                            <p className="whitespace-pre-line">[VISUAL] {visualContent || '-'}</p>
+                            {spokenLines.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {spokenLines.characterSpeech}</p>}
+                            {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover}</p>}
+                            {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {spokenLines.legacyVoice}</p>}
+                            {textOverlay && <p className="text-gray-800">[TEXT OVERLAY] {textOverlay}</p>}
                             {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
                             {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}
                           </div>

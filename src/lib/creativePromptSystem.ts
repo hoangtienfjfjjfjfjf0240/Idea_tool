@@ -189,8 +189,9 @@ function normalizeSection(
   const characterSpeech = readSpeechText(section.characterSpeech) || readSpeechText(section.character_speech) || readSpeechText(section.talentSpeech) || readSpeechText(section.talent_speech);
   const voiceover = readSpeechText(section.voiceover) || readSpeechText(section.voiceOver) || readSpeechText(section.voice_over);
   const legacyVoice = readSpeechText(section.voice);
+  const rawVisual = readText(section.visual, readText(section.script));
   const normalized: Record<string, unknown> = {
-    visual: readText(section.visual, readText(section.script)),
+    visual: options.includeDurationSeconds ? normalizeHookTimingText(rawVisual) : rawVisual,
     characterSpeech,
     voiceover,
     voice: legacyVoice || voiceover || characterSpeech,
@@ -201,10 +202,7 @@ function normalizeSection(
   };
 
   if (options.includeDurationSeconds) {
-    normalized.durationSeconds = Math.round(
-      readNumber(section.durationSeconds ?? section.duration_seconds ?? section.hookDurationSeconds ?? section.hook_duration_seconds)
-      ?? estimateHookDurationSeconds(normalized)
-    );
+    normalized.durationSeconds = 3;
   }
 
   if (options.includeViewerFields) {
@@ -295,7 +293,7 @@ R09. Do not make medical claims: no diagnosis, cure, treatment, disease detectio
 R10. Do not use before/after health outcome framing.
 R11. Return raw JSON array only. No preamble, no markdown fence, no explanation after JSON.
 R12. id must follow P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
-Language contract is defined by the output specification: user-facing copy follows the selected target market language; production notes can stay Vietnamese.`;
+Language contract is defined by the output specification: user-facing copy follows the requested output language; target market controls setting/culture/vibe only; production notes can stay Vietnamese.`;
 
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
@@ -308,7 +306,7 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Do not fill a speech field with "-", "N/A", or an empty label. If nobody speaks, leave the field empty.
 - Do not duplicate the same hook sentence across title, voiceover, and textOverlay. The overlay can be the headline, but the spoken line needs extra context or should be omitted.
 - Hook is not just an opener. It must contain a clear bridge from viewer emotion/angle to the PSP, so the app action feels earned before the Body section.
-- Hook should be an 8-12 second mini-scene with 3 beats: pain trigger, emotional escalation, PSP bridge. Do not compress it into a one-line question.
+- Hook visual_scene_1 should be a 0-3s stop-scroll beat: pain trigger, emotional contrast, or PSP bridge cue. Do not label it as 0-8s or 8-12s.
 - Voice/speech must sound like a real person talking in-feed, not a polished ad.
 - Keep the output social-first, UGC-friendly, handheld, relatable.
 - visual_scene_1 should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
@@ -326,6 +324,7 @@ export const PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS = `## PROMPT SYSTEM 
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in visual_scene_1.
 - hook_primary, hook_alt_1, hook_alt_2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
 - visual_scene_1 is the full 0-3s hook/pattern-interrupt beat. Do not use old 3-5s hook timing or old 8-12s hook-section timing for this ruleset.
+- Never write "0-8s", "0-8/12", "0-12s", or "8-12s" in visual_scene_1, hook labels, voice labels, or production notes for this ruleset.
 - visual_scene_2 is the 3-15s demo/story beat. visual_scene_3 is the 15-25s reveal/proof beat.
 - Hook is not just a headline: hook_primary plus visual_scene_1 must make the stop-scroll idea clear in the first 3 seconds.
 - Voice/speech must sound like a real person talking in-feed, not a polished ad.
@@ -409,7 +408,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     : '';
   const hookBodyCtaBlock = compact
     ? `  "hook": {
-    "durationSeconds": 4,
+    "durationSeconds": 3,
     "visual": "Detailed opening visual in Vietnamese, 2-3 dense sentences covering camera, location, exact blocker, and visible painpoint clue",
     "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
@@ -429,7 +428,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "endCard": "${options.appName} + short tagline"
   }`
     : `  "hook": {
-    "durationSeconds": 4,
+    "durationSeconds": 3,
     "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense sentences covering camera, location, blocker, and visible painpoint clue",
     "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
@@ -463,17 +462,17 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
 - Do not add server-derived legacy fields such as hook.voice, hook.text, viTranslation, viewerProfile, viewerEmotion, painpointImpact, whyTheyStopScrolling, or analogous body/cta legacy fields.
 - Keep explanation to 1 short sentence.
 - Keep hook.visual dense and specific: usually 2-3 sentences. Body should normally be 2-3 dense sentences, and CTA should still be concrete enough for production without follow-up questions.
-- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 8-12 seconds.
+- hook.durationSeconds must be an integer estimate of the opening hook beat, normally 3 seconds for prompt-builder style output.
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
-- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. It should carry a full 8-12s hook arc, usually 18-42 words.`
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it concise enough for the 0-3s hook beat.`
     : `- Fill every field. Use "N/A" only when genuinely not applicable.
-- hook.durationSeconds must be an integer estimate of how long the hook section takes on screen, normally 8-12 seconds.
+- hook.durationSeconds must be an integer estimate of the opening hook beat, normally 3 seconds for prompt-builder style output.
 - hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
 - hook.visual must make the selected pain point and selected angle visible through the first object, first action, or first contrast. Avoid generic one-line visuals.
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
 - Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
 - hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
-- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. It should carry a full 8-12s hook arc, usually 18-42 words.`;
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it concise enough for the 0-3s hook beat.`;
 
   return `## OUTPUT SPECIFICATION
 
@@ -482,7 +481,7 @@ Return ${quantityLabel} objects in this exact schema:
 
 [{
   "id": "P0-A0-I0",
-  "title": "Short Vietnamese concept title",
+  "title": "Short ${options.language} concept title",
   "duration": "${options.duration}",
   "creativeType": "UGC|POV|Split Screen|Reaction|ASMR|Trend Format|Social Proof|Interview|Challenge",
   "meta": {
@@ -521,7 +520,7 @@ ${hookBodyCtaBlock}
 ${compactOutputRules}
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
-- Respect the selected language for voice and textOverlay, while strategy fields stay in Vietnamese.
+- Respect the requested output language for title, voice, characterSpeech, voiceover, textOverlay, script_vo, and CTA, while strategy fields stay in Vietnamese.
 - Keep the response machine-parseable.`;
 }
 
@@ -533,8 +532,9 @@ export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): st
 
 Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
-User-facing copy must be in ${options.language}. Production notes and visual shooting descriptions can stay Vietnamese for the internal team.
-The selected market controls copy language, setting, culture, behavior, and vibe.
+User-facing copy must be in ${options.language}: title/hook lines, on-camera character speech, voice/video voiceover, text overlay, script_vo, and CTA.
+Production notes and visual shooting descriptions can stay Vietnamese for the internal team.
+The selected market controls setting, culture, behavior, and vibe only. Do not switch user-facing copy away from ${options.language}.
 
 [
   {
@@ -552,7 +552,10 @@ The selected market controls copy language, setting, culture, behavior, and vibe
             "hook_primary": "Main hook text in ${options.language}, max 12 words, creates pattern interrupt",
             "hook_alt_1": "Alternative hook variation A in ${options.language}",
             "hook_alt_2": "Alternative hook variation B in ${options.language}",
-            "visual_scene_1": "Second 0-3: Exact Vietnamese visual description. Who, where, doing what.",
+            "hook_character_speech": "Optional on-camera character speech in ${options.language}. Empty string if nobody visibly speaks.",
+            "hook_voiceover": "Optional voice/video narrator line in ${options.language}. Empty string if no narrator.",
+            "hook_text_overlay": "On-screen hook text in ${options.language}, max 12 words.",
+            "visual_scene_1": "Second 0-3 only: Exact Vietnamese visual description. Who, where, doing what. Never write 0-8s.",
             "visual_scene_2": "Second 3-15: Core demonstration or storytelling visual in Vietnamese.",
             "visual_scene_3": "Second 15-25: Reveal or proof visual in Vietnamese.",
             "script_vo": "Full voiceover script in ${options.language}, max 60 words.",
@@ -574,12 +577,13 @@ The selected market controls copy language, setting, culture, behavior, and vibe
 1. Output JSON array ONLY, no text before or after.
 2. Every field is required. Use "N/A" only if truly not applicable.
 3. hook_primary must be under 12 words.
-4. visual_scene_1/2/3 must be specific enough that a video creator can shoot without asking.
-5. script_vo must be speakable in 25 seconds, roughly 60 words max.
-6. id must follow format exactly: P0-A0-I0, zero-indexed.
-7. angle_type must be one of the allowed values.
-8. Tracks: A = no real person needed | B = real person/UGC | C = motion/animation.
-9. User-facing copy fields hook_primary, hook_alt_1, hook_alt_2, script_vo, and cta_text must be in ${options.language}. Internal production notes can stay Vietnamese.`;
+4. visual_scene_1 must be the 0-3s hook beat only. Never output 0-8s, 0-8/12, 0-12s, or 8-12s for builder ideas.
+5. visual_scene_1/2/3 must be specific enough that a video creator can shoot without asking.
+6. script_vo must be speakable in 25 seconds, roughly 60 words max.
+7. id must follow format exactly: P0-A0-I0, zero-indexed.
+8. angle_type must be one of the allowed values.
+9. Tracks: A = no real person needed | B = real person/UGC | C = motion/animation.
+10. User-facing copy fields title/hook_primary/hook_alt_1/hook_alt_2/hook_character_speech/hook_voiceover/hook_text_overlay/script_vo/cta_text must be in ${options.language}. Internal production notes can stay Vietnamese.`;
   }
 
   if (options.ruleset === 'v7') {
@@ -591,7 +595,7 @@ Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
 
 Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7.
-All generated copy and descriptions must be Vietnamese. The selected market controls behavior, setting, social context, and vibe only.
+User-facing copy must be in ${options.language}: title/concept, hook lines, character speech, voice/video narrator, text overlay, script_vo, and CTA. The selected market controls behavior, setting, social context, and vibe only.
 
 [
   {
@@ -606,25 +610,25 @@ All generated copy and descriptions must be Vietnamese. The selected market cont
         "ideas": [
           {
             "id": "P0-A0-I0",
-            "hook_primary": "Tên concept + câu hook trực diện bằng tiếng Việt. Không theo giới hạn word-count cũ.",
-            "hook_alt_1": "Một hướng hook khác bằng tiếng Việt, khác execution, không paraphrase",
-            "hook_alt_2": "Một hướng hook khác bằng tiếng Việt, khác execution, không paraphrase",
-            "hook_character_speech": "Lời thoại tiếng Việt chỉ khi có nhân vật nhìn thấy đang nói. Nếu không có người nói rõ, để chuỗi rỗng.",
-            "hook_voiceover": "Text/Voice tiếng Việt cho phần mở đầu trực diện. Một câu khẳng định gắt, không phải câu hỏi tu từ. Nếu không cần narrator, để chuỗi rỗng.",
-            "hook_text_overlay": "Chữ trên màn hình bằng tiếng Việt cho phần mở đầu trực diện. Một câu khẳng định trực diện, không theo giới hạn 6-16 từ cũ.",
+            "hook_primary": "Concept title + direct hook in ${options.language}. No old word-count limit.",
+            "hook_alt_1": "Alternative hook direction in ${options.language}, different execution, not a paraphrase",
+            "hook_alt_2": "Alternative hook direction in ${options.language}, different execution, not a paraphrase",
+            "hook_character_speech": "Concise on-camera character speech in ${options.language}. Empty string if no clearly visible speaker.",
+            "hook_voiceover": "Concise voice/video narrator line in ${options.language}. Use a direct statement, not a rhetorical question. Empty string if no narrator.",
+            "hook_text_overlay": "On-screen hook text in ${options.language}. A direct statement, not old word-count filler.",
             "reference_pattern": "Tên mẫu mô V7, ví dụ: UGC, 3D Scan, News Leak, Magic Feature, Real Disaster, Reaction Interruption",
             "interrupt_mechanism": "Hành động/hình ảnh cụ thể gây sốc hoặc gây tò mò để chặn scroll ngay giây 0.1",
             "first_frame_asset": "Tài sản frame đầu: nhân vật, sắc tộc, trang phục, địa điểm, tư thế, biểu cảm, đạo cụ hoặc màn hình điện thoại",
             "psp_bridge": "Chuyển trục giải pháp: chuyển tiếp cụ thể từ hậu quả/painpoint sang hành động dùng feature/app. Không theo giới hạn word-count cũ.",
             "proof_object": "Con số, biểu đồ, màn hình app, vật chứng hoặc bằng chứng visual xuất hiện sau pivot",
             "app_demo_action": "Thao tác feature chính xác: ngón tay chạm đâu, màn hình đổi gì, số/biểu đồ/ánh sáng/UI thay đổi thế nào",
-            "overlay_sequence": ["0-3s text hook tiếng Việt", "3-6s text pivot tiếng Việt", "proof/demo overlay tiếng Việt", "CTA overlay tiếng Việt"],
+            "overlay_sequence": ["0-3s hook overlay in ${options.language}", "3-6s pivot overlay in ${options.language}", "proof/demo overlay in ${options.language}", "CTA overlay in ${options.language}"],
             "edit_notes": "Ghi chú quay/dựng bằng tiếng Việt: góc máy, nhịp cắt, close-up, zoom, crop, caption style, mức độ thô/UGC",
             "visual_scene_1": "Mở đầu trực diện (0-3s): mô tả chi tiết chuyển động, góc máy, trạng thái cơ thể, biểu cảm, bối cảnh bản địa và hành động gây sốc/tò mò. Không viết setup chung chung.",
             "visual_scene_2": "Chuyển trục giải pháp (3-6s): mô tả chi tiết thao tác tay dùng feature, ngón tay chạm đâu, màn hình sáng/đổi UI thế nào, số/biểu đồ thay đổi ra sao.",
             "visual_scene_3": "Bằng chứng/CTA nối tiếp: visual đơn giản, sản xuất được, xác nhận giải pháp và dẫn tới hành động app.",
-            "script_vo": "Kịch bản voice/text tiếng Việt ngắn. Nếu là idea giao tiếp 2+ nhân vật, viết lời thoại đơn giản, đúng vai; nếu không, dùng voice-over hoặc mô tả đọc được.",
-            "cta_text": "CTA tiếng Việt.",
+            "script_vo": "Short speakable voice/video script in ${options.language}. If the idea has 2+ people talking, write simple role-accurate dialogue; otherwise use voice-over.",
+            "cta_text": "CTA in ${options.language}.",
             "visual_ref_notes": "MARKET & USER ADAPTATION bằng tiếng Việt: sắc tộc, trang phục, kiến trúc, hành vi, văn hóa, bối cảnh nhà/công việc đặc trưng của market.",
             "talent_profile": "Chi tiết nhân vật bằng tiếng Việt: tuổi, sắc tộc, giới tính, trang phục, quan hệ xã hội, hoặc No talent nếu không cần người.",
             "dont_do": "Một điều cấm V7 cụ thể bằng tiếng Việt.",
@@ -645,7 +649,7 @@ All generated copy and descriptions must be Vietnamese. The selected market cont
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
 5. visual_scene_1 của phần mở đầu trực diện phải đủ cụ thể để người quay hoặc AI video tool thực hiện chính xác.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
-7. TOÀN BỘ OUTPUT PHẢI VIẾT BẰNG TIẾNG VIỆT, bao gồm lời thoại nhân vật, text on screen, voice-over, CTA, visual và ghi chú production.
+7. User-facing copy must be in ${options.language}: title/concept, character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes can stay Vietnamese.
 8. Cách nói, hành vi, bối cảnh, đồ vật, quan hệ xã hội và vibe phải nghĩ như người bản địa của selected market.
 9. Nếu idea có 2+ nhân vật giao tiếp, lời thoại phải đơn giản, tự nhiên, đúng vai và không biến thành hội thoại dài.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
@@ -678,8 +682,8 @@ The array must follow this exact structure:
             "hook_primary": "Main hook text, 6-16 words, creates pattern interrupt",
             "hook_alt_1": "Alternative hook variation A, different rhetorical approach",
             "hook_alt_2": "Alternative hook variation B, different rhetorical approach",
-            "hook_character_speech": "Exact 0-8s line spoken by a visible on-camera person, 12-32 words if used. Empty string if the speaker is not clearly visible/identified in visual_scene_1.",
-            "hook_voiceover": "Off-camera narrator/video voice for the 0-8s hook arc, 18-42 words, natural and specific. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
+            "hook_character_speech": "Concise on-camera line in ${options.language} for the 0-3s hook beat. Empty string if the speaker is not clearly visible/identified in visual_scene_1.",
+            "hook_voiceover": "Concise off-camera narrator/video voice in ${options.language} for the 0-3s hook beat. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text, 6-14 words, punchy and readable. This can match hook_primary, but not hook_voiceover.",
             "reference_pattern": "Named video structure cue. Can be a proven cue, hybrid, or custom pattern, e.g. Siri Bridge, Shock Object, Phone Demo Proof, Transformation Demo, Comment Reply, Split-Screen Choice, Problem-Solution Handheld, or a new pattern name",
             "interrupt_mechanism": "Why the first frame stops scroll: visual oddity, sharp question, contradiction, proof object, social tension, or transformation gap",
@@ -687,9 +691,9 @@ The array must follow this exact structure:
             "psp_bridge": "One concrete transition from the hook pain/emotion to the PSP/app action, 10-36 words. It explains why the viewer now needs this product, before the Body demo starts.",
             "proof_object": "The concrete object or screen that proves the promise later in the video",
             "app_demo_action": "Exact app action shown on screen: tap, scan, upload, measure, compare, render, clean, save, etc.",
-            "overlay_sequence": ["0-2s overlay", "2-5s overlay", "5-10s PSP bridge overlay", "Body proof overlay", "CTA overlay"],
+            "overlay_sequence": ["0-3s hook overlay", "3-15s demo overlay", "15-25s proof overlay", "CTA overlay"],
             "edit_notes": "Concrete editing notes: cut rhythm, zoom, caption style, SFX, transition, or b-roll reference",
-            "visual_scene_1": "Second 0-8/12: exact hook mini-scene with 3 beats: pain trigger, emotional escalation, PSP bridge. Who, where, doing what, what pain object is visible.",
+            "visual_scene_1": "Second 0-3 only: exact hook beat. Who, where, doing what, what pain object is visible. Never write 0-8s.",
             "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point.",
             "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual.",
             "script_vo": "Full speakable voiceover script, max 60 words.",
@@ -713,7 +717,7 @@ The array must follow this exact structure:
 3. hook_primary must be 6-16 words.
 4. hook_alt_1 and hook_alt_2 must not be paraphrases of hook_primary.
 5. hook_character_speech must be empty unless visual_scene_1 clearly identifies the visible speaker. Never output "-" or "N/A" for speech.
-6. hook_voiceover must add context, tension, or lived texture across an 8-12s hook arc. It must not be the same sentence as hook_primary or hook_text_overlay.
+6. hook_voiceover must be concise enough for the 0-3s hook beat. It must not be the same sentence as hook_primary or hook_text_overlay.
 7. visual_scene_1, visual_scene_2, and visual_scene_3 must be specific enough that a video creator can shoot without asking questions.
 8. psp_bridge is required and must connect the viewer's emotion/angle to the PSP before the Body starts.
 9. reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes are required production blueprint fields. reference_pattern is a flexible named structure cue, not a closed whitelist. The other blueprint fields must not be generic.
@@ -727,7 +731,7 @@ The array must follow this exact structure:
 17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
 18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
 19. hook_primary should sound like a human confession, tension line, or pattern interrupt in-feed. Avoid search-query hooks like "Could X explain Y?" unless the user explicitly asks for educational SEO style.
-20. The hook must not feel short. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should together form a complete 8-12 second opening, not a one-line setup.`;
+20. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should make the 0-3s hook clear without using old 0-8s or 8-12s timing labels.`;
 }
 
 function readFirstText(record: Record<string, unknown>, keys: string[], fallback = ''): string {
@@ -736,6 +740,14 @@ function readFirstText(record: Record<string, unknown>, keys: string[], fallback
     if (text) return text;
   }
   return fallback;
+}
+
+function normalizeHookTimingText(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/\b(?:second|sec|giây)\s*0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s?\b/gi, 'Second 0-3')
+    .replace(/\b0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s\b/gi, '0-3s')
+    .replace(/\b8\s*[-–]\s*12\s*s\b/gi, '0-3s');
 }
 
 function readArray(value: unknown): Record<string, unknown>[] {
@@ -1134,7 +1146,7 @@ function createBriefValidationErrors(input: {
     errors.push('hook_voiceover must be 48 words or fewer');
   }
   if (!isV7 && hookVoiceover && countWords(hookVoiceover) < 12 && !hookCharacterSpeech) {
-    errors.push('hook_voiceover is too short for an 8-12s hook arc');
+    errors.push('hook_voiceover is too short to carry the hook beat');
   }
   if (hookVoiceover && isSameLine(hookVoiceover, input.hookPrimary)) {
     errors.push('hook_voiceover must not duplicate hook_primary');
@@ -1160,6 +1172,9 @@ function createBriefValidationErrors(input: {
   }
   if (!input.visualScene1 || input.visualScene1.split(/\s+/).filter(Boolean).length < 10) {
     errors.push('visual_scene_1 must be concrete and shootable');
+  }
+  if (isBuilder && /\b(?:0\s*[-–]\s*(?:8|10|12)|8\s*[-–]\s*12)(?:\s*\/\s*12)?\s*s?\b/i.test(input.visualScene1)) {
+    errors.push('visual_scene_1 must be 0-3s only for prompt_system_builder_html_v1');
   }
   if (!input.visualScene2 || input.visualScene2.split(/\s+/).filter(Boolean).length < 10) {
     errors.push('visual_scene_2 must be concrete and shootable');
@@ -1303,6 +1318,7 @@ export function normalizeCreativeBriefOutput(
         scriptVo = sanitizeHealthClaimText(scriptVo);
         ctaText = sanitizeHealthClaimText(ctaText);
         dontDo = sanitizeHealthClaimText(dontDo);
+        visualScene1 = normalizeHookTimingText(visualScene1);
 
         if (!hookTextOverlay) {
           hookTextOverlay = hookPrimary;
@@ -1434,12 +1450,7 @@ export function normalizeCreativeBriefOutput(
           },
           explanation: angleDesc,
           hook: {
-            durationSeconds: estimateHookDurationSeconds({
-              characterSpeech: hookCharacterSpeech,
-              voiceover: hookVoiceover,
-              textOverlay: hookTextOverlay || hookPrimary,
-              visual: visualScene1,
-            }),
+            durationSeconds: 3,
             visual: visualScene1,
             characterSpeech: hookCharacterSpeech,
             voiceover: hookVoiceover,
@@ -1490,19 +1501,19 @@ Return ${quantityLabel} objects in this exact schema:
 
 [{
   "id": "P0-A0-I0",
-  "title": "Vietnamese variant title",
+  "title": "${options.language} variant title",
   "explanation": "Vietnamese explanation of what changed and why it works",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
-    "hookPrimary": "Natural hook line, 6-16 words",
-    "hookAlt1": "Alternative hook A with a different rhetorical approach",
-    "hookAlt2": "Alternative hook B with a different rhetorical approach",
+    "hookPrimary": "Natural hook line in ${options.language}, 6-16 words",
+    "hookAlt1": "Alternative hook A in ${options.language} with a different rhetorical approach",
+    "hookAlt2": "Alternative hook B in ${options.language} with a different rhetorical approach",
     "visualRefNotes": "Specific production note",
     "talentProfile": "Age, look, clothing, or No talent",
     "dontDo": "1 specific thing not to do"
   },
   "hook": {
-    "durationSeconds": 4,
+    "durationSeconds": 3,
     "visual": "Detailed hook-only visual in Vietnamese",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
@@ -1516,10 +1527,10 @@ Return ${quantityLabel} objects in this exact schema:
 }]
 
 ## OUTPUT RULES
-- Focus on the complete 8-12 second hook mini-scene only.
+- Focus on the 0-3s hook beat only.
 - Keep the winning hook DNA unless the user explicitly asks to change it.
 - Hooks may be descriptive when needed. Avoid clipped keyword fragments; write native, speakable hook lines.
-- hook.durationSeconds must estimate the actual hook runtime as an integer second count, normally 8-12 seconds.
+- hook.durationSeconds must estimate the actual hook runtime as an integer second count, normally 3 seconds.
 - For UGC/POV/Reaction/Interview, split on-camera talent speech into characterSpeech and off-camera narrator/video voice into voiceover.
 - visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.

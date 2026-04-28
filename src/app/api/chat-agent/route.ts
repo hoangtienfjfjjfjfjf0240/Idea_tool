@@ -154,7 +154,7 @@ Target Market: ${f.targetMarket?.join(', ') || 'N/A'}`);
       asList(filterContext.targetMarket),
       asList(filterContext.coreUser)
     ) || 'Vietnamese';
-    const chatOutputLanguage = chatMarketLanguageReference;
+    const chatOutputLanguage = 'English';
     const chatFilterConsistencyBlock = buildFilterConsistencyPromptBlock({
       solutionValues: asList(filterContext.solution),
       angleValues: asList(filterContext.angle),
@@ -174,7 +174,7 @@ CÁCH HOẠT ĐỘNG:
 - Bạn trả lời TRỰC TIẾP câu hỏi/yêu cầu của user
 - Khi user yêu cầu tạo ideas, bạn TỰ CHỌN filter phù hợp nhất và tạo ideas
 - Khi tự chọn filter cho health app, PSP/app action là nguồn sự thật về metric. Không trộn heart rate, blood pressure, blood glucose giữa PSP, angle, painpoint, hook, body hoặc CTA.
-- Khi tạo ideas, user-facing copy phải theo ngôn ngữ target market (${chatOutputLanguage}): title/hook, characterSpeech, voiceover, textOverlay, script_vo, cta_text. Visual/production notes có thể viết tiếng Việt cho team nội bộ.
+- Khi tạo ideas, user-facing copy phải viết bằng English: title/hook, characterSpeech, voiceover, textOverlay, script_vo, cta_text. Target market (${chatMarketLanguageReference}) chỉ điều chỉnh bối cảnh/vibe. Visual/production notes có thể viết tiếng Việt cho team nội bộ.
 - Câu trả lời tư vấn ngoài JSON vẫn viết tiếng Việt.
 - Khi tạo ideas, phải nhìn recent ideas để tránh lặp lại cùng scene family, cùng hook opening và cùng blocker nếu user không yêu cầu lặp
 - Khi tạo ideas, Hook phải có psp_bridge: cầu nối từ emotion/angle của viewer sang PSP trước khi sang Body. Body chỉ là demo/proof continuation.

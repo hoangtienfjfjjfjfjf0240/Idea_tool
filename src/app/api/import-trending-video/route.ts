@@ -278,7 +278,7 @@ function buildAnalysisPrompt() {
 Nhiệm vụ:
 - Đọc TOÀN BỘ video, gồm cả visual + audio/voice + text overlay.
 - Trích ra cấu trúc có thể tái sử dụng cho tool generate idea.
-- Tập trung vào: hook mini-scene 0-8/12s, tiến trình body, payoff/CTA, camera style, audio style, text overlay style, emotion trigger.
+- Tập trung vào: hook beat 0-3s, tiến trình body, payoff/CTA, camera style, audio style, text overlay style, emotion trigger.
 - Không mô tả lan man. Output ngắn, thực dụng, dùng được để build lại idea khác.
 
 Return JSON only, không markdown, theo schema:
@@ -288,7 +288,7 @@ Return JSON only, không markdown, theo schema:
   "creativeType": "UGC|POV|Reaction|ASMR|Split Screen|Demo|Social Proof|Interview|Other",
   "angleType": "Curiosity|Problem Reveal|Comparison|POV|Social Proof|Relief|Fear|Demo",
   "emotionalDriver": "Cảm xúc chính người xem bị kéo vào",
-  "hookPattern": "Mô tả mẫu hook mini-scene 0-8/12s",
+  "hookPattern": "Mô tả mẫu hook beat 0-3s",
   "bodyPattern": "Mô tả nhịp triển khai phần giữa",
   "ctaPattern": "Mô tả CTA/payoff cuối video",
   "visualStyle": "Handheld/close-up/street interview/... cụ thể",

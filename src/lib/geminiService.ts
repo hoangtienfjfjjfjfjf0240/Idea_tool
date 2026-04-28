@@ -47,7 +47,7 @@ const getStructureInstructions = (structureName: string): string => {
     * DEMO SECTION RULES (Apply to 'demo' object):
       - Step 1 (Prep): Show the phone in hand, opening the feature.
       - Step 2 (Action): ONE simple interaction (tap/scan/upload/press). NO complex flows.
-      - Step 3 (Result): Show the UI result. Voice MUST BE exactly: "Đây là kết quả của bạn." (Here is your result).
+      - Step 3 (Result): Show the UI result. Voice MUST BE exactly: "Here is your result." (Here is your result).
   `;
 
   switch (true) {
@@ -68,18 +68,18 @@ const getStructureInstructions = (structureName: string): string => {
 const mockGenerate = (qty: number, duration: string) => {
   return Array.from({ length: qty }).map((_, i) => ({
     id: Date.now() + i,
-    title: `Ý tưởng Demo ${i + 1}`,
+    title: `Demo Idea ${i + 1}`,
     duration,
-    explanation: "Dễ quay tại nhà, không cần đạo cụ phức tạp.",
-    hook: { visual: "Cảnh người dùng cầm điện thoại, vẻ mặt bất ngờ.", text: "Đừng xóa ảnh thủ công nữa!", voice: "Bạn đang lãng phí thời gian đấy." },
+    explanation: "Easy to shoot at home, no complex props needed.",
+    hook: { visual: "User holds a phone with a surprised look.", text: "Stop deleting photos manually!", voice: "You are wasting time doing this by hand." },
     problem: { scenes: [] },
     solution: { visual: "", voice: "", text: "" },
     demo: {
-      step1_prep: { visual: "Mở ứng dụng trên điện thoại." },
-      step2_action: { visual: "Chạm một lần vào nút 'Quét Thông Minh'." },
-      step3_result: { visual: "Màn hình hiển thị kết quả.", voice: "Đây là kết quả của bạn." }
+      step1_prep: { visual: "Open the app on the phone." },
+      step2_action: { visual: "Tap the smart scan button once." },
+      step3_result: { visual: "The screen shows the result.", voice: "Here is your result." }
     },
-    cta: { voice: "Thử ngay bây giờ.", text: "Tải miễn phí trên App Store" }
+    cta: { voice: "Try it now.", text: "Download for free on the App Store" }
   }));
 };
 
@@ -113,11 +113,11 @@ ${structureInstruction}
 
 [VISUAL & VOICE GUIDELINES]
 - VISUALS: Must be clear, easy to shoot. Describe specific actions.
-- VOICE: Write full Vietnamese scripts. Tone: Natural, Viral, Urgent.
+- VOICE: Write full English scripts. Tone: Natural, Viral, Urgent.
 
 [OUTPUT FORMAT]
 Return a JSON ARRAY containing exactly ${config.quantity} objects. No Markdown.
-[{ "id": 1, "title": "Title (Vietnamese)", "duration": "${config.duration}", "explanation": "Why this works...", "hook": { "visual": "...", "text": "...", "voice": "..." }, "problem": { "scenes": [{ "visual": "...", "voice": "..." }] }, "solution": { "visual": "...", "voice": "...", "text": "..." }, "demo": { "step1_prep": { "visual": "...", "voice": "..." }, "step2_action": { "visual": "...", "voice": "..." }, "step3_result": { "visual": "...", "voice": "Đây là kết quả của bạn." } }, "cta": { "voice": "Thử ngay bây giờ.", "text": "Tải miễn phí" } }]`;
+[{ "id": 1, "title": "Title (English)", "duration": "${config.duration}", "explanation": "Why this works...", "hook": { "visual": "...", "text": "...", "voice": "..." }, "problem": { "scenes": [{ "visual": "...", "voice": "..." }] }, "solution": { "visual": "...", "voice": "...", "text": "..." }, "demo": { "step1_prep": { "visual": "...", "voice": "..." }, "step2_action": { "visual": "...", "voice": "..." }, "step3_result": { "visual": "...", "voice": "Here is your result." } }, "cta": { "voice": "Try it now.", "text": "Download for free" } }]`;
 
   try {
     const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { temperature: 0.8, topK: 40 } });
@@ -210,7 +210,7 @@ export const generateHookImage = async (visualDescription: string): Promise<stri
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const refineIdea = async (originalIdea: any, instruction: string) => {
   if (!ai) throw new Error("AI not initialized");
-  const prompt = `[OBJECTIVE]\nModify an existing ad idea based on user instructions.\nLanguage: VIETNAMESE.\n\n[ORIGINAL IDEA JSON]\n${JSON.stringify(originalIdea)}\n\n[USER INSTRUCTION]\n"${instruction}"\n\n[TASK]\n1. Apply the User Instruction.\n2. Keep the exact same JSON structure.\n3. Return ONLY the new JSON object. No Markdown.`;
+  const prompt = `[OBJECTIVE]\nModify an existing ad idea based on user instructions.\nLanguage: ENGLISH for title, character speech, voice/video voiceover, text overlay, script, and CTA. Visual/production notes can stay Vietnamese.\n\n[ORIGINAL IDEA JSON]\n${JSON.stringify(originalIdea)}\n\n[USER INSTRUCTION]\n"${instruction}"\n\n[TASK]\n1. Apply the User Instruction.\n2. Keep the exact same JSON structure.\n3. Return ONLY the new JSON object. No Markdown.`;
   try {
     const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
     const text = response.text;
@@ -225,7 +225,7 @@ export const refineIdea = async (originalIdea: any, instruction: string) => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const generateIdeaFromHook = async (winningHook: any, instruction: string, quantity = 3) => {
   if (!ai) throw new Error("AI not initialized");
-  const prompt = `[OBJECTIVE]\nGenerate exactly ${quantity} DISTINCT variations of HOOKS based on:\n- WINNING HOOK: "${winningHook.title}" (${winningHook.hookConcept || ''}). Visual: "${winningHook.visualDetail || ''}".\n- USER INSTRUCTION: "${instruction}"\n\n[REQUIREMENTS]\n- Focus ONLY ON THE HOOK mini-scene (first 8-12 seconds): pain trigger, emotional escalation, and bridge to the product action.\n- Visual: Detailed description, easy to shoot.\n- Text Overlay: Short, punchy.\n- Voice: Catchy, viral (Vietnamese), not a one-line question.\n- Body/Demo/CTA: Leave EMPTY.\n\n[OUTPUT] JSON ARRAY of ${quantity} objects. No Markdown.\n[{"id":1,"title":"...","duration":"10s","explanation":"...","hook":{"visual":"...","text":"...","voice":"..."},"problem":{"scenes":[]},"solution":{"visual":"","voice":"","text":""},"demo":{"step1_prep":{"visual":""},"step2_action":{"visual":""},"step3_result":{"visual":"","voice":""}},"cta":{"voice":"","text":""}}]`;
+  const prompt = `[OBJECTIVE]\nGenerate exactly ${quantity} DISTINCT variations of HOOKS based on:\n- WINNING HOOK: "${winningHook.title}" (${winningHook.hookConcept || ''}). Visual: "${winningHook.visualDetail || ''}".\n- USER INSTRUCTION: "${instruction}"\n\n[REQUIREMENTS]\n- Focus ONLY ON THE HOOK mini-scene (first 0-3 seconds): pain trigger, emotional escalation, and bridge to the product action.\n- Visual: Detailed description, easy to shoot.\n- Text Overlay: Short, punchy.\n- Voice: Catchy, viral English, not a one-line question.\n- Body/Demo/CTA: Leave EMPTY.\n\n[OUTPUT] JSON ARRAY of ${quantity} objects. No Markdown.\n[{"id":1,"title":"...","duration":"3s","explanation":"...","hook":{"visual":"...","text":"...","voice":"..."},"problem":{"scenes":[]},"solution":{"visual":"","voice":"","text":""},"demo":{"step1_prep":{"visual":""},"step2_action":{"visual":""},"step3_result":{"visual":"","voice":""}},"cta":{"voice":"","text":""}}]`;
 
   try {
     const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt, config: { temperature: 0.8 } });

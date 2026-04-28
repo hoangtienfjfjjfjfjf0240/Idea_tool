@@ -16,7 +16,6 @@ import {
 import { guardApiRequest } from '@/lib/apiGuards';
 import {
   buildFilterConsistencyPromptBlock,
-  detectTargetLanguageFromMarkets,
 } from '@/lib/filterConsistency';
 
 export const maxDuration = 300;
@@ -503,14 +502,12 @@ export async function POST(request: NextRequest) {
     const previousIdeas = asText(requestBody.previousIdeas);
     const selectedModel = asText(requestBody.selectedModel) || undefined;
     const requestedQty = Math.min(toPositiveInt(quantity, 3), MAX_IDEAS_PER_REQUEST);
-    const targetLanguage = detectTargetLanguageFromMarkets(
-      [
-        ...asStringList(requestBody.targetMarket),
-        ...asStringList(hook.targetMarket),
-        ...asStringList(hook.target_market),
-      ],
-      [asText(hook.core_user)].filter(Boolean)
-    ) || 'Vietnamese';
+    const targetLanguage = 'English';
+    const targetMarketValues = [
+      ...asStringList(requestBody.targetMarket),
+      ...asStringList(hook.targetMarket),
+      ...asStringList(hook.target_market),
+    ];
     const batchPlans = buildIdeaBatchPlans(requestedQty);
     const aggregatedIdeas: Record<string, unknown>[] = [];
     const warnings: string[] = [];
@@ -570,6 +567,7 @@ Hard requirements:
         extraContext: [
           'Task type: expand a proven winning hook into new full ideas.',
           'Keep the same strategic DNA, but change situation, character, setting, and opening approach enough to avoid clones.',
+          `Target market/localization: ${targetMarketValues.join(', ') || 'same as the winning hook'}. Use it for setting, culture, props, behavior, and vibe only; keep user-facing copy in ${targetLanguage}.`,
           ideaDirection ? `User direction: ${ideaDirection}` : 'No additional user direction.',
         ],
       });
@@ -600,6 +598,7 @@ ${filterConsistencyBlock || ''}
 - Core user: ${hook.core_user || 'N/A'}
 - Painpoint: ${hook.painpoint || 'N/A'}
 - Viewer emotion target: ${hook.emotion || 'N/A'}
+- Target market/localization: ${targetMarketValues.join(', ') || 'same as the winning hook'}
 ${priorIdeasBlock}
 
 ## TASK
@@ -751,7 +750,7 @@ ${retryNotes}`, {
 
 [ALTERNATE MODEL RETRY - NEED CLEAN FULL BATCH]
 Return ${plan.batchQuantity} valid, unique ideas in the exact JSON schema.
-- Vietnamese user-facing copy.
+- English user-facing copy: title/hook, character speech, voice/video voiceover, text overlay, script_vo, and CTA.
 - No generic template or fallback.
 - No shallow paraphrase of existing ideas.
 - Hook, visual_scene_1, body, and CTA must stay tied to the winning hook context and selected pain point.`, {

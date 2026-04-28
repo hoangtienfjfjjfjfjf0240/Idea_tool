@@ -123,6 +123,7 @@ function buildV7ExecutionContract(input: {
   featureContext: string;
   targetMarketValues: string[];
   targetLang: string;
+  copyLanguage: string;
   visualType: string;
   ideaDescription?: string;
 }) {
@@ -130,7 +131,7 @@ function buildV7ExecutionContract(input: {
 - App: ${input.appName}
 - Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
 - Market language/culture reference: ${input.targetLang}
-- User-facing copy language: ${input.targetLang} for dialogue, on-screen text, voice-over, hook lines, and CTA.
+- User-facing copy language: ${input.copyLanguage} for dialogue, on-screen text, voice-over, hook lines, and CTA.
 - Production notes and visual descriptions can stay Vietnamese for the internal team.
 - Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
 - Painpoint to attack: ${input.primaryPillar}
@@ -144,13 +145,13 @@ Hard V7 requirements:
 - Mở đầu trực diện là nhịp chặn đầu tiên: cho thấy hậu quả, cú sốc hoặc visual lạ ngay giây 0.1.
 - Chuyển trục giải pháp phải xảy ra ngay sau đó: cho thấy hành động dùng app/feature với thao tác ngón tay cụ thể và UI/số liệu/biểu đồ thay đổi rõ.
 - Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
-- All Text/Voice must be written in ${input.targetLang}, with wording, social behavior, setting, and vibe native to the selected market.
+- All Text/Voice must be written in ${input.copyLanguage}. Social behavior, setting, props, and vibe must stay native to the selected market.
 - If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
 - Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
 }
 
-function buildV7TaskDirectives(quantity: number, copyLanguage = 'the selected target market language') {
+function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested output language') {
   return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
 - Each idea must follow: Concept Name -> Market & User Adaptation -> Mở đầu trực diện (0-3s) -> Chuyển trục giải pháp (3-6s) -> Bằng chứng/CTA nối tiếp.
 - The first frame must be a pattern interruption, not setup.
@@ -1037,132 +1038,131 @@ function buildFallbackIdeasForFilters(options: {
   const patterns = [
     {
       creativeType: 'UGC',
-      hookPrimary: 'Sao chuyện này cứ lặp lại?',
-      hookAlt1: 'Điểm kẹt nằm ngay đây',
-      hookAlt2: 'Đừng bỏ qua dấu hiệu này',
-      hookVoice: 'Sao lần nào chuyện này cũng lặp lại vậy?',
-      bodyVoice: 'Cho thấy đúng điểm kẹt trước, rồi mở app để ghi lại cùng tình huống trong một thao tác rõ ràng.',
-      ctaVoice: `Thử theo dõi trong ${options.appName}.`,
-      bodyOverlay: 'Lộ rõ điểm kẹt',
-      ctaOverlay: `Thử ${options.appName}`,
-      scene: 'cận cảnh handheld vào đúng vật thể hoặc hành động đang gây khó chịu',
+      hookPrimary: 'Why does this keep happening?',
+      hookAlt1: 'The blocker is right here',
+      hookAlt2: 'Do not miss this signal',
+      hookVoice: 'Why does this keep happening every time?',
+      bodyVoice: 'Show the exact blocker first, then open the app to capture the same moment in one clear action.',
+      ctaVoice: `Track it in ${options.appName}.`,
+      bodyOverlay: 'The blocker is visible now',
+      ctaOverlay: `Try ${options.appName}`,
+      scene: 'a handheld close-up on the exact object or action creating the friction',
     },
     {
       creativeType: 'Reaction',
-      hookPrimary: 'Một thao tác làm rõ điều gì?',
-      hookAlt1: 'Nhìn phản ứng là hiểu',
-      hookAlt2: 'Một lần ghi lại là khác',
-      hookVoice: 'Khoan, chỉ một thao tác mà rõ ra điều gì vậy?',
-      bodyVoice: 'Cắt sang phản ứng của nhân vật, rồi cho thấy thao tác trong app giúp họ nhìn lại vấn đề rõ hơn.',
-      ctaVoice: `Mở ${options.appName} và thử ghi lại.`,
-      bodyOverlay: 'Một thao tác, rõ hơn',
-      ctaOverlay: 'Thử ngay',
-      scene: 'cảnh phản ứng khi thông tin quan trọng vừa hiện rõ trên màn hình',
+      hookPrimary: 'One tap makes the problem obvious',
+      hookAlt1: 'The reaction tells you everything',
+      hookAlt2: 'One capture changes the read',
+      hookVoice: 'Wait, one tap made the problem obvious.',
+      bodyVoice: 'Cut to the reaction, then show the app action that helps them review the issue clearly.',
+      ctaVoice: `Open ${options.appName} and test it.`,
+      bodyOverlay: 'One tap, clearer answer',
+      ctaOverlay: 'Try it now',
+      scene: 'a reaction shot right as the important detail becomes visible on screen',
     },
     {
       creativeType: 'Split Screen',
-      hookPrimary: 'Không ghi lại thì cứ đoán mãi',
-      hookAlt1: 'Một bên vẫn bị kẹt',
-      hookAlt2: 'Nhìn đối chiếu là rõ',
-      hookVoice: 'Không ghi lại thì tình huống này cứ bị đoán mò mãi.',
-      bodyVoice: 'Dùng split-screen để so sánh lúc chỉ đoán cảm giác với lúc có app ghi lại cùng vấn đề.',
-      ctaVoice: `So sánh trong ${options.appName}.`,
-      bodyOverlay: 'Đoán mò vs ghi lại',
-      ctaOverlay: 'So sánh ngay',
-      scene: 'split-screen giữa một bên xử lý theo cảm giác và một bên mở app để ghi lại',
+      hookPrimary: 'Guessing keeps you stuck',
+      hookAlt1: 'One side is still stuck',
+      hookAlt2: 'The compare makes it clear',
+      hookVoice: 'If you do not capture it, you keep guessing.',
+      bodyVoice: 'Use a split screen to compare guessing by feeling versus using the app to capture the same issue.',
+      ctaVoice: `Compare it in ${options.appName}.`,
+      bodyOverlay: 'Guessing vs captured',
+      ctaOverlay: 'Compare now',
+      scene: 'a split-screen between manual guessing and opening the app to capture the issue',
     },
     {
       creativeType: 'Challenge',
-      hookPrimary: 'Bạn thấy điểm bất thường chưa?',
-      hookAlt1: 'Nhiều người bỏ lỡ chỗ này',
-      hookAlt2: 'Tìm vấn đề trước đã',
-      hookVoice: 'Bạn thấy điểm bất thường trước khi tôi chỉ ra không?',
-      bodyVoice: 'Biến painpoint thành một thử thách ngắn, rồi cho thấy app giúp ghi lại đúng chi tiết vừa bị bỏ qua.',
-      ctaVoice: `Thử kiểm tra trong ${options.appName}.`,
-      bodyOverlay: 'Tìm dấu hiệu',
-      ctaOverlay: 'Thử kiểm tra',
-      scene: 'mở đầu kiểu challenge, dấu hiệu đã xuất hiện nhưng chưa được giải thích',
+      hookPrimary: 'Did you catch the signal?',
+      hookAlt1: 'Most people miss this part',
+      hookAlt2: 'Find the blocker first',
+      hookVoice: 'Did you catch the signal before I pointed it out?',
+      bodyVoice: 'Turn the pain point into a quick challenge, then show how the app captures the detail that was missed.',
+      ctaVoice: `Check it in ${options.appName}.`,
+      bodyOverlay: 'Spot the signal',
+      ctaOverlay: 'Check it now',
+      scene: 'a challenge-style opening where the signal is visible before it is explained',
     },
     {
       creativeType: 'Social Proof',
-      hookPrimary: 'Ai cũng nhận ra quá muộn',
-      hookAlt1: 'Bình luận này nói đúng',
-      hookAlt2: 'Dấu hiệu muộn vẫn quan trọng',
-      hookVoice: 'Nhiều người chỉ nhận ra chuyện này khi nó đã lặp lại quá nhiều lần.',
-      bodyVoice: 'Dựng như một video trả lời bình luận, sau đó chứng minh bằng demo ghi lại tình huống thật.',
-      ctaVoice: `Dùng ${options.appName} cho lần theo dõi tiếp theo.`,
-      bodyOverlay: 'Bình luận nói đúng',
-      ctaOverlay: 'Theo dõi lần tới',
-      scene: 'mở đầu dạng reply comment, ngay sau đó là cảnh chứng minh ngoài đời thật',
+      hookPrimary: 'Everyone notices too late',
+      hookAlt1: 'This comment got it right',
+      hookAlt2: 'The late signal still matters',
+      hookVoice: 'Most people only notice this after it repeats too many times.',
+      bodyVoice: 'Frame it like a comment reply, then prove it with a simple demo of capturing the real situation.',
+      ctaVoice: `Use ${options.appName} the next time it happens.`,
+      bodyOverlay: 'The comment was right',
+      ctaOverlay: 'Track the next one',
+      scene: 'a comment-reply opening followed by a real-life proof moment',
     },
     {
       creativeType: 'ASMR',
-      hookPrimary: 'Vì sao nó khó chịu vậy?',
-      hookAlt1: 'Cảm giác đã lộ ra rồi',
-      hookAlt2: 'Nghe là thấy vấn đề',
-      hookVoice: 'Đây là lý do cảm giác đó khó chịu hơn mình tưởng.',
-      bodyVoice: 'Dùng âm thanh hoặc texture cận cảnh để biến painpoint thành một cảm giác cụ thể.',
-      ctaVoice: `Xem cách ghi lại rõ hơn trong ${options.appName}.`,
-      bodyOverlay: 'Cảm giác khó chịu',
-      ctaOverlay: 'Ghi lại rõ hơn',
-      scene: 'macro texture hoặc âm thanh cận cảnh khiến điểm khó chịu hiện rõ',
+      hookPrimary: 'This feels worse than it looks',
+      hookAlt1: 'The feeling is finally visible',
+      hookAlt2: 'You can hear the problem',
+      hookVoice: 'This is why that feeling is more annoying than it looks.',
+      bodyVoice: 'Use close texture or sound to make the pain point concrete, then pivot into the app action.',
+      ctaVoice: `Make it clearer in ${options.appName}.`,
+      bodyOverlay: 'The friction is visible',
+      ctaOverlay: 'Make it clear',
+      scene: 'a macro texture or close sound cue that makes the friction instantly noticeable',
     },
     {
       creativeType: 'Trend Format',
-      hookPrimary: 'Đừng bỏ lỡ dấu hiệu này',
-      hookAlt1: 'Dấu hiệu xuất hiện trước',
-      hookAlt2: 'Một dấu hiệu làm rõ mọi thứ',
-      hookVoice: 'Đừng bỏ lỡ dấu hiệu này thêm lần nào nữa.',
-      bodyVoice: 'Dùng nhịp cắt trend nhanh để lặp lại dấu hiệu, rồi cho thấy app ghi lại nó ra sao.',
-      ctaVoice: `Làm dấu hiệu rõ hơn với ${options.appName}.`,
-      bodyOverlay: 'Dấu hiệu trước, app sau',
-      ctaOverlay: 'Làm rõ dấu hiệu',
-      scene: 'nhịp cắt trend nhanh xoay quanh một dấu hiệu thị giác được lặp lại',
+      hookPrimary: 'Do not miss this signal',
+      hookAlt1: 'The signal shows up first',
+      hookAlt2: 'One signal explains the rest',
+      hookVoice: 'Do not miss this signal again.',
+      bodyVoice: 'Use fast trend cuts to repeat the signal, then show how the app captures it.',
+      ctaVoice: `Make the signal clear with ${options.appName}.`,
+      bodyOverlay: 'Signal first, app next',
+      ctaOverlay: 'Make it clear',
+      scene: 'fast trend cuts around one repeated visual signal',
     },
     {
       creativeType: 'Interview',
-      hookPrimary: 'Bạn có để ý chuyện này không?',
-      hookAlt1: 'Câu trả lời làm rõ vấn đề',
-      hookAlt2: 'Hỏi câu này trước',
-      hookVoice: 'Bạn có để ý chuyện này trước khi nó thành vấn đề không?',
-      bodyVoice: 'Dùng một câu hỏi nhanh kiểu hỏi bạn bè, rồi chứng minh bằng flow ghi lại trong app.',
-      ctaVoice: `Kiểm tra lại trong ${options.appName}.`,
-      bodyOverlay: 'Hỏi trước khi đoán',
-      ctaOverlay: 'Kiểm tra lại',
-      scene: 'mở đầu kiểu phỏng vấn, một người chỉ thẳng vào đúng điểm kẹt',
+      hookPrimary: 'Did you notice this first?',
+      hookAlt1: 'This answer exposes the problem',
+      hookAlt2: 'Ask this before guessing',
+      hookVoice: 'Did you notice this before it became a problem?',
+      bodyVoice: 'Use a quick interview-style question, then prove the answer with the app flow.',
+      ctaVoice: `Check it again in ${options.appName}.`,
+      bodyOverlay: 'Ask before guessing',
+      ctaOverlay: 'Check again',
+      scene: 'an interview-style opener where one person points directly at the blocker',
     },
     {
       creativeType: 'UGC',
-      hookPrimary: 'Lối tắt nằm ngay khoảnh khắc này',
-      hookAlt1: 'Lối tắt bắt đầu ở đây',
-      hookAlt2: 'Bỏ qua cách đoán mò',
-      hookVoice: 'Lối tắt nằm ngay khoảnh khắc mà nhiều người bỏ qua.',
-      bodyVoice: 'Cho thấy cách xử lý thủ công trong một nhịp, rồi chuyển sang app để ghi lại rõ hơn.',
-      ctaVoice: `Thử cách này với ${options.appName}.`,
-      bodyOverlay: 'Bỏ qua đoán mò',
-      ctaOverlay: 'Thử cách này',
-      scene: 'cảnh UGC quay qua vai, thấy rõ cách xử lý thủ công chậm chạp trước',
+      hookPrimary: 'The shortcut starts here',
+      hookAlt1: 'The shortcut begins in this moment',
+      hookAlt2: 'Stop guessing manually',
+      hookVoice: 'The shortcut starts in the moment most people skip.',
+      bodyVoice: 'Show the slow manual workaround first, then switch to the app to capture it more clearly.',
+      ctaVoice: `Try this with ${options.appName}.`,
+      bodyOverlay: 'Skip the guessing',
+      ctaOverlay: 'Try this',
+      scene: 'an over-the-shoulder UGC shot showing the slow manual workaround first',
     },
     {
       creativeType: 'POV',
-      hookPrimary: 'Vẫn bị kẹt ở bước này?',
-      hookAlt1: 'Bước này làm mất nhịp',
-      hookAlt2: 'Xem cách gỡ nó',
-      hookVoice: 'Bạn vẫn bị kẹt ở bước này à?',
-      bodyVoice: 'Đi từ khoảnh khắc bị kẹt sang một flow đơn giản: nhận ra, chọn cách ghi lại, rồi xem lại dữ liệu.',
-      ctaVoice: `Tạo cách theo dõi của bạn trong ${options.appName}.`,
-      bodyOverlay: 'Gỡ bước bị kẹt',
-      ctaOverlay: 'Tạo cách theo dõi',
-      scene: 'khung POV đơn, người xem nhìn thấy điểm kẹt từ chính góc nhìn của nhân vật',
+      hookPrimary: 'Still stuck on this step?',
+      hookAlt1: 'This step breaks the flow',
+      hookAlt2: 'Here is how to unstick it',
+      hookVoice: 'Are you still getting stuck on this step?',
+      bodyVoice: 'Move from the stuck moment into a simple flow: notice it, capture it, then review the data.',
+      ctaVoice: `Build your tracking flow in ${options.appName}.`,
+      bodyOverlay: 'Unstick the step',
+      ctaOverlay: 'Build your flow',
+      scene: 'a clean POV frame where the viewer sees the blocker from the character perspective',
     },
   ];
-
   return Array.from({ length: options.quantity }, (_, index) => {
     const displayIndex = (options.startIndex || 0) + index;
     const pattern = patterns[displayIndex % patterns.length];
     const rawIdea = {
       id: `P0-A${normalizedAngleIndex}-I${displayIndex}`,
-      title: `Ý tưởng ${displayIndex + 1}: ${pattern.hookPrimary}`,
+      title: `Idea ${displayIndex + 1}: ${pattern.hookPrimary}`,
       duration: options.duration,
       creativeType: pattern.creativeType,
       meta: {
@@ -1175,11 +1175,11 @@ function buildFallbackIdeasForFilters(options: {
         hookPrimary: pattern.hookPrimary,
         hookAlt1: pattern.hookAlt1,
         hookAlt2: pattern.hookAlt2,
-        visualRefNotes: `${visualType} cho ${targetMarket}; mở đầu bằng ${pattern.scene}.`,
+        visualRefNotes: `${visualType} for ${targetMarket}; open with ${pattern.scene}.`,
         talentProfile: coreUser,
-        dontDo: 'Không được chỉ quay màn hình app chung chung mà thiếu vật thể hoặc khoảnh khắc painpoint đã chọn.',
+        dontDo: 'Do not show a generic app screen without the selected pain-point object or moment.',
         track: visualType.toLowerCase().includes('motion') ? 'C' : 'B',
-        trackReason: `Mẫu cứu hộ giữ angle "${angleName}" hiển thị qua ${pattern.scene}.`,
+        trackReason: `Fallback pattern keeps angle "${angleName}" visible through ${pattern.scene}.`,
         priority: 'A',
       },
       framework: {
@@ -1188,14 +1188,10 @@ function buildFallbackIdeasForFilters(options: {
         emotion,
         psp,
       },
-      explanation: `Mẫu cứu hộ có cấu trúc vì batch AI trả quá ít idea hợp lệ. Nó vẫn giữ "${painpoint}" và angle "${angleName}" nhưng đổi cách mở đầu.`,
+      explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
       hook: {
-        durationSeconds: estimateHookDurationSeconds({
-          visual: `Mở bằng ${pattern.scene}. Khung đầu cho thấy rõ "${painpoint}" của ${coreUser} trong bối cảnh ${targetMarket}, trước khi xuất hiện UI app.`,
-          voice: pattern.hookVoice,
-          textOverlay: pattern.hookPrimary,
-        }),
-        visual: `Mở bằng ${pattern.scene}. Khung đầu cho thấy rõ "${painpoint}" của ${coreUser} trong bối cảnh ${targetMarket}, trước khi xuất hiện UI app.`,
+        durationSeconds: 3,
+        visual: `Open with ${pattern.scene}. The first frame makes "${painpoint}" visible for ${coreUser} in ${targetMarket}, before the app UI appears.`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
         viTranslation: `Giữ đúng painpoint "${painpoint}" và mở bằng angle "${angleName}".`,
@@ -1205,13 +1201,13 @@ function buildFallbackIdeasForFilters(options: {
         whyTheyStopScrolling: `Hook đặt câu hỏi trực diện và làm điểm kẹt hiện ra ngay lập tức.`,
       },
       body: {
-        visual: `Cho thấy khoảnh khắc bị kẹt trong hai nhịp nhanh, rồi chuyển sang ${options.appName} để ghi lại đúng tình huống đó mà không đổi painpoint.`,
+        visual: `Show the stuck moment in two quick beats, then switch to ${options.appName} to capture that exact situation without drifting away from the pain point.`,
         voice: pattern.bodyVoice,
         textOverlay: pattern.bodyOverlay,
         viTranslation: `Demo ${psp} như cách giải quyết trực tiếp cho painpoint đã chọn.`,
       },
       cta: {
-        visual: `Kết thúc ở màn hình ${options.appName}, thấy rõ hành động chính và không lạc sang tính năng phụ.`,
+        visual: `End on the ${options.appName} screen with the main action visible and no drift into a secondary feature.`,
         voice: pattern.ctaVoice,
         textOverlay: pattern.ctaOverlay,
         viTranslation: `Kêu gọi người xem test đúng tình huống này trong app.`,
@@ -1259,7 +1255,7 @@ export async function POST(request: NextRequest) {
         pillars: [asText(originalFramework.painpoint)].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: 1,
-        language: 'All output fields must be Vietnamese',
+        language: 'User-facing copy must be English; internal visual/production notes can stay Vietnamese',
         priority: 'A',
         extraContext: [
           'Task type: refine an existing idea, do not rewrite unrelated parts.',
@@ -1278,7 +1274,7 @@ Refine one existing production brief using the user instruction below.
 - Keep or add meta.pspBridge so Hook connects the pain/emotion to the PSP before Body.
 - Body is only the demo/proof continuation; do not make Body the first place where PSP becomes relevant.
 - Keep visual, voice, and textOverlay separated for hook, body, and CTA.
-- Translate or rewrite any existing English/Spanish/other-language content into natural Vietnamese.
+- Translate or rewrite title, character speech, voice/video voiceover, text overlay, script_vo, and CTA into natural English.
 - Return exactly 1 JSON object, not an array.
 
 [EXISTING IDEA JSON]
@@ -1289,7 +1285,7 @@ ${JSON.stringify(originalIdea, null, 2)}
 
 ## OBJECT SCHEMA
 Use the same field schema as one item from the standard idea output spec:
-${buildIdeaOutputSpec({ quantity: 1, duration: originalDuration, appName, language: 'Vietnamese' })}
+${buildIdeaOutputSpec({ quantity: 1, duration: originalDuration, appName, language: 'English' })}
 
 For this refine task, return only the single object body, not the surrounding array.
 
@@ -1432,7 +1428,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const duration = asText(config.duration) || 'Short social-first runtime';
       const visualType = asText(config.visualType) || 'UGC (Người thật)';
       const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
-      const outputLanguage = targetLang || 'Vietnamese';
+      const outputLanguage = 'English';
       const marketContext = buildMarketContext(targetMarketValues);
       const angleContext = angleValues.length ? angleValues.join(', ') : '';
       const primaryPillar = painPointValues[0] || 'General user friction';
@@ -1550,6 +1546,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
               featureContext,
               targetMarketValues,
               targetLang,
+              copyLanguage: outputLanguage,
               visualType,
               ideaDescription,
             })
@@ -1610,7 +1607,7 @@ Hard requirements:
             ? `User-facing copy in ${outputLanguage}. Internal visual/production notes can stay Vietnamese.`
             : usePromptSystemBuilderHtml
               ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; visual/production notes can stay Vietnamese.`
-              : `Vietnamese strategy notes and ${outputLanguage} voice/text overlay.`,
+              : `Vietnamese strategy notes and ${outputLanguage} user-facing copy.`,
           priority: 'A',
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -1645,7 +1642,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects language, local setting, and vibe.
+- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Duration: ${duration}
@@ -2089,7 +2086,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const duration = asText(config.duration) || 'Short social-first runtime';
     const visualType = asText(config.visualType) || 'UGC (Người thật)';
     const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
-    const outputLanguage = targetLang || 'Vietnamese';
+    const outputLanguage = 'English';
     const marketContext = buildMarketContext(targetMarketValues);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
@@ -2139,6 +2136,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           featureContext,
           targetMarketValues,
           targetLang,
+          copyLanguage: outputLanguage,
           visualType,
           ideaDescription,
         })
@@ -2187,7 +2185,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects language, local setting, and vibe.
+- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
@@ -2229,7 +2227,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             ? `User-facing copy in ${outputLanguage}. Internal visual/production notes can stay Vietnamese.`
             : usePromptSystemBuilderHtml
               ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; visual/production notes can stay Vietnamese.`
-              : `Vietnamese strategy notes and ${outputLanguage} voice/text overlay.`,
+              : `Vietnamese strategy notes and ${outputLanguage} user-facing copy.`,
       priority: 'A',
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,

@@ -8,7 +8,6 @@ import {
 import { guardApiRequest } from '@/lib/apiGuards';
 import {
   buildFilterConsistencyPromptBlock,
-  detectTargetLanguageFromMarkets,
 } from '@/lib/filterConsistency';
 
 export const maxDuration = 60;
@@ -367,14 +366,12 @@ export async function POST(request: NextRequest) {
 
     const { hook, instruction, quantity = 3, appName, appCategory, selectedModel, targetMarket } = await request.json();
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
-    const targetLanguage = detectTargetLanguageFromMarkets(
-      [
-        ...readTextList(targetMarket),
-        ...readTextList(hook?.targetMarket),
-        ...readTextList(hook?.target_market),
-      ],
-      [readText(hook?.core_user)].filter(Boolean)
-    ) || 'Vietnamese';
+    const targetLanguage = 'English';
+    const targetMarketValues = [
+      ...readTextList(targetMarket),
+      ...readTextList(hook?.targetMarket),
+      ...readTextList(hook?.target_market),
+    ];
     const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
       solutionValues: [readText(hook.hook_concept, readText(hook.description))].filter(Boolean),
       angleValues: [readText(hook.title), readText(hook.description), readText(instruction)].filter(Boolean),
@@ -395,6 +392,7 @@ Create hook-only variations for a winning hook. This is not a full idea and must
 - Core user: ${hook.core_user || 'N/A'}
 - Painpoint: ${hook.painpoint || 'N/A'}
 - Viewer emotion target: ${hook.emotion || 'N/A'}
+- Target market/localization: ${targetMarketValues.join(', ') || 'same as the winning hook'}
 ${filterConsistencyBlock || ''}
 
 ## USER MODIFY BRIEF
@@ -406,7 +404,8 @@ Create exactly ${requestedQuantity} hook-only variations.
 - Change the visual execution enough that each variation is distinct.
 - Preserve the interaction pattern and number of people when possible.
 - Each variation should differ from the original on at least 3 of these axes: situation, character, setting, blocker, mood.
-- Strategy/explanation fields can be Vietnamese; hook voice/textOverlay must be ${targetLanguage}.
+- Strategy/explanation fields can be Vietnamese; title, hook voice, character speech, voiceover, and textOverlay must be ${targetLanguage}.
+- Target market controls local behavior, setting, culture, props, and vibe only. Do not switch copy away from ${targetLanguage}.
 - Output compact JSON only. No markdown fences. No full Body or CTA.
 
 ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })}`;
