@@ -25,7 +25,7 @@ type IdeaOutputSpecOptions = {
   language: string;
   includeSelectedFilters?: boolean;
   compact?: boolean;
-  ruleset?: 'default' | 'v7';
+  ruleset?: 'default' | 'v7' | 'builder';
 };
 
 type HookOutputSpecOptions = {
@@ -282,6 +282,21 @@ R18. hook_primary is a strategic headline, not automatically the spoken line. ho
 R19. Only use hook_character_speech when the speaker is visible and identified in visual_scene_1; otherwise leave it empty.
 R20. Hook must include the bridge to PSP: after the pain moment, the viewer should understand why the app/action is the next natural step. Body can be a demo suggestion, but Hook must carry the sell-through logic.`;
 
+export const PROMPT_SYSTEM_BUILDER_RULES = `## PROMPT SYSTEM BUILDER HTML V1 RULES
+R01. hook_primary must be under 12 words. Count carefully.
+R02. Hook must create pattern interrupt in the first 3 seconds.
+R03. Every idea must include hook_primary, hook_alt_1, and hook_alt_2 as three different testing approaches.
+R04. Within the same pillar, each angle should use a different angle_type when multiple angles are generated.
+R05. Angle must be a genuinely different creative approach, not a paraphrase of the same idea.
+R06. visual_scene_1, visual_scene_2, and visual_scene_3 must be executable by a video creator without follow-up questions.
+R07. script_vo must be speakable in roughly 25 seconds and stay at 60 words or fewer.
+R08. dont_do must be specific enough for QC to check.
+R09. Do not make medical claims: no diagnosis, cure, treatment, disease detection, doctor replacement, or exact medical result promises.
+R10. Do not use before/after health outcome framing.
+R11. Return raw JSON array only. No preamble, no markdown fence, no explanation after JSON.
+R12. id must follow P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
+Language contract is defined by the output specification: user-facing copy follows the selected target market language; production notes can stay Vietnamese.`;
+
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
 - Keep the selected pain point exact. Do not drift into an adjacent pain point.
@@ -300,6 +315,24 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - hook_primary should avoid keyword-fragment hooks like "Head rush standing up?" when a more natural sentence would land harder.
 - Do not add fields outside the current output specification.
 - For legacy/refine schemas only, keep visual, characterSpeech, voiceover, and textOverlay separated.
+- When a batch requests multiple ideas, diversify creative type, opening action, blocker, reveal, and voice opening.
+- Keep hooks, body, and CTA tied to the same problem-solution chain.`;
+
+export const PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS = `## PROMPT SYSTEM BUILDER COMPATIBILITY GUARDRAILS
+- Emotion means viewer emotion, not actor acting cues.
+- Keep the selected pain point exact. Do not drift into an adjacent pain point.
+- Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
+- Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
+- If an angle exists, make it visible immediately through the first action, first line, or first contrast in visual_scene_1.
+- hook_primary, hook_alt_1, hook_alt_2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
+- visual_scene_1 is the full 0-3s hook/pattern-interrupt beat. Do not use old 3-5s hook timing or old 8-12s hook-section timing for this ruleset.
+- visual_scene_2 is the 3-15s demo/story beat. visual_scene_3 is the 15-25s reveal/proof beat.
+- Hook is not just a headline: hook_primary plus visual_scene_1 must make the stop-scroll idea clear in the first 3 seconds.
+- Voice/speech must sound like a real person talking in-feed, not a polished ad.
+- Keep the output social-first, UGC-friendly, handheld, relatable.
+- visual_scene_1 should usually be 2-4 dense sentences in Vietnamese, not a vague one-liner.
+- hook_primary should avoid keyword-fragment hooks like "Head rush standing up?" when a more natural sentence would land harder.
+- Do not add fields outside the current output specification.
 - When a batch requests multiple ideas, diversify creative type, opening action, blocker, reveal, and voice opening.
 - Keep hooks, body, and CTA tied to the same problem-solution chain.`;
 
@@ -493,6 +526,62 @@ ${compactOutputRules}
 }
 
 export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): string {
+  if (options.ruleset === 'builder') {
+    const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+
+    return `## OUTPUT SPECIFICATION - PROMPT SYSTEM BUILDER HTML V1
+
+Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
+Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
+User-facing copy must be in ${options.language}. Production notes and visual shooting descriptions can stay Vietnamese for the internal team.
+The selected market controls copy language, setting, culture, behavior, and vibe.
+
+[
+  {
+    "pillar_index": 0,
+    "pillar": "exact pillar text from input",
+    "angles": [
+      {
+        "angle_index": 0,
+        "angle_name": "3-5 word Vietnamese internal name for this angle",
+        "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
+        "angle_desc": "1 Vietnamese sentence describing the unique approach of this angle",
+        "ideas": [
+          {
+            "id": "P{pillar_index}-A{angle_index}-I{idea_index}",
+            "hook_primary": "Main hook text in ${options.language}, max 12 words, creates pattern interrupt",
+            "hook_alt_1": "Alternative hook variation A in ${options.language}",
+            "hook_alt_2": "Alternative hook variation B in ${options.language}",
+            "visual_scene_1": "Second 0-3: Exact Vietnamese visual description. Who, where, doing what.",
+            "visual_scene_2": "Second 3-15: Core demonstration or storytelling visual in Vietnamese.",
+            "visual_scene_3": "Second 15-25: Reveal or proof visual in Vietnamese.",
+            "script_vo": "Full voiceover script in ${options.language}, max 60 words.",
+            "cta_text": "Exact CTA in ${options.language}, max 6 words.",
+            "visual_ref_notes": "Specific Vietnamese visual reference for production team.",
+            "talent_profile": "Age, gender, look, clothing if talent needed. Use No talent if pure demo.",
+            "dont_do": "1 specific thing NOT to do in this video.",
+            "track": "A|B|C",
+            "track_reason": "1 Vietnamese sentence explaining why this track.",
+            "priority": "A|B|C"
+          }
+        ]
+      }
+    ]
+  }
+]
+
+## OUTPUT RULES
+1. Output JSON array ONLY, no text before or after.
+2. Every field is required. Use "N/A" only if truly not applicable.
+3. hook_primary must be under 12 words.
+4. visual_scene_1/2/3 must be specific enough that a video creator can shoot without asking.
+5. script_vo must be speakable in 25 seconds, roughly 60 words max.
+6. id must follow format exactly: P0-A0-I0, zero-indexed.
+7. angle_type must be one of the allowed values.
+8. Tracks: A = no real person needed | B = real person/UGC | C = motion/animation.
+9. User-facing copy fields hook_primary, hook_alt_1, hook_alt_2, script_vo, and cta_text must be in ${options.language}. Internal production notes can stay Vietnamese.`;
+  }
+
   if (options.ruleset === 'v7') {
     const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
 
@@ -898,9 +987,11 @@ function looksEnglish(text: string): boolean {
   if (!normalized) return false;
 
   const englishTokens = normalized.match(/\b(?:the|this|that|with|without|because|every|again|just|why|what|when|where|how|your|you|does|did|was|were|from|into|while|before|after|thought|started|changed|older|dizzy|scary|morning|tap|drag|dropped|counter|kitchen|cooking)\b/g) || [];
+  const spanishTokens = normalized.match(/\b(?:plano|primer|segundo|mujer|hombre|sentada|sentado|sala|sofa|mano|mesa|vaso|agua|vacio|camara|acerca|dice|dijo|mareo|presion|cocina|desayuno|cafe|izquierda|derecha|pantalla|persona|levant|pensaba|revisar|abri|abrir|incertidumbre|concreto|mientras|cuando|porque|estaba|pasando|preguntas|imaginar|escenarios)\b/g) || [];
   const vietnameseCueTokens = normalized.match(/\b(?:toi|ban|minh|nguoi|nha|phong|khach|noi|that|thiet|ke|chi|phi|bao|gia|sua|du|toan|anh|dep|mau|van|khong|chua|muon|roi|ro|mat|nhin|chon|can|truoc|sau|luc|nay|do|thay|biet|bat|dau|kho|roi|mo|ho)\b/g) || [];
-  if (vietnameseCueTokens.length >= 5 && englishTokens.length < 6) return false;
-  return englishTokens.length >= 4;
+  const foreignTokenCount = englishTokens.length + spanishTokens.length;
+  if (vietnameseCueTokens.length >= 5 && foreignTokenCount < 6) return false;
+  return englishTokens.length >= 4 || spanishTokens.length >= 4;
 }
 
 function isSearchQueryHook(text: string): boolean {
@@ -966,7 +1057,7 @@ function createBriefValidationErrors(input: {
   painpointTokens?: string[];
   solutionTokens?: string[];
   language?: string;
-  ruleset?: 'default' | 'v7';
+  ruleset?: 'default' | 'v7' | 'builder';
 }) {
   const errors: string[] = [];
   const trackingPattern = /^P\d+-A\d+-I\d+$/;
@@ -993,12 +1084,15 @@ function createBriefValidationErrors(input: {
       input.ctaText,
     ].join(' ');
     if (looksEnglish(languageText)) {
-      errors.push('all user-facing fields must be Vietnamese, not English');
+      errors.push('all user-facing fields must be Vietnamese, not English/Spanish');
     }
   }
   const isV7 = input.ruleset === 'v7';
+  const isBuilder = input.ruleset === 'builder';
   const hookPrimaryWordCount = countWords(input.hookPrimary);
-  if (!isV7 && input.hookPrimary && (hookPrimaryWordCount < 5 || hookPrimaryWordCount > 16)) {
+  if (isBuilder && input.hookPrimary && hookPrimaryWordCount > 12) {
+    errors.push('hook_primary must be under 12 words for prompt_system_builder_html_v1');
+  } else if (!isV7 && !isBuilder && input.hookPrimary && (hookPrimaryWordCount < 5 || hookPrimaryWordCount > 16)) {
     errors.push('hook_primary must be 5-16 words');
   }
   if (input.hookPrimary && !hasPatternInterrupt(input.hookPrimary)) {
@@ -1108,7 +1202,7 @@ export function normalizeCreativeBriefOutput(
     angle?: string;
     ideaDescription?: string;
     language?: string;
-    ruleset?: 'default' | 'v7';
+    ruleset?: 'default' | 'v7' | 'builder';
   }
 ): { items: Record<string, unknown>[]; invalidReasons: string[] } {
   const rootItems = Array.isArray(input) ? input : [input];

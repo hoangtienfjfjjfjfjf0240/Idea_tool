@@ -4,12 +4,19 @@ import {
   buildCreativeBriefOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
+  PROMPT_SYSTEM_BUILDER_RULES,
+  PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS,
   normalizeCreativeBriefOutput,
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
+import {
+  buildFilterConsistencyPromptBlock,
+  detectTargetLanguageFromMarkets,
+} from '@/lib/filterConsistency';
 
 export const maxDuration = 120;
+const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
@@ -140,17 +147,35 @@ Target Market: ${f.targetMarket?.join(', ') || 'N/A'}`);
       }
     }
 
+    const filterContext = appContext?.filters || {};
+    const appKnowledge = String(appContext?.appKnowledge || '');
+    const usePromptSystemBuilderHtml = appKnowledge.toLowerCase().includes(PROMPT_SYSTEM_BUILDER_HTML_MARKER.toLowerCase());
+    const chatMarketLanguageReference = detectTargetLanguageFromMarkets(
+      asList(filterContext.targetMarket),
+      asList(filterContext.coreUser)
+    ) || 'Vietnamese';
+    const chatOutputLanguage = chatMarketLanguageReference;
+    const chatFilterConsistencyBlock = buildFilterConsistencyPromptBlock({
+      solutionValues: asList(filterContext.solution),
+      angleValues: asList(filterContext.angle),
+      painPointValues: asList(filterContext.painPoint),
+    });
+
     const agentInstructions = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
 BẠN LÀ CHAT AGENT - CREATIVE STRATEGIST CỦA APP NÀY.
 
 ${contextParts.join('\n\n')}
+${chatFilterConsistencyBlock || ''}
 
 CÁCH HOẠT ĐỘNG:
 - Bạn có context từ app, AI Brain, hook library, recent idea history và filter combos ở trên
 - AI Brain là strategic memory; recent idea history + filter combos là evidence mới hơn. Nếu có mâu thuẫn, ưu tiên evidence mới hơn.
 - Bạn trả lời TRỰC TIẾP câu hỏi/yêu cầu của user
 - Khi user yêu cầu tạo ideas, bạn TỰ CHỌN filter phù hợp nhất và tạo ideas
+- Khi tự chọn filter cho health app, PSP/app action là nguồn sự thật về metric. Không trộn heart rate, blood pressure, blood glucose giữa PSP, angle, painpoint, hook, body hoặc CTA.
+- Khi tạo ideas, user-facing copy phải theo ngôn ngữ target market (${chatOutputLanguage}): title/hook, characterSpeech, voiceover, textOverlay, script_vo, cta_text. Visual/production notes có thể viết tiếng Việt cho team nội bộ.
+- Câu trả lời tư vấn ngoài JSON vẫn viết tiếng Việt.
 - Khi tạo ideas, phải nhìn recent ideas để tránh lặp lại cùng scene family, cùng hook opening và cùng blocker nếu user không yêu cầu lặp
 - Khi tạo ideas, Hook phải có psp_bridge: cầu nối từ emotion/angle của viewer sang PSP trước khi sang Body. Body chỉ là demo/proof continuation.
 - Khi user hỏi chiến lược, bạn phân tích dựa trên DỮ LIỆU THỰC TẾ của app
@@ -164,10 +189,16 @@ CÁCH HOẠT ĐỘNG:
 - Luôn viết tiếng Việt tự nhiên
 
 NẾU USER YÊU CẦU TẠO IDEAS, tuân thủ đúng schema sau:
-${buildCreativeBriefOutputSpec({ quantity: 3, duration: '30s', appName: appContext?.name || 'App', language: 'Vietnamese' })}
+${buildCreativeBriefOutputSpec({
+  quantity: 3,
+  duration: '30s',
+  appName: appContext?.name || 'App',
+  language: chatOutputLanguage,
+  ruleset: usePromptSystemBuilderHtml ? 'builder' : 'default',
+})}
 
-${CREATIVE_PROMPT_RULES}
-${TOOL_COMPATIBILITY_GUARDRAILS}`;
+${usePromptSystemBuilderHtml ? PROMPT_SYSTEM_BUILDER_RULES : CREATIVE_PROMPT_RULES}
+${usePromptSystemBuilderHtml ? PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS : TOOL_COMPATIBILITY_GUARDRAILS}`;
 
     // Build messages array with history
     interface HistoryMessage {
@@ -211,7 +242,8 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           coreUser: joinList(appContext?.filters?.coreUser, 'General viewer'),
           emotion: joinList(appContext?.filters?.emotion, 'Create a clear viewer emotion'),
           psp: joinList(appContext?.filters?.solution, appContext?.name || 'App'),
-          language: 'Vietnamese',
+          language: chatOutputLanguage,
+          ruleset: usePromptSystemBuilderHtml ? 'builder' : 'default',
         });
         ideas = normalized.items;
       } catch {

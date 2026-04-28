@@ -452,19 +452,38 @@ function buildVerticalWorkflowLayout(
   };
 
   const sortedTreeChildren = (node: TreeNode) => [...node.children].sort(compareTreeNodes);
+  const visibleTreeChildren = (node: TreeNode) => sortedTreeChildren(node).filter(child => !hiddenNodeIds.has(child.id));
+  const treeXById = new Map<string, number>();
+  let nextTreeCenter = minCenter;
+
+  const assignTreeX = (node: TreeNode): number => {
+    const children = visibleTreeChildren(node);
+
+    if (children.length === 0) {
+      const x = nextTreeCenter;
+      nextTreeCenter += NODE_CLEARANCE;
+      treeXById.set(node.id, x);
+      return x;
+    }
+
+    const childXs = children.map(assignTreeX);
+    const x = childXs.reduce((sum, childX) => sum + childX, 0) / childXs.length;
+    treeXById.set(node.id, x);
+    return x;
+  };
 
   const collectTreeRows = (node: TreeNode) => {
     if (hiddenNodeIds.has(node.id)) return;
 
     treeRowsByLevel.get(node.level)?.push(node);
 
-    sortedTreeChildren(node).forEach(child => {
-      if (hiddenNodeIds.has(child.id)) return;
+    visibleTreeChildren(node).forEach(child => {
       treeEdges.push({ fromId: node.id, toId: child.id });
       collectTreeRows(child);
     });
   };
 
+  assignTreeX(tree);
   collectTreeRows(tree);
 
   const visibleTreeNodeIdByKey = new Map<string, string>();
@@ -492,9 +511,11 @@ function buildVerticalWorkflowLayout(
   LEVEL_ORDER.forEach(level => {
     const y = getLevelY(level);
     const treeRow = treeRowsByLevel.get(level) || [];
-    treeRow.forEach((node, index) => {
-      registerFlatNode(node, minCenter + index * NODE_CLEARANCE, y);
-    });
+    [...treeRow]
+      .sort((a, b) => (treeXById.get(a.id) || minCenter) - (treeXById.get(b.id) || minCenter))
+      .forEach((node, index) => {
+        registerFlatNode(node, treeXById.get(node.id) ?? minCenter + index * NODE_CLEARANCE, y);
+      });
   });
 
   const baseCanvasW = Math.max(minWidth, maxRight + 48, LEVEL_LABEL_W + NODE_W + 96);

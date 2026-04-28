@@ -6,6 +6,10 @@ import {
   parseJsonLoose,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
+import {
+  buildFilterConsistencyPromptBlock,
+  detectTargetLanguageFromMarkets,
+} from '@/lib/filterConsistency';
 
 export const maxDuration = 60;
 
@@ -25,6 +29,16 @@ function parseJson(text: string) {
 
 function readText(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function readTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => readText(item))
+      .filter(Boolean);
+  }
+  const text = readText(value);
+  return text ? [text] : [];
 }
 
 function stripVariantSuffix(value: string) {
@@ -351,9 +365,21 @@ export async function POST(request: NextRequest) {
     const guard = await guardApiRequest(request, { key: 'generate-hooks', max: 60, windowMs: 5 * 60 * 1000 });
     if (guard instanceof NextResponse) return guard;
 
-    const { hook, instruction, quantity = 3, appName, appCategory, selectedModel } = await request.json();
+    const { hook, instruction, quantity = 3, appName, appCategory, selectedModel, targetMarket } = await request.json();
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
-    const targetLanguage = 'Vietnamese';
+    const targetLanguage = detectTargetLanguageFromMarkets(
+      [
+        ...readTextList(targetMarket),
+        ...readTextList(hook?.targetMarket),
+        ...readTextList(hook?.target_market),
+      ],
+      [readText(hook?.core_user)].filter(Boolean)
+    ) || 'Vietnamese';
+    const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
+      solutionValues: [readText(hook.hook_concept, readText(hook.description))].filter(Boolean),
+      angleValues: [readText(hook.title), readText(hook.description), readText(instruction)].filter(Boolean),
+      painPointValues: [readText(hook.painpoint)].filter(Boolean),
+    });
 
     const prompt = `You are a senior performance creative strategist for mobile app ads.
 Create hook-only variations for a winning hook. This is not a full idea and must stay fast.
@@ -369,6 +395,7 @@ Create hook-only variations for a winning hook. This is not a full idea and must
 - Core user: ${hook.core_user || 'N/A'}
 - Painpoint: ${hook.painpoint || 'N/A'}
 - Viewer emotion target: ${hook.emotion || 'N/A'}
+${filterConsistencyBlock || ''}
 
 ## USER MODIFY BRIEF
 "${instruction}"

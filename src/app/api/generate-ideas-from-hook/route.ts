@@ -5,6 +5,8 @@ import {
   buildFrameworkInjection,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
+  PROMPT_SYSTEM_BUILDER_RULES,
+  PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS,
   estimateHookDurationSeconds,
   normalizeCreativeBriefOutput,
   normalizeIdeaOutput,
@@ -12,12 +14,17 @@ import {
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
+import {
+  buildFilterConsistencyPromptBlock,
+  detectTargetLanguageFromMarkets,
+} from '@/lib/filterConsistency';
 
 export const maxDuration = 300;
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_FROM_HOOK_BATCH_TIMEOUT_MS = 90000;
 const GENERATE_FROM_HOOK_FALLBACK_TIMEOUT_MS = 30000;
+const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
 const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|never\b|why\b|how\b|worst\b|finally\b|painful\b|awkward\b|annoying\b|sao\b|vẫn\b|đừng\b|không cần\b|thay vì|bao giờ|tệ nhất|mệt|phiền|khổ)/i;
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
@@ -52,6 +59,16 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function asStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+  const text = asText(value);
+  return text ? [text] : [];
 }
 
 function countWords(text: string): number {
@@ -482,10 +499,18 @@ export async function POST(request: NextRequest) {
     const appCategory = asText(requestBody.appCategory) || 'General';
     const ideaDirection = asText(requestBody.ideaDirection) || undefined;
     const appKnowledge = asText(requestBody.appKnowledge);
+    const usePromptSystemBuilderHtml = appKnowledge.toLowerCase().includes(PROMPT_SYSTEM_BUILDER_HTML_MARKER.toLowerCase());
     const previousIdeas = asText(requestBody.previousIdeas);
     const selectedModel = asText(requestBody.selectedModel) || undefined;
     const requestedQty = Math.min(toPositiveInt(quantity, 3), MAX_IDEAS_PER_REQUEST);
-    const targetLanguage = 'Vietnamese';
+    const targetLanguage = detectTargetLanguageFromMarkets(
+      [
+        ...asStringList(requestBody.targetMarket),
+        ...asStringList(hook.targetMarket),
+        ...asStringList(hook.target_market),
+      ],
+      [asText(hook.core_user)].filter(Boolean)
+    ) || 'Vietnamese';
     const batchPlans = buildIdeaBatchPlans(requestedQty);
     const aggregatedIdeas: Record<string, unknown>[] = [];
     const warnings: string[] = [];
@@ -502,6 +527,11 @@ export async function POST(request: NextRequest) {
       const hookCoreUser = asText(hook.core_user) || 'General viewer';
       const hookPsp = asText(hook.hook_concept) || asText(hook.description) || appName;
       const hookAngle = [asText(hook.title), asText(hook.description), ideaDirection].filter(Boolean).join(' | ');
+      const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
+        solutionValues: [hookPsp],
+        angleValues: [hookAngle],
+        painPointValues: [hookPainpoint],
+      });
       const painpointPrecisionBlock = `
 ## PAINPOINT PRECISION CONTRACT
 - Exact core user: ${hookCoreUser}
@@ -517,7 +547,7 @@ Hard requirements:
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
-- Better Vietnamese health hook style examples: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Better lived-moment health hook style examples, translated/adapted into ${targetLanguage}: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
 - If returning multiple ideas, no two hook_primary lines may use the same sentence frame.`;
 
       const frameworkInjection = buildFrameworkInjection({
@@ -559,6 +589,7 @@ ${frameworkInjection}
 ${knowledgeBlock || '- No App Brain memory attached.'}
 ${recentIdeasBlock || '- No recent idea history attached.'}
 ${painpointPrecisionBlock}
+${filterConsistencyBlock || ''}
 
 ## WINNING HOOK DNA
 - Title: "${hook.title}"
@@ -579,10 +610,16 @@ Create ${plan.batchQuantity} full ideas inspired by the winning hook for batch $
 - Each output must include hook, body, and CTA, but keep runtime flexible and social-first instead of forcing a fixed 15s/30s/60s bucket.
 - If the user provided an idea direction, prioritize it without breaking the winning DNA.
 
-${buildCreativeBriefOutputSpec({ quantity: plan.batchQuantity, duration, appName, language: targetLanguage })}
+${buildCreativeBriefOutputSpec({
+  quantity: plan.batchQuantity,
+  duration,
+  appName,
+  language: targetLanguage,
+  ruleset: usePromptSystemBuilderHtml ? 'builder' : 'default',
+})}
 
-${CREATIVE_PROMPT_RULES}
-${TOOL_COMPATIBILITY_GUARDRAILS}`;
+${usePromptSystemBuilderHtml ? PROMPT_SYSTEM_BUILDER_RULES : CREATIVE_PROMPT_RULES}
+${usePromptSystemBuilderHtml ? PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS : TOOL_COMPATIBILITY_GUARDRAILS}`;
 
       const modelCandidates = resolveIdeaModels(selectedModel);
       console.log('[generate-ideas-from-hook] Prompt length:', prompt.length, 'chars, model:', modelCandidates[0], 'batch:', plan);
@@ -635,6 +672,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         angle: hookAngle,
         ideaDescription: ideaDirection,
         language: targetLanguage,
+        ruleset: usePromptSystemBuilderHtml ? 'builder' : 'default',
       });
       let validation = normalizeAndValidateIdeas(briefOutput.items, {
         duration,
@@ -683,6 +721,7 @@ ${retryNotes}`, {
             angle: hookAngle,
             ideaDescription: ideaDirection,
             language: targetLanguage,
+            ruleset: usePromptSystemBuilderHtml ? 'builder' : 'default',
           });
           const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
             duration,
@@ -735,6 +774,7 @@ Return ${plan.batchQuantity} valid, unique ideas in the exact JSON schema.
               angle: hookAngle,
               ideaDescription: ideaDirection,
               language: targetLanguage,
+              ruleset: usePromptSystemBuilderHtml ? 'builder' : 'default',
             });
             const alternateValidation = normalizeAndValidateIdeas(alternateBriefOutput.items, {
               duration,

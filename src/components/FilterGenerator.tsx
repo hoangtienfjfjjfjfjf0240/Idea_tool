@@ -7,6 +7,7 @@ import * as dbService from '@/lib/db';
 import { CATEGORY_SEEDS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
 import { buildFavoriteFingerprint, loadFavoriteKeys, saveFavoriteKeys } from '@/lib/favorites';
 import { authenticatedFetch } from '@/lib/authFetch';
+import { formatHealthMetricConflictMessage, getHealthMetricConflict } from '@/lib/filterConsistency';
 
 interface FilterGeneratorProps {
   app: AppProject;
@@ -905,6 +906,19 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const handleGenerate = async () => {
+    const metricConflict = getHealthMetricConflict({
+      solutionValues: filters.solution,
+      angleValues: filters.angle,
+      painPointValues: filters.painPoint,
+    });
+
+    if (metricConflict) {
+      setValidationError(formatHealthMetricConflictMessage(metricConflict));
+      setGenerationNotice(null);
+      return;
+    }
+
+    setValidationError(null);
     setIsGenerating(true);
     setGenerationNotice(null);
     const controller = new AbortController();
@@ -1269,11 +1283,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const bodyVisual = c.body?.visual || c.body?.script || '';
     const ctaVisual = c.cta?.visual || c.cta?.script || '';
     const hookVariantsBlock = [meta?.hookPrimary, meta?.hookAlt1, meta?.hookAlt2].some(Boolean)
-      ? `\n🧠 HOOK VARIATIONS\n[PRIMARY] ${meta?.hookPrimary || ''}\n[ALT 1] ${meta?.hookAlt1 || ''}\n[ALT 2] ${meta?.hookAlt2 || ''}\n`
+      ? `\n🧠 BIẾN THỂ HOOK\n[CHÍNH] ${meta?.hookPrimary || ''}\n[PHỤ 1] ${meta?.hookAlt1 || ''}\n[PHỤ 2] ${meta?.hookAlt2 || ''}\n`
       : '';
-    const copyText = `TIÊU ĐỀ: ${idea.title}\n\n═══ FRAMEWORK ═══\n👤 Core User: ${fw?.coreUser || ''}\n💔 Painpoint: ${fw?.painpoint || ''}\n😱 Emotion: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nWHY IT WORKS: ${c.explanation}\n\n═══ VIDEO SCRIPT ═══\n\n🎣 HOOK\n[VISUAL] ${hookVisual}\n[VOICE] ${c.hook?.voice || ''}\n[TEXT OVERLAY] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY\n[VISUAL] ${bodyVisual}\n[VOICE] ${c.body?.voice || ''}\n[TEXT OVERLAY] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA\n[VISUAL] ${ctaVisual}\n[VOICE] ${c.cta?.voice || ''}\n[TEXT OVERLAY] ${c.cta?.textOverlay || c.cta?.text || ''}\nEnd Card: ${c.cta?.endCard || ''}`;
+    const copyText = `TIÊU ĐỀ: ${idea.title}\n\n═══ KHUNG Ý TƯỞNG ═══\n👤 Người dùng chính: ${fw?.coreUser || ''}\n💔 Nỗi đau: ${fw?.painpoint || ''}\n😱 Cảm xúc: ${fw?.emotion || ''}\n💊 PSP: ${fw?.psp || ''}\n\nLÝ DO HIỆU QUẢ: ${c.explanation}\n\n═══ KỊCH BẢN VIDEO ═══\n\n🎣 HOOK\n[BỐI CẢNH] ${hookVisual}\n[LỜI THOẠI] ${c.hook?.voice || ''}\n[CHỮ TRÊN MÀN HÌNH] ${c.hook?.textOverlay || c.hook?.text || ''}\n\n📖 BODY\n[BỐI CẢNH] ${bodyVisual}\n[LỜI THOẠI] ${c.body?.voice || ''}\n[CHỮ TRÊN MÀN HÌNH] ${c.body?.textOverlay || c.body?.text || ''}\n\n🔥 CTA\n[BỐI CẢNH] ${ctaVisual}\n[LỜI THOẠI] ${c.cta?.voice || ''}\n[CHỮ TRÊN MÀN HÌNH] ${c.cta?.textOverlay || c.cta?.text || ''}\nMàn hình kết: ${c.cta?.endCard || ''}`;
     const finalCopyText = hookVariantsBlock
-      ? copyText.replace('═══ VIDEO SCRIPT ═══\n\n', `═══ VIDEO SCRIPT ═══\n${hookVariantsBlock}\n`)
+      ? copyText.replace('═══ KỊCH BẢN VIDEO ═══\n\n', `═══ KỊCH BẢN VIDEO ═══\n${hookVariantsBlock}\n`)
       : copyText;
     navigator.clipboard.writeText(finalCopyText);
   };
@@ -1290,49 +1304,32 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const bodySpeech = getSectionSpokenLines(content.body);
     const ctaSpeech = getSectionSpokenLines(content.cta);
     const primaryHook = meta?.hookPrimary || '';
-    const overlaySequence = Array.isArray(meta?.overlaySequence) ? meta.overlaySequence : [];
-    const hookProductionNotes = [
-      meta?.referencePattern ? `[PATTERN] ${meta.referencePattern}` : '',
-      meta?.interruptMechanism ? `[INTERRUPT] ${meta.interruptMechanism}` : '',
-      meta?.firstFrameAsset ? `[FIRST FRAME] ${meta.firstFrameAsset}` : '',
-      meta?.pspBridge ? `[PSP BRIDGE] ${meta.pspBridge}` : '',
-    ].filter(Boolean);
-    const bodyProductionNotes = [
-      meta?.appDemoAction ? `[APP ACTION] ${meta.appDemoAction}` : '',
-      meta?.proofObject ? `[PROOF] ${meta.proofObject}` : '',
-    ].filter(Boolean);
-    const ctaProductionNotes = [
-      overlaySequence.length ? `[OVERLAY FLOW] ${overlaySequence.join(' | ')}` : '',
-      meta?.editNotes ? `[EDIT NOTES] ${meta.editNotes}` : '',
-    ].filter(Boolean);
     const buildCopySection = (
       label: string,
       visual: string,
       speech: { characterSpeech?: string; voiceover?: string; legacyVoice?: string },
       textOverlay: string,
-      endCard = '',
-      productionNotes: string[] = []
+      endCard = ''
     ) => [
       label,
-      visual ? `[VISUAL] ${visual}` : '',
-      ...productionNotes,
-      speech.characterSpeech ? `[NHAN VAT NOI] ${speech.characterSpeech}` : '',
-      speech.voiceover ? `[VOICE VIDEO] ${speech.voiceover}` : '',
-      speech.legacyVoice ? `[VOICE] ${speech.legacyVoice}` : '',
-      textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
-      endCard ? `End Card: ${endCard}` : '',
+      visual ? `[BỐI CẢNH] ${visual}` : '',
+      speech.characterSpeech ? `[NHÂN VẬT NÓI] ${speech.characterSpeech}` : '',
+      speech.voiceover ? `[LỜI DẪN VIDEO] ${speech.voiceover}` : '',
+      speech.legacyVoice ? `[LỜI THOẠI] ${speech.legacyVoice}` : '',
+      textOverlay ? `[CHỮ TRÊN MÀN HÌNH] ${textOverlay}` : '',
+      endCard ? `Màn hình kết: ${endCard}` : '',
     ].filter(Boolean);
     const sections = [
       `TIÊU ĐỀ: ${idea.title}`,
-      '═══ FRAMEWORK ═══',
-      `Core User: ${framework?.coreUser || ''}`,
-      `Painpoint: ${framework?.painpoint || ''}`,
-      `Emotion: ${framework?.emotion || ''}`,
+      '═══ KHUNG Ý TƯỞNG ═══',
+      `Người dùng chính: ${framework?.coreUser || ''}`,
+      `Nỗi đau: ${framework?.painpoint || ''}`,
+      `Cảm xúc: ${framework?.emotion || ''}`,
       `PSP: ${framework?.psp || ''}`,
       '',
-      `WHY IT WORKS: ${content.explanation || ''}`,
+      `LÝ DO HIỆU QUẢ: ${content.explanation || ''}`,
       '',
-      '═══ VIDEO SCRIPT ═══',
+      '═══ KỊCH BẢN VIDEO ═══',
       ...(primaryHook
         ? [
             `HOOK: ${primaryHook}`,
@@ -1344,8 +1341,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         hookVisual,
         hookSpeech,
         content.hook?.textOverlay || content.hook?.text || '',
-        '',
-        hookProductionNotes
+        ''
       ),
       '',
       ...buildCopySection(
@@ -1353,8 +1349,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         bodyVisual,
         bodySpeech,
         content.body?.textOverlay || content.body?.text || '',
-        '',
-        bodyProductionNotes
+        ''
       ),
       '',
       ...buildCopySection(
@@ -1362,8 +1357,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         ctaVisual,
         ctaSpeech,
         content.cta?.textOverlay || content.cta?.text || '',
-        content.cta?.endCard || '',
-        ctaProductionNotes
+        content.cta?.endCard || ''
       ),
     ];
 
@@ -2306,22 +2300,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const primaryHook = c?.meta?.hookPrimary || '';
             const showPrimaryHookLine = cleanPreviewText(primaryHook).toLowerCase() !== cleanPreviewText(hookText).toLowerCase();
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
-            const meta = c?.meta || {};
-            const overlaySequence = Array.isArray(meta.overlaySequence) ? meta.overlaySequence : [];
-            const hookProductionItems = [
-              meta.referencePattern ? ['Mẫu mở', meta.referencePattern] : null,
-              meta.interruptMechanism ? ['Lý do dừng', meta.interruptMechanism] : null,
-              meta.firstFrameAsset ? ['Frame đầu', meta.firstFrameAsset] : null,
-              meta.pspBridge ? ['Nối sang PSP', meta.pspBridge] : null,
-            ].filter(Boolean) as [string, string][];
-            const bodyProductionItems = [
-              meta.appDemoAction ? ['Thao tác app', meta.appDemoAction] : null,
-              meta.proofObject ? ['Bằng chứng', meta.proofObject] : null,
-            ].filter(Boolean) as [string, string][];
-            const ctaProductionItems = [
-              overlaySequence.length ? ['Caption flow', overlaySequence.join(' → ')] : null,
-              meta.editNotes ? ['Nhịp dựng', meta.editNotes] : null,
-            ].filter(Boolean) as [string, string][];
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -2410,22 +2388,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       </div>
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                        <p className="whitespace-pre-line">[VISUAL] {hookVisual || 'Hook visual will appear here.'}</p>
+                        <p className="whitespace-pre-line">[BỐI CẢNH] {hookVisual || 'Mô tả hook sẽ hiển thị ở đây.'}</p>
                         {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {hookSpeech.characterSpeech}</p>}
-                        {hookSpeech.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
-                        {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
-                        {hookText && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
+                        {hookSpeech.voiceover && <p className="text-gray-800 whitespace-pre-line">[LỜI DẪN VIDEO] {hookSpeech.voiceover}</p>}
+                        {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[LỜI THOẠI] {hookSpeech.legacyVoice}</p>}
+                        {hookText && <p className="text-gray-800">[CHỮ TRÊN MÀN HÌNH] {hookText}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
-                        {hookProductionItems.length > 0 && (
-                          <div className="mt-3 space-y-1.5 border-t border-red-100 pt-3 text-xs">
-                            {hookProductionItems.map(([label, value]) => (
-                              <p key={label} className="text-gray-600">
-                                <span className="font-semibold text-red-500">{label}: </span>
-                                {value}
-                              </p>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -2520,7 +2488,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     const spokenLines = getSectionSpokenLines(secData);
                     const textOverlay = secData?.textOverlay || secData?.text || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
-                    const sectionProductionItems = sec.key === 'body' ? bodyProductionItems : ctaProductionItems;
                     return (
                       <div key={sec.key} className={`mb-3 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                         <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sec.label}</span>
@@ -2551,23 +2518,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                           </div>
                         ) : (
                           <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                            <p className="whitespace-pre-line">[VISUAL] {visualContent || '—'}</p>
+                            <p className="whitespace-pre-line">[BỐI CẢNH] {visualContent || '—'}</p>
                             {spokenLines.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[NHÂN VẬT NÓI] {spokenLines.characterSpeech}</p>}
-                            {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover}</p>}
-                            {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {spokenLines.legacyVoice}</p>}
-                            {textOverlay && <p className="text-gray-800">[TEXT OVERLAY] {textOverlay}</p>}
+                            {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[LỜI DẪN VIDEO] {spokenLines.voiceover}</p>}
+                            {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[LỜI THOẠI] {spokenLines.legacyVoice}</p>}
+                            {textOverlay && <p className="text-gray-800">[CHỮ TRÊN MÀN HÌNH] {textOverlay}</p>}
                             {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
                             {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}
-                            {sectionProductionItems.length > 0 && (
-                              <div className={`mt-3 space-y-1.5 border-t pt-3 text-xs ${sec.key === 'body' ? 'border-sky-100' : 'border-emerald-100'}`}>
-                                {sectionProductionItems.map(([label, value]) => (
-                                  <p key={label} className="text-gray-600">
-                                    <span className={`font-semibold ${sec.key === 'body' ? 'text-sky-600' : 'text-emerald-600'}`}>{label}: </span>
-                                    {value}
-                                  </p>
-                                ))}
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>

@@ -6,6 +6,8 @@ import {
   buildIdeaOutputSpec,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
+  PROMPT_SYSTEM_BUILDER_RULES,
+  PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS,
   estimateHookDurationSeconds,
   normalizeCreativeBriefOutput,
   normalizeIdeaOutput,
@@ -13,6 +15,14 @@ import {
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
+import {
+  buildFilterConsistencyPromptBlock,
+  detectTargetLanguageFromMarkets,
+  getHealthMetricPromptLabel,
+  getHealthMetricsInText,
+  getPrimarySolutionMetric,
+  type HealthMetricKey,
+} from '@/lib/filterConsistency';
 
 export const maxDuration = 300;
 
@@ -33,6 +43,7 @@ const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 75000;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
+const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 
 const CREATIVE_ADS_GENERATION_RULES_V7 = `CREATIVE ADS GENERATION RULES (VERSION 7.0)
 ROLE:
@@ -66,10 +77,10 @@ IV. CƠ CHẾ THÍCH NGHI CẢM XÚC (Gây ra cho người xem)
 - Educational: Khẳng định kiến thức mới một cách quyết đoán, không dạy đời.
 
 V. QUY TẮC NGÔN NGỮ
-- TOÀN BỘ OUTPUT PHẢI VIẾT BẰNG TIẾNG VIỆT.
-- Bao gồm: lời thoại nhân vật, text on screen, voice-over, mô tả visual, concept name, CTA và ghi chú sản xuất.
-- Tuy nhiên, cách nói, cách dùng từ, tone và vibe phải mang đúng tinh thần bản địa của thị trường mục tiêu.
-- Hiểu đơn giản: viết bằng tiếng Việt, nhưng nghĩ như người bản địa.
+- User-facing copy phải viết bằng ngôn ngữ của target market đã chọn.
+- Bao gồm: lời thoại nhân vật, text on screen, voice-over, concept hook và CTA.
+- Mô tả visual và ghi chú sản xuất có thể viết tiếng Việt để team nội bộ đọc nhanh.
+- Cách nói, cách dùng từ, tone và vibe phải mang đúng tinh thần bản địa của thị trường mục tiêu.
 
 VI. HƯỚNG DẪN XỬ LÝ BIẾN SỐ ĐẦU VÀO
 - Lấy Painpoint làm mục tiêu tấn công cho Hook.
@@ -98,6 +109,12 @@ function shouldUseCreativeRulesV7(appName: string, appKnowledge: string): boolea
     || /rule\s*7/.test(haystack);
 }
 
+function shouldUsePromptSystemBuilderHtml(appKnowledge: string): boolean {
+  const haystack = appKnowledge.toLowerCase();
+  return haystack.includes(PROMPT_SYSTEM_BUILDER_HTML_MARKER.toLowerCase())
+    || haystack.includes('prompt_system_builder_html_v1');
+}
+
 function buildV7ExecutionContract(input: {
   appName: string;
   coreUserValues: string[];
@@ -113,7 +130,8 @@ function buildV7ExecutionContract(input: {
 - App: ${input.appName}
 - Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
 - Market language/culture reference: ${input.targetLang}
-- Output language: Vietnamese for every field, including dialogue, on-screen text, voice-over, CTA, visual description, and production notes.
+- User-facing copy language: ${input.targetLang} for dialogue, on-screen text, voice-over, hook lines, and CTA.
+- Production notes and visual descriptions can stay Vietnamese for the internal team.
 - Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
 - Painpoint to attack: ${input.primaryPillar}
 - Angle focus: ${input.angleContext || 'Creative freedom'}
@@ -126,18 +144,18 @@ Hard V7 requirements:
 - Mở đầu trực diện là nhịp chặn đầu tiên: cho thấy hậu quả, cú sốc hoặc visual lạ ngay giây 0.1.
 - Chuyển trục giải pháp phải xảy ra ngay sau đó: cho thấy hành động dùng app/feature với thao tác ngón tay cụ thể và UI/số liệu/biểu đồ thay đổi rõ.
 - Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
-- All Text/Voice must be written in Vietnamese, but the wording, social behavior, setting, and vibe must feel native to the selected market.
+- All Text/Voice must be written in ${input.targetLang}, with wording, social behavior, setting, and vibe native to the selected market.
 - If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
 - Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
 }
 
-function buildV7TaskDirectives(quantity: number) {
+function buildV7TaskDirectives(quantity: number, copyLanguage = 'the selected target market language') {
   return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
 - Each idea must follow: Concept Name -> Market & User Adaptation -> Mở đầu trực diện (0-3s) -> Chuyển trục giải pháp (3-6s) -> Bằng chứng/CTA nối tiếp.
 - The first frame must be a pattern interruption, not setup.
 - Chuyển trục giải pháp phải dùng đúng Feature/PSP đã chọn làm công cụ xử lý.
-- Write the entire output in Vietnamese, including character dialogue, Text/Voice, text on screen, voice-over, CTA, and production notes.
+- Write user-facing copy in ${copyLanguage}: character dialogue, Text/Voice, text on screen, voice-over, and CTA. Production notes can stay Vietnamese.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
 - Do not use old hook word-count constraints or old 3-5s hook section rules.
 - Do not use rhetorical questions, wordplay, or vague metaphor hooks.
@@ -266,9 +284,68 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   return errors;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectIdeaStringsForMetricScan(value: unknown, parentKey = ''): string[] {
+  const key = parentKey.toLowerCase();
+  if (key === 'id' || key === 'duration' || key === 'endcard') return [];
+
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) {
+    return value.flatMap(item => collectIdeaStringsForMetricScan(item, parentKey));
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).flatMap(([childKey, childValue]) => (
+      collectIdeaStringsForMetricScan(childValue, childKey)
+    ));
+  }
+
+  return [];
+}
+
+function stripAppNameFromMetricScanText(text: string, appName: string): string {
+  const terms = [appName, ...appName.split(/[:|/\\-]/)]
+    .map(term => term.trim())
+    .filter(term => term.length >= 5);
+
+  return Array.from(new Set(terms)).reduce((next, term) => (
+    next.replace(new RegExp(escapeRegExp(term), 'gi'), ' ')
+  ), text);
+}
+
+function validateHealthMetricLockOutput(
+  item: Record<string, unknown>,
+  metricLock: HealthMetricKey | null | undefined,
+  appName: string
+): string[] {
+  if (!metricLock) return [];
+
+  const scanText = stripAppNameFromMetricScanText(
+    collectIdeaStringsForMetricScan(item).join(' '),
+    appName
+  );
+  const detectedMetrics = Array.from(new Set(getHealthMetricsInText(scanText)));
+  const conflictingMetrics = detectedMetrics.filter(metric => metric !== metricLock);
+
+  if (conflictingMetrics.length === 0) return [];
+
+  return [
+    `health metric must stay on ${getHealthMetricPromptLabel(metricLock)}; found ${conflictingMetrics.map(getHealthMetricPromptLabel).join(', ')}`,
+  ];
+}
+
 function normalizeAndValidateIdeas(
   items: unknown[],
-  context: { duration: string; appName: string; pillar: string; angleIndex: number; ideaStartIndex?: number }
+  context: {
+    duration: string;
+    appName: string;
+    pillar: string;
+    angleIndex: number;
+    ideaStartIndex?: number;
+    metricLock?: HealthMetricKey | null;
+  }
 ) {
   const valid: Record<string, unknown>[] = [];
   const invalidReasons: string[] = [];
@@ -282,7 +359,10 @@ function normalizeAndValidateIdeas(
       }),
       { angleIndex: context.angleIndex, ideaIndex: (context.ideaStartIndex || 0) + ideaIndex, pillar: context.pillar }
     );
-    const errors = validateIdeaOutput(normalized);
+    const errors = [
+      ...validateIdeaOutput(normalized),
+      ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
+    ];
 
     if (errors.length === 0) valid.push(normalized);
     else invalidReasons.push(`Idea ${ideaIndex + 1}: ${errors.join('; ')}`);
@@ -311,6 +391,9 @@ function detectLang(coreUsers: string[]): string {
 }
 
 function detectMarketLang(targetMarkets: string[], coreUsers: string[]): string {
+  const explicitMarketLanguage = detectTargetLanguageFromMarkets(targetMarkets, coreUsers);
+  if (explicitMarketLanguage) return explicitMarketLanguage;
+
   const joined = `${targetMarkets.join(' ')} ${coreUsers.join(' ')}`.toLowerCase();
   const hasAny = (tokens: string[]) => tokens.some(token => joined.includes(token));
 
@@ -1176,7 +1259,7 @@ export async function POST(request: NextRequest) {
         pillars: [asText(originalFramework.painpoint)].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: 1,
-        language: 'Vietnamese strategy notes + original copy language',
+        language: 'All output fields must be Vietnamese',
         priority: 'A',
         extraContext: [
           'Task type: refine an existing idea, do not rewrite unrelated parts.',
@@ -1195,6 +1278,7 @@ Refine one existing production brief using the user instruction below.
 - Keep or add meta.pspBridge so Hook connects the pain/emotion to the PSP before Body.
 - Body is only the demo/proof continuation; do not make Body the first place where PSP becomes relevant.
 - Keep visual, voice, and textOverlay separated for hook, body, and CTA.
+- Translate or rewrite any existing English/Spanish/other-language content into natural Vietnamese.
 - Return exactly 1 JSON object, not an array.
 
 [EXISTING IDEA JSON]
@@ -1205,7 +1289,7 @@ ${JSON.stringify(originalIdea, null, 2)}
 
 ## OBJECT SCHEMA
 Use the same field schema as one item from the standard idea output spec:
-${buildIdeaOutputSpec({ quantity: 1, duration: originalDuration, appName, language: 'original copy language' })}
+${buildIdeaOutputSpec({ quantity: 1, duration: originalDuration, appName, language: 'Vietnamese' })}
 
 For this refine task, return only the single object body, not the surrounding array.
 
@@ -1328,7 +1412,12 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const previousIdeas = asText(body.previousIdeas);
       const appKnowledge = asText(body.appKnowledge);
       const useCreativeRulesV7 = shouldUseCreativeRulesV7(appName, appKnowledge);
-      const creativeRuleset: 'default' | 'v7' = useCreativeRulesV7 ? 'v7' : 'default';
+      const usePromptSystemBuilderHtml = !useCreativeRulesV7 && shouldUsePromptSystemBuilderHtml(appKnowledge);
+      const creativeRuleset: 'default' | 'v7' | 'builder' = useCreativeRulesV7
+        ? 'v7'
+        : usePromptSystemBuilderHtml
+          ? 'builder'
+          : 'default';
       const selectedModel = asText(body.selectedModel) || undefined;
       const trendingTopics = asStringList(body.trendingTopics);
       const trendingStructures = asStringList(body.trendingStructures);
@@ -1342,10 +1431,8 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const requestedQuantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
       const duration = asText(config.duration) || 'Short social-first runtime';
       const visualType = asText(config.visualType) || 'UGC (Người thật)';
-      const targetLang = useCreativeRulesV7
-        ? detectMarketLang(targetMarketValues, coreUserValues)
-        : detectLang(coreUserValues);
-      const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : targetLang;
+      const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
+      const outputLanguage = targetLang || 'Vietnamese';
       const marketContext = buildMarketContext(targetMarketValues);
       const angleContext = angleValues.length ? angleValues.join(', ') : '';
       const primaryPillar = painPointValues[0] || 'General user friction';
@@ -1356,6 +1443,12 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const modelCandidates = resolveIdeaModels(selectedModel);
       const ideaDescription = asText(config.ideaDescription) || undefined;
       const batchPlans = buildIdeaBatchPlans(requestedQuantity);
+      const metricLock = getPrimarySolutionMetric(solutionValues);
+      const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
+        solutionValues,
+        angleValues,
+        painPointValues,
+      });
 
       const truncatedKnowledge = clampPromptContext(appKnowledge, GENERATE_IDEAS_CONTEXT_CHAR_LIMIT);
       const truncatedPreviousIdeas = clampPromptContext(previousIdeas, GENERATE_IDEAS_HISTORY_CHAR_LIMIT);
@@ -1475,7 +1568,7 @@ Hard requirements:
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
-- Better Vietnamese health hook style examples: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Better lived-moment health hook style examples, translated/adapted into ${outputLanguage}: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
 - Hook execution must not be a copy-paste stack: hook_primary is the headline, hook_text_overlay is the readable screen text, and hook_voiceover or hook_character_speech must add a different lived detail. If nobody visibly speaks, hook_character_speech must be an empty string.
 - Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
@@ -1514,8 +1607,10 @@ Hard requirements:
           ideasPerAngle: plan.batchQuantity,
           trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
           language: useCreativeRulesV7
-            ? `TOÀN BỘ OUTPUT tiếng Việt; tone/vibe nghĩ như ${targetMarketValues.join(', ') || 'market đã chọn'}`
-            : `Vietnamese strategy notes, ${targetLang} voice/text overlay`,
+            ? `User-facing copy in ${outputLanguage}. Internal visual/production notes can stay Vietnamese.`
+            : usePromptSystemBuilderHtml
+              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; visual/production notes can stay Vietnamese.`
+              : `Vietnamese strategy notes and ${outputLanguage} voice/text overlay.`,
           priority: 'A',
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -1535,12 +1630,23 @@ Hard requirements:
         const rulesBlock = useCreativeRulesV7
           ? `${CREATIVE_ADS_GENERATION_RULES_V7}
 
-${buildV7TaskDirectives(plan.batchQuantity)}`
+${buildV7TaskDirectives(plan.batchQuantity, outputLanguage)}`
+          : usePromptSystemBuilderHtml
+            ? `${PROMPT_SYSTEM_BUILDER_RULES}
+${PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS}`
           : `${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
         const taskDirectives = useCreativeRulesV7
-          ? buildV7TaskDirectives(plan.batchQuantity)
+          ? buildV7TaskDirectives(plan.batchQuantity, outputLanguage)
+          : usePromptSystemBuilderHtml
+            ? `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
+- Follow PROMPT_SYSTEM_BUILDER_HTML_V1 exactly.
+- Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
+- Keep hook_primary under 12 words.
+- Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
+- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects language, local setting, and vibe.
+- Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Duration: ${duration}
 - The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
@@ -1571,6 +1677,7 @@ ${variationBlock || ''}
 ${diversityBlock || ''}
 ${singleIdeaSlotBlock || ''}
 ${painpointPrecisionBlock}
+${filterConsistencyBlock || ''}
 
 ## TASK
 ${taskDirectives}
@@ -1648,6 +1755,7 @@ ${rulesBlock}`;
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+          metricLock,
         });
         validation.invalidReasons.unshift(...briefOutput.invalidReasons);
         let valid = dedupeIdeas(validation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
@@ -1706,6 +1814,7 @@ ${retryNotes.join('\n\n')}`, {
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+              metricLock,
             });
             retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
             const retryValid = dedupeIdeas(retryValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
@@ -1765,6 +1874,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+              metricLock,
             });
             fallbackValidation.invalidReasons.unshift(...fallbackBriefOutput.invalidReasons);
             const fallbackValid = dedupeIdeas(fallbackValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
@@ -1959,7 +2069,12 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const previousIdeas = asText(body.previousIdeas);
     const appKnowledge = asText(body.appKnowledge);
     const useCreativeRulesV7 = shouldUseCreativeRulesV7(appName, appKnowledge);
-    const creativeRuleset: 'default' | 'v7' = useCreativeRulesV7 ? 'v7' : 'default';
+    const usePromptSystemBuilderHtml = !useCreativeRulesV7 && shouldUsePromptSystemBuilderHtml(appKnowledge);
+    const creativeRuleset: 'default' | 'v7' | 'builder' = useCreativeRulesV7
+      ? 'v7'
+      : usePromptSystemBuilderHtml
+        ? 'builder'
+        : 'default';
     const selectedModel = asText(body.selectedModel) || undefined;
     const trendingTopics = asStringList(body.trendingTopics);
     const trendingStructures = asStringList(body.trendingStructures);
@@ -1973,10 +2088,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const quantity = Math.min(toPositiveInt(config.quantity, 3), 5); // Cap at 5 to avoid gateway timeout
     const duration = asText(config.duration) || 'Short social-first runtime';
     const visualType = asText(config.visualType) || 'UGC (Người thật)';
-    const targetLang = useCreativeRulesV7
-      ? detectMarketLang(targetMarketValues, coreUserValues)
-      : detectLang(coreUserValues);
-    const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : targetLang;
+    const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
+    const outputLanguage = targetLang || 'Vietnamese';
     const marketContext = buildMarketContext(targetMarketValues);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
@@ -2006,6 +2119,12 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const angleIndex = Number(config.angleIndex || 1);
     const totalAngles = Number(config.totalAngles || 1);
     const ideaDescription = asText(config.ideaDescription) || undefined;
+    const metricLock = getPrimarySolutionMetric(solutionValues);
+    const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
+      solutionValues,
+      angleValues,
+      painPointValues,
+    });
     const variationBlock = variationIndex > 0
       ? `\n[VARIATION TRONG LẦN GEN HIỆN TẠI]\nĐây là idea ${variationIndex}/${totalVariations}. Phải khác các idea còn lại về tình huống mở đầu, hành động đầu tiên, creative type hoặc nhân vật phụ. Vẫn giữ ĐÚNG core user, painpoint, emotion, PSP, target market, month/season/event và output schema.\n`
       : '';
@@ -2038,7 +2157,7 @@ Hard requirements:
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
-- Better Vietnamese health hook style examples: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Better lived-moment health hook style examples, translated/adapted into ${outputLanguage}: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
 - Hook execution must not be a copy-paste stack: hook_primary is the headline, hook_text_overlay is the readable screen text, and hook_voiceover or hook_character_speech must add a different lived detail. If nobody visibly speaks, hook_character_speech must be an empty string.
 - Hook must sell through to PSP: include psp_bridge so the viewer understands why the app/action is the next natural step before the Body section starts.
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
@@ -2054,11 +2173,22 @@ Hard requirements:
     const rulesBlock = useCreativeRulesV7
       ? `${CREATIVE_ADS_GENERATION_RULES_V7}
 
-${buildV7TaskDirectives(quantity)}`
+${buildV7TaskDirectives(quantity, outputLanguage)}`
+      : usePromptSystemBuilderHtml
+        ? `${PROMPT_SYSTEM_BUILDER_RULES}
+${PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS}`
       : `${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
     const taskDirectives = useCreativeRulesV7
-      ? buildV7TaskDirectives(quantity)
+      ? buildV7TaskDirectives(quantity, outputLanguage)
+      : usePromptSystemBuilderHtml
+        ? `Generate ${quantity} production-ready full ideas for the selected filter combination.
+- Follow PROMPT_SYSTEM_BUILDER_HTML_V1 exactly.
+- Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
+- Keep hook_primary under 12 words.
+- Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
+- User-facing copy must be ${outputLanguage}; internal visual/production notes can stay Vietnamese. Target market affects language, local setting, and vibe.
+- Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
@@ -2095,9 +2225,11 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       anglesPerPillar: 1,
       ideasPerAngle: quantity,
       trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
-      language: useCreativeRulesV7
-        ? `TOÀN BỘ OUTPUT tiếng Việt; tone/vibe nghĩ như ${targetMarketValues.join(', ') || 'market đã chọn'}`
-        : `Vietnamese strategy notes, ${targetLang} voice/text overlay`,
+          language: useCreativeRulesV7
+            ? `User-facing copy in ${outputLanguage}. Internal visual/production notes can stay Vietnamese.`
+            : usePromptSystemBuilderHtml
+              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; visual/production notes can stay Vietnamese.`
+              : `Vietnamese strategy notes and ${outputLanguage} voice/text overlay.`,
       priority: 'A',
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -2120,6 +2252,7 @@ ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
 ${painpointPrecisionBlock}
+${filterConsistencyBlock || ''}
 
 ## TASK
 ${taskDirectives}
@@ -2189,6 +2322,7 @@ ${rulesBlock}`;
       appName,
       pillar: primaryPillar,
       angleIndex: Math.max(angleIndex - 1, 0),
+      metricLock,
     });
     validation.invalidReasons.unshift(...briefOutput.invalidReasons);
     let valid = validation.valid.slice(0, quantity);
@@ -2243,6 +2377,7 @@ ${retryNotes.join('\n\n')}`, {
           appName,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
+          metricLock,
         });
         retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
         const retryValid = retryValidation.valid.slice(0, quantity);
