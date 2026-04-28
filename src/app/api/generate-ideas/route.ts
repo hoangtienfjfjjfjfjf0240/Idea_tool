@@ -77,10 +77,10 @@ IV. CƠ CHẾ THÍCH NGHI CẢM XÚC (Gây ra cho người xem)
 - Educational: Khẳng định kiến thức mới một cách quyết đoán, không dạy đời.
 
 V. LANGUAGE RULES
-- Every generated field rendered in an idea card must use the requested output language.
-- This includes title, visual, character speech, text on screen, voice-over/video voice, concept hook, CTA, visual_ref_notes, talent_profile, dont_do, and track_reason.
-- Target market only controls setting, behavior, props, culture, and vibe; it must not change the output language.
-- Do not write Vietnamese visual or production notes unless the requested output language is Vietnamese.
+- User-facing copy must use the requested output language.
+- This includes title, hook lines, character speech, text on screen, voice-over/video voice, script_vo, and CTA text.
+- Visual descriptions and production notes should be Vietnamese so the internal team can read and execute them quickly.
+- Target market controls setting, behavior, props, culture, and vibe; it must not change the user-facing copy language.
 VI. INPUT VARIABLE HANDLING
 - Use the Painpoint as the Hook attack target.
 - Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
@@ -130,8 +130,8 @@ function buildV7ExecutionContract(input: {
 - App: ${input.appName}
 - Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
 - Market language/culture reference: ${input.targetLang}
-- Output language: ${input.copyLanguage} for every generated idea field, including visual, dialogue, on-screen text, voice-over, hook lines, notes, and CTA.
-- Every generated field, including production notes and visual descriptions, must be in ${input.copyLanguage}.
+- Copy language: ${input.copyLanguage} for title, dialogue, on-screen text, voice-over, hook lines, script_vo, and CTA.
+- Visual descriptions and production notes must be Vietnamese for the internal team.
 - Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
 - Painpoint to attack: ${input.primaryPillar}
 - Angle focus: ${input.angleContext || 'Creative freedom'}
@@ -144,7 +144,7 @@ Hard V7 requirements:
 - The direct opening is the first stop-scroll beat: show consequence, shock, or an unusual visual at second 0.1.
 - The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
 - Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
-- All Text/Voice must be written in ${input.copyLanguage}. Social behavior, setting, props, and vibe must stay native to the selected market.
+- All Text/Voice must be written in ${input.copyLanguage}. Visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
 - If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
 - Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
@@ -155,7 +155,7 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Opening (0-3s) -> Solution Pivot (3-6s) -> Proof/CTA continuation.
 - The first frame must be a pattern interruption, not setup.
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
-- Write every generated field in ${copyLanguage}: title, visual, character dialogue, Text/Voice, text on screen, voice-over, CTA, production notes, and strategy notes.
+- Write user-facing copy in ${copyLanguage}: title, hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
 - Do not use old hook word-count constraints or old 3-5s hook section rules.
 - Do not use rhetorical questions, wordplay, or vague metaphor hooks.
@@ -625,7 +625,7 @@ CÁCH DÙNG:
 - Áp dụng trực tiếp vào hook.visual, nhất là 1-2 câu mở cảnh đầu tiên: trang phục, props, màu sắc, ánh sáng, hành vi, dấu hiệu sự kiện.
 - Chọn 2-4 chi tiết tự nhiên nhất theo core user + target market; không cần nhồi toàn bộ list.
 - Đây là VISUAL DIRECTION, KHÔNG phải mô tả bổ sung. Không viết thành note riêng, không lặp lại như "[Visual Insights]" trong output.
-- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
+- Sự kiện/mùa chỉ làm hook nhìn đúng thời điểm; KHÔNG được thay thế painpoint đã chọn.
 - Nếu thị trường mục tiêu không hợp với tuyết/lạnh/ngày lễ Mỹ, hãy localize chi tiết mùa/sự kiện cho hợp văn hóa.`;
 }
 
@@ -758,11 +758,11 @@ ${plannedLanes}
 YOUR SLOT ${slotNumber} LANE:
 - Name: ${lane.name}
 - Required creativeType family: ${lane.creativeType}
-- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.
-- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
+- Must do: ${lane.must}
+- Scene shift: ${lane.sceneShift}
 
 Hard guardrails for this slot:
-- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
+- Stay on the exact selected pain point and angle. Do not replace the angle with a generic benefit.
 - Do not write a generic "user holds phone and checks the app" idea unless the lane adds a new conflict object, social pressure, proof object, timer, teardown, or tactile cue.
 - The first frame must make this lane visibly different from the other slots.
 - The title, hook.visual, hook voice, body proof, and CTA payoff must all reflect this lane.
@@ -981,8 +981,8 @@ Do not force ideas into these exact formats. Use them as creative cues. If anoth
 For this request:
 - App: ${context.appName}
 - Category: ${context.category}
-- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
-- Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
+- Selected pain point: ${context.painpoint}
+- Selected angle: ${context.angle || 'No locked angle'}
 - PSP/app action to prove: ${context.psp}
 
 Mandatory adaptation:
@@ -1007,7 +1007,7 @@ function buildVariationWindowBlock(batchStartIndex: number, batchQuantity: numbe
   return `\n[VARIATION WINDOW TRONG LAN GEN HIEN TAI]
 Batch nay phai tao dung cac idea trong cua so ${rangeLabel}.
 - Khong duoc lap lai scene family da xuat hien o cac cua so truoc.
-- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.
+- Moi idea moi van phai giu dung core user, painpoint, emotion, PSP, target market va angle dang chon.
 - Neu da co idea truoc do rat giong ve opening action, location, camera reveal, props hoac cau noi mo dau thi phai doi sang huong khac.\n`;
 }
 
@@ -1254,7 +1254,7 @@ export async function POST(request: NextRequest) {
         pillars: [asText(originalFramework.painpoint)].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: 1,
-        language: 'Every generated idea field must be English, including visual and production notes',
+        language: 'User-facing copy must be English; internal visual and production notes can stay Vietnamese',
         priority: 'A',
         extraContext: [
           'Task type: refine an existing idea, do not rewrite unrelated parts.',
@@ -1603,10 +1603,10 @@ Hard requirements:
           ideasPerAngle: plan.batchQuantity,
           trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
           language: useCreativeRulesV7
-            ? `Every generated idea field in ${outputLanguage}, including visual and production notes.`
+            ? `User-facing copy in ${outputLanguage}. Internal visual and production notes in Vietnamese.`
             : usePromptSystemBuilderHtml
-              ? `Prompt System Builder HTML V1. Every generated idea field in ${outputLanguage}, including visual and production notes.`
-              : `Every generated idea field in ${outputLanguage}.`,
+              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`
+              : `User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`,
           priority: 'A',
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -1641,7 +1641,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- Every generated idea field must be ${outputLanguage}, including visual scenes and production notes. Target market affects local setting and vibe only.
+- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Duration: ${duration}
@@ -2184,7 +2184,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- Every generated idea field must be ${outputLanguage}, including visual scenes and production notes. Target market affects local setting and vibe only.
+- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
@@ -2223,10 +2223,10 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       ideasPerAngle: quantity,
       trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
           language: useCreativeRulesV7
-            ? `Every generated idea field in ${outputLanguage}, including visual and production notes.`
+            ? `User-facing copy in ${outputLanguage}. Internal visual and production notes in Vietnamese.`
             : usePromptSystemBuilderHtml
-              ? `Prompt System Builder HTML V1. Every generated idea field in ${outputLanguage}, including visual and production notes.`
-              : `Every generated idea field in ${outputLanguage}.`,
+              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`
+              : `User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`,
       priority: 'A',
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,
