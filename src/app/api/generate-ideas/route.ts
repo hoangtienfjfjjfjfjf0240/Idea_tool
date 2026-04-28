@@ -90,7 +90,8 @@ VII. INTERNAL 5-FACTOR BRIEF DIGESTION
 - The UI already selected Core User, Emotion Trigger, Visual/Theme, Product Selling Point, and Pain Point. Do not ask for them again and do not replace them.
 - Before writing any idea, silently convert those selected inputs into one shootable creative brief: who is watching, what one emotion stops them, what Meta-native format creates trust, why this PSP matters now, and what exact pain situation appears in the first 3 seconds.
 - Pain Point must become a specific moment + real-life setting + visible object/blocker + first action. If it is abstract, sharpen it without changing its meaning.
-- Every hook/body/CTA must come from that hidden brief, not from generic app-demo logic.`;
+- Every hook/body/CTA must come from that hidden brief, not from generic app-demo logic.
+- If the opening visual contains a visible person speaking, asking, replying, reacting to camera, or being asked a question, output that line in hook_character_speech. Do not put on-camera dialogue only in hook_voiceover or script_vo.`;
 
 type IdeaBatchPlan = {
   batchQuantity: number;
@@ -152,7 +153,7 @@ Hard V7 requirements:
 - The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
 - Use the selected painpoint as the target of attack. Convert it into a concrete first-3-second situation, but do not soften it into a generic symptom.
 - All Text/Voice must be written in ${input.copyLanguage}. Visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
-- If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
+- If a visible person speaks, asks, replies, reacts to camera, or is asked a question in the hook, hook_character_speech is required. If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
 - Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
 }
@@ -164,6 +165,7 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Opening (0-3s) -> Solution Pivot (3-6s) -> Proof/CTA continuation.
 - The first frame must be a pattern interruption, not setup.
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
+- If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
 - Write user-facing copy in ${copyLanguage}: title, hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
 - Do not use old hook word-count constraints or old 3-5s hook section rules.
@@ -974,6 +976,7 @@ Winning structure:
 2. Hook copy: simple, specific, slightly uncomfortable.
    - Use one hook mechanism per idea: blank-room paralysis, style mismatch, years-vs-seconds contrast, too-many-styles confusion, no-designer/budget proof, or social comment about a bad room choice.
    - Good rhythm examples to learn from, not copy: "The room is not the problem." / "Every style felt wrong." / "AI gave me a starting point." / "You do not need a designer for this first decision."
+   - If the hook is a person speaking to camera, reacting to a friend/spouse, or answering a social comment, hook_character_speech must contain that exact spoken line. Do not leave character speech empty for talking-head, reaction, interview, or dialogue setups.
 3. 3-6s: the app proof must appear fast.
    - show camera/photo upload/take photo -> choose room/style/restyle -> generate/compare. Name the exact tap and screen state.
 4. 6s onward: payoff is comparison, not vague beauty.

@@ -280,7 +280,8 @@ R18. hook_primary is a strategic headline, not automatically the spoken line. ho
 R19. Only use hook_character_speech when the speaker is visible and identified in visual_scene_1; otherwise leave it empty.
 R20. Hook must include the bridge to PSP: after the pain moment, the viewer should understand why the app/action is the next natural step. Body can be a demo suggestion, but Hook must carry the sell-through logic.
 R21. Before writing ideas, internally digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Do not output that hidden brief.
-R22. The selected Pain Point must become a specific moment, a real-life situation, and a visible first-3-second action. If it is abstract, sharpen it without changing its meaning.`;
+R22. The selected Pain Point must become a specific moment, a real-life situation, and a visible first-3-second action. If it is abstract, sharpen it without changing its meaning.
+R23. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. Do not hide on-camera dialogue inside hook_voiceover or script_vo only.`;
 
 export const PROMPT_SYSTEM_BUILDER_RULES = `## PROMPT SYSTEM BUILDER HTML V1 RULES
 R01. hook_primary must be under 12 words. Count carefully.
@@ -297,6 +298,7 @@ R11. Return raw JSON array only. No preamble, no markdown fence, no explanation 
 R12. id must follow P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
 R13. Before writing ideas, internally digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Do not output that hidden brief.
 R14. The selected Pain Point must become a specific moment, a real-life situation, and a visible first-3-second action. If it is abstract, sharpen it without changing its meaning.
+R15. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. Do not hide on-camera dialogue inside hook_voiceover or script_vo only.
 Language contract is defined by the output specification: user-facing copy follows the requested output language; visual and production descriptions can be Vietnamese for the internal team.`;
 
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
@@ -310,6 +312,7 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in the hook.
 - hook_primary, hook_alt_1, hook_alt_2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
 - On-camera speech must be characterSpeech; off-camera narrator/video voice must be voiceover. Do not merge both into one [VOICE] script.
+- If visual_scene_1 contains a visible person talking to camera, replying to someone, asking a line, or being questioned, fill characterSpeech with that exact on-camera line. Leave characterSpeech empty only for silent visuals or pure off-camera narration.
 - Do not fill a speech field with "-", "N/A", or an empty label. If nobody speaks, leave the field empty.
 - Do not duplicate the same hook sentence across title, voiceover, and textOverlay. The overlay can be the headline, but the spoken line needs extra context or should be omitted.
 - Hook is not just an opener. It must contain a clear bridge from viewer emotion/angle to the PSP, so the app action feels earned before the Body section.
@@ -333,6 +336,7 @@ export const PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS = `## PROMPT SYSTEM 
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
 - If an angle exists, make it visible immediately through the first action, first line, or first contrast in visual_scene_1.
 - hook_primary, hook_alt_1, hook_alt_2 must use 3 different rhetorical approaches, not 3 paraphrases. They can be descriptive if that makes the pain point clearer.
+- If visual_scene_1 contains a visible person talking to camera, replying to someone, asking a line, or being questioned, fill hook_character_speech with that exact on-camera line. Leave hook_character_speech empty only for silent visuals or pure off-camera narration.
 - visual_scene_1 is the full 0-3s hook/pattern-interrupt beat. Do not use old 3-5s hook timing or old 8-12s hook-section timing for this ruleset.
 - Never write "0-8s", "0-8/12", "0-12s", or "8-12s" in visual_scene_1, hook labels, voice labels, or production notes for this ruleset.
 - visual_scene_2 is the 3-15s demo/story beat. visual_scene_3 is the 15-25s reveal/proof beat.
@@ -576,7 +580,7 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
             "hook_primary": "Main hook text in ${options.language}, max 12 words, creates pattern interrupt",
             "hook_alt_1": "Alternative hook variation A in ${options.language}",
             "hook_alt_2": "Alternative hook variation B in ${options.language}",
-            "hook_character_speech": "Optional on-camera character speech in ${options.language}. Empty string if nobody visibly speaks.",
+            "hook_character_speech": "On-camera character speech in ${options.language}. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Optional voice/video narrator line in ${options.language}. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text in ${options.language}, max 12 words.",
             "visual_scene_1": "Second 0-3 only: Exact Vietnamese visual description. Who, where, doing what. Never write 0-8s.",
@@ -607,7 +611,8 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
 7. id must follow format exactly: P0-A0-I0, zero-indexed.
 8. angle_type must be one of the allowed values.
 9. Tracks: A = no real person needed | B = real person/UGC | C = motion/animation.
-10. User-facing copy fields title/hook_primary/hook_alt_1/hook_alt_2/hook_character_speech/hook_voiceover/hook_text_overlay/script_vo/cta_text must be in ${options.language}. Internal visual and production notes must be Vietnamese.`;
+10. User-facing copy fields title/hook_primary/hook_alt_1/hook_alt_2/hook_character_speech/hook_voiceover/hook_text_overlay/script_vo/cta_text must be in ${options.language}. Internal visual and production notes must be Vietnamese.
+11. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required and hook_voiceover must not carry that on-camera line.`;
   }
 
   if (options.ruleset === 'v7') {
@@ -637,7 +642,7 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
             "hook_primary": "Concept title + direct hook in ${options.language}. No old word-count limit.",
             "hook_alt_1": "Alternative hook direction in ${options.language}, different execution, not a paraphrase",
             "hook_alt_2": "Alternative hook direction in ${options.language}, different execution, not a paraphrase",
-            "hook_character_speech": "Concise on-camera character speech in ${options.language}. Empty string if no clearly visible speaker.",
+            "hook_character_speech": "Concise on-camera character speech in ${options.language}. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Concise voice/video narrator line in ${options.language}. Use a direct statement, not a rhetorical question. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text in ${options.language}. A direct statement, not old word-count filler.",
             "reference_pattern": "V7 pattern name, e.g. UGC, 3D Scan, News Leak, Magic Feature, Real Disaster, Reaction Interruption",
@@ -675,7 +680,7 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
 7. User-facing copy must be in ${options.language}: title/concept, character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes must be Vietnamese.
 8. Speech, behavior, setting, props, social relationship, and vibe must feel native to the selected market. Describe the visual execution in Vietnamese.
-9. If the idea has 2+ people communicating, dialogue must be simple, natural, role-accurate, and not turn into a long conversation.
+9. If the idea has a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. If 2+ people communicate, keep the exchange simple, natural, role-accurate, and include only the necessary dialogue.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
 11. Use the selected feature/PSP as the Pivot solution.
 12. Hyper-localize ethnicity, clothing, architecture, environment, behavior, culture, and social setting to the selected market.`;
@@ -706,7 +711,7 @@ The array must follow this exact structure:
             "hook_primary": "Main hook text, 6-16 words, creates pattern interrupt",
             "hook_alt_1": "Alternative hook variation A, different rhetorical approach",
             "hook_alt_2": "Alternative hook variation B, different rhetorical approach",
-            "hook_character_speech": "Concise on-camera line in ${options.language} for the 0-3s hook beat. Empty string if the speaker is not clearly visible/identified in visual_scene_1.",
+            "hook_character_speech": "Concise on-camera line in ${options.language} for the 0-3s hook beat. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Concise off-camera narrator/video voice in ${options.language} for the 0-3s hook beat. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text, 6-14 words, punchy and readable. This can match hook_primary, but not hook_voiceover.",
             "reference_pattern": "Named video structure cue. Can be a proven cue, hybrid, or custom pattern, e.g. Siri Bridge, Shock Object, Phone Demo Proof, Transformation Demo, Comment Reply, Split-Screen Choice, Problem-Solution Handheld, or a new pattern name",
@@ -740,7 +745,7 @@ The array must follow this exact structure:
 2. Every field above is required. Use "N/A" only if truly not applicable.
 3. hook_primary must be 6-16 words.
 4. hook_alt_1 and hook_alt_2 must not be paraphrases of hook_primary.
-5. hook_character_speech must be empty unless visual_scene_1 clearly identifies the visible speaker. Never output "-" or "N/A" for speech.
+5. hook_character_speech must be empty unless visual_scene_1 clearly identifies the visible speaker. If visual_scene_1 shows that person speaking/asking/replying/reacting to camera or being asked a question, hook_character_speech is required. Never output "-" or "N/A" for speech.
 6. hook_voiceover must be concise enough for the 0-3s hook beat. It must not be the same sentence as hook_primary or hook_text_overlay.
 7. visual_scene_1, visual_scene_2, and visual_scene_3 must be specific enough that a video creator can shoot without asking questions.
 8. psp_bridge is required and must connect the viewer's emotion/angle to the PSP before the Body starts.
@@ -1064,6 +1069,12 @@ function visualMentionsVisibleSpeaker(visual: string): boolean {
   return /\b(?:nguoi|phu nu|dan ong|nam|nu|me|bo|vo|chong|con|ban|khach|nhan vat|talent|creator|host|user|woman|man|mom|dad|wife|husband|customer|teen)\b/.test(normalized);
 }
 
+function visualImpliesOnCameraSpeech(visual: string): boolean {
+  const normalized = normalizeCompareText(visual);
+  if (!visualMentionsVisibleSpeaker(visual)) return false;
+  return /\b(?:noi|noi thang|hoi|tra loi|dap lai|keu|bao|thot|doc|phong van|hoi dap|doi thoai|talks?|speaks?|says?|asks?|replies?|answers?|responds?|tells?|confesses?|comments?|interviews?|talking to camera|speaking to camera|talking head)\b/.test(normalized);
+}
+
 function hasPatternInterrupt(text: string): boolean {
   const raw = text.toLowerCase();
   const normalized = normalizeCompareText(text);
@@ -1188,6 +1199,9 @@ function createBriefValidationErrors(input: {
   }
   if (hookCharacterSpeech && !visualMentionsVisibleSpeaker(input.visualScene1)) {
     errors.push('hook_character_speech requires a clearly visible speaker in visual_scene_1');
+  }
+  if (visualImpliesOnCameraSpeech(input.visualScene1) && !hookCharacterSpeech) {
+    errors.push('hook_character_speech is required when visual_scene_1 describes visible on-camera speech or dialogue');
   }
   if (!isV7 && hookCharacterSpeech && countWords(hookCharacterSpeech) > 36) {
     errors.push('hook_character_speech must be 36 words or fewer');
