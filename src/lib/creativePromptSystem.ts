@@ -278,7 +278,9 @@ R16. hook_alt_1 and hook_alt_2 must use different rhetorical approaches from hoo
 R17. visual_scene_1 must stay concrete and dense: include camera/framing, exact blocker or pain object, location, and the first visible sign of the selected pain point or angle.
 R18. hook_primary is a strategic headline, not automatically the spoken line. hook_voiceover must not repeat hook_primary word-for-word.
 R19. Only use hook_character_speech when the speaker is visible and identified in visual_scene_1; otherwise leave it empty.
-R20. Hook must include the bridge to PSP: after the pain moment, the viewer should understand why the app/action is the next natural step. Body can be a demo suggestion, but Hook must carry the sell-through logic.`;
+R20. Hook must include the bridge to PSP: after the pain moment, the viewer should understand why the app/action is the next natural step. Body can be a demo suggestion, but Hook must carry the sell-through logic.
+R21. Before writing ideas, internally digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Do not output that hidden brief.
+R22. The selected Pain Point must become a specific moment, a real-life situation, and a visible first-3-second action. If it is abstract, sharpen it without changing its meaning.`;
 
 export const PROMPT_SYSTEM_BUILDER_RULES = `## PROMPT SYSTEM BUILDER HTML V1 RULES
 R01. hook_primary must be under 12 words. Count carefully.
@@ -293,10 +295,15 @@ R09. Do not make medical claims: no diagnosis, cure, treatment, disease detectio
 R10. Do not use before/after health outcome framing.
 R11. Return raw JSON array only. No preamble, no markdown fence, no explanation after JSON.
 R12. id must follow P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
+R13. Before writing ideas, internally digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Do not output that hidden brief.
+R14. The selected Pain Point must become a specific moment, a real-life situation, and a visible first-3-second action. If it is abstract, sharpen it without changing its meaning.
 Language contract is defined by the output specification: user-facing copy follows the requested output language; visual and production descriptions can be Vietnamese for the internal team.`;
 
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
+- Treat the five selected framework inputs as locked strategy, not loose labels. Before writing, internally answer: who is watching, which one emotion stops them, what visual format creates trust, why this PSP matters now, and what exact pain situation appears in the first 3 seconds.
+- Pain Point must be a shootable situation: specific moment + real-life setting + visible object/blocker + first action. If the selected pain point is abstract, convert it into a concrete situation without changing the selected pain point.
+- PSP must be translated into Feature -> Benefit -> Transformation before writing the hook, so the app action feels like the natural next step instead of a generic demo.
 - Keep the selected pain point exact. Do not drift into an adjacent pain point.
 - Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
@@ -318,6 +325,9 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS
 
 export const PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS = `## PROMPT SYSTEM BUILDER COMPATIBILITY GUARDRAILS
 - Emotion means viewer emotion, not actor acting cues.
+- Treat the five selected framework inputs as locked strategy, not loose labels. Before writing, internally answer: who is watching, which one emotion stops them, what visual format creates trust, why this PSP matters now, and what exact pain situation appears in the first 3 seconds.
+- Pain Point must be a shootable situation: specific moment + real-life setting + visible object/blocker + first action. If the selected pain point is abstract, convert it into a concrete situation without changing the selected pain point.
+- PSP must be translated into Feature -> Benefit -> Transformation before writing the hook, so the app action feels like the natural next step instead of a generic demo.
 - Keep the selected pain point exact. Do not drift into an adjacent pain point.
 - Treat the selected angle as one small branch of the selected pain point. Stay tight to it.
 - Do not collapse the selected pain point or selected angle into a broader symptom like "old room", "needs help", or "wants change".
@@ -366,6 +376,20 @@ ${input.psp || 'General app benefit'}
 
 ## PAIN POINT PILLARS
 ${pillarBlock}
+
+---
+
+## REQUIRED INTERNAL CREATIVE BRIEF DIGESTION
+Do this silently before writing any idea. Do not output these notes.
+
+Convert the selected filters above into one shootable brief:
+1. Core User -> a concrete viewer situation, not just an age or demographic label.
+2. Emotion Trigger -> one dominant emotion that must appear in the first 3 seconds.
+3. Visual / Theme -> the native Meta format that creates trust immediately.
+4. Product Selling Point -> Feature -> Benefit -> Transformation, ending with why the user should act now.
+5. Pain Point -> a specific moment, real-life setting, visible object/blocker, and first action that can be filmed in 3 seconds.
+
+If any selected filter is broad, sharpen it inside its original meaning. Do not invent a new core user, pain point, PSP, angle, or market. Every hook/body/CTA must come from this hidden brief.
 
 ---
 

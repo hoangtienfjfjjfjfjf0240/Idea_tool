@@ -84,7 +84,13 @@ V. LANGUAGE RULES
 VI. INPUT VARIABLE HANDLING
 - Use the Painpoint as the Hook attack target.
 - Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
-- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.`;
+- Describe situations clearly enough that a camera operator or AI video tool can execute the action exactly.
+
+VII. INTERNAL 5-FACTOR BRIEF DIGESTION
+- The UI already selected Core User, Emotion Trigger, Visual/Theme, Product Selling Point, and Pain Point. Do not ask for them again and do not replace them.
+- Before writing any idea, silently convert those selected inputs into one shootable creative brief: who is watching, what one emotion stops them, what Meta-native format creates trust, why this PSP matters now, and what exact pain situation appears in the first 3 seconds.
+- Pain Point must become a specific moment + real-life setting + visible object/blocker + first action. If it is abstract, sharpen it without changing its meaning.
+- Every hook/body/CTA must come from that hidden brief, not from generic app-demo logic.`;
 
 type IdeaBatchPlan = {
   batchQuantity: number;
@@ -140,10 +146,11 @@ function buildV7ExecutionContract(input: {
 - User direction: ${input.ideaDescription || 'None'}
 
 Hard V7 requirements:
+- First, silently digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Painpoint into a shootable brief. Do not output the brief.
 - Ignore old rules about hook word count, hook 3-5s, 12-word hooks, and short one-line hook templates.
 - The direct opening is the first stop-scroll beat: show consequence, shock, or an unusual visual at second 0.1.
 - The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
-- Use the selected painpoint as the target of attack. Do not soften it into a generic symptom.
+- Use the selected painpoint as the target of attack. Convert it into a concrete first-3-second situation, but do not soften it into a generic symptom.
 - All Text/Voice must be written in ${input.copyLanguage}. Visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
 - If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
@@ -152,6 +159,8 @@ Hard V7 requirements:
 
 function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested output language') {
   return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
+- Before writing JSON, silently convert the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Do not output that brief.
+- The selected Pain Point must appear as a specific first-3-second situation, not a label.
 - Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Opening (0-3s) -> Solution Pivot (3-6s) -> Proof/CTA continuation.
 - The first frame must be a pattern interruption, not setup.
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
