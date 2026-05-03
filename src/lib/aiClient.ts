@@ -2,6 +2,7 @@
 
 const AI_BASE_URL = process.env.AI_BASE_URL || '';
 const AI_API_KEY = process.env.AI_API_KEY || process.env.AI_GATEWAY_API_KEY || '';
+let lastAIErrorMessage = '';
 
 export function getAIChatCompletionsUrl(baseUrl = AI_BASE_URL): string {
   const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
@@ -14,6 +15,19 @@ export function getAIChatCompletionsUrl(baseUrl = AI_BASE_URL): string {
 
 export function getAIApiKey(): string {
   return AI_API_KEY;
+}
+
+export function getLastAIErrorMessage(): string {
+  return lastAIErrorMessage;
+}
+
+function extractAIErrorMessage(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.error?.message || parsed?.message || raw;
+  } catch {
+    return raw;
+  }
 }
 
 // Senior Creative Strategist persona - Meta Video Creative Framework
@@ -168,8 +182,11 @@ export async function callAI(
   messages: ChatMessage[],
   options: AICallOptions = {}
 ): Promise<string | null> {
+  lastAIErrorMessage = '';
+
   if (!AI_BASE_URL || !AI_API_KEY) {
-    console.error('[AI] Missing AI_BASE_URL or AI_API_KEY');
+    lastAIErrorMessage = 'Missing AI_BASE_URL or AI_API_KEY';
+    console.error('[AI]', lastAIErrorMessage);
     return null;
   }
 
@@ -213,6 +230,7 @@ export async function callAI(
 
     if (!res.ok) {
       const err = await res.text();
+      lastAIErrorMessage = extractAIErrorMessage(err).substring(0, 500);
       console.error(`[AI] Error ${res.status}:`, err.substring(0, 200));
       return null;
     }
@@ -221,8 +239,10 @@ export async function callAI(
     return data?.choices?.[0]?.message?.content || null;
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
+      lastAIErrorMessage = `AI request timed out after ${Math.round(timeoutMs / 1000)} seconds`;
       console.error(`[AI] Request timed out after ${Math.round(timeoutMs / 1000)} seconds`);
     } else {
+      lastAIErrorMessage = err instanceof Error ? err.message : String(err);
       console.error('[AI] Fetch error:', err);
     }
     return null;

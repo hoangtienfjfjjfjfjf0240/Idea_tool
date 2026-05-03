@@ -1399,6 +1399,12 @@ export function normalizeCreativeBriefOutput(
         if (isSameLine(hookCharacterSpeech, hookPrimary) || !visualMentionsVisibleSpeaker(visualScene1)) {
           hookCharacterSpeech = '';
         }
+        if (visualImpliesOnCameraSpeech(visualScene1) && !hookCharacterSpeech) {
+          const speechCandidate = firstSentenceSnippet(scriptVo || hookVoiceover || hookTextOverlay || hookPrimary, 18);
+          if (speechCandidate && !isSameLine(speechCandidate, hookTextOverlay)) {
+            hookCharacterSpeech = speechCandidate;
+          }
+        }
         if (!pspBridge) {
           pspBridge = `Lúc này ${defaults.appName} là bước xử lý đúng vấn đề vừa lộ ra.`;
         }

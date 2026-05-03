@@ -1146,13 +1146,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const result = { success: allData.length > 0, data: allData, error: allData.length === 0 ? 'Không có kết quả' : null };
 
       const missingIdeasCount = Math.max(0, totalRequestedIdeas - allData.length);
+      const recentFailureMessages = Array.from(new Set(failedGenerationMessages.slice(-3))).filter(Boolean);
       const partialNotice = missingIdeasCount > 0
-        ? `Đã tạo và lưu ${allData.length}/${totalRequestedIdeas} idea hợp lệ. Còn thiếu ${missingIdeasCount} idea vì API không trả đủ sau refill. ${failedGenerationMessages.slice(-2).join(' | ')}`
+        ? `Đã tạo và lưu ${allData.length}/${totalRequestedIdeas} idea hợp lệ. Còn thiếu ${missingIdeasCount} idea vì API không trả đủ sau refill. ${recentFailureMessages.slice(-2).join(' | ')}`
         : null;
 
       if (allData.length === 0) {
         throw new Error(
-          `Không tạo được idea hợp lệ nào. ${failedGenerationMessages.slice(-3).join(' | ')}`
+          `Không tạo được idea hợp lệ nào. ${recentFailureMessages.join(' | ')}`
         );
       }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { askAI, getAIApiKey, getAIChatCompletionsUrl } from '@/lib/aiClient';
+import { askAI, getAIApiKey, getAIChatCompletionsUrl, getLastAIErrorMessage } from '@/lib/aiClient';
 import {
   buildCreativeBriefOutputSpec,
   buildFrameworkInjection,
@@ -28,6 +28,14 @@ export const maxDuration = 300;
 
 function parseJson(text: string) {
   return parseJsonLoose(text);
+}
+
+function getAIGenerationErrorMessage(): string {
+  return getLastAIErrorMessage() || 'AI không phản hồi';
+}
+
+function isNonRecoverableAIGenerationError(message: string): boolean {
+  return /budget\s+has\s+been\s+exceeded|budget_exceeded|insufficient\s+quota|quota\s+exceeded|billing|invalid\s+api\s+key|unauthorized|forbidden/i.test(message);
 }
 
 const TRACKING_ID_PATTERN = /^P\d+-A\d+-I\d+$/;
@@ -1566,7 +1574,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const duration = asText(config.duration) || 'Short social-first runtime';
       const visualType = asText(config.visualType) || 'UGC (Người thật)';
       const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
-      const outputLanguage = 'English';
+      const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : 'English';
       const marketContext = buildMarketContext(targetMarketValues);
       const angleContext = angleValues.length ? angleValues.join(', ') : '';
       const primaryPillar = painPointValues[0] || 'General user friction';
@@ -1848,7 +1856,11 @@ ${rulesBlock}`;
               : GENERATE_IDEAS_RETRY_TIMEOUT_MS,
           });
 
-          if (!candidateText) continue;
+          if (!candidateText) {
+            const aiError = getAIGenerationErrorMessage();
+            if (isNonRecoverableAIGenerationError(aiError)) break;
+            continue;
+          }
 
           const candidateParsed = parseJson(candidateText);
           if (candidateParsed !== null) {
@@ -1863,7 +1875,7 @@ ${rulesBlock}`;
         }
 
         if (!text) {
-          throw new Error('AI không phản hồi');
+          throw new Error(getAIGenerationErrorMessage());
         }
 
         if (!parsed) {
@@ -1989,7 +2001,11 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               timeoutMs: GENERATE_IDEAS_RETRY_TIMEOUT_MS,
             });
 
-            if (!fallbackText) continue;
+            if (!fallbackText) {
+              const aiError = getAIGenerationErrorMessage();
+              if (isNonRecoverableAIGenerationError(aiError)) break;
+              continue;
+            }
 
             const fallbackParsed = parseJson(fallbackText);
             if (!fallbackParsed) {
@@ -2069,7 +2085,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
             const missingCount = plan.batchQuantity - batchIdeas.length;
-            const recoveredIdeas = shouldUseAiRefill
+            const shouldRecoverShortBatch = shouldUseAiRefill && !batchErrors.some(isNonRecoverableAIGenerationError);
+            const recoveredIdeas = shouldRecoverShortBatch
               ? await refillIdeasOneByOne(
                   missingCount,
                   plan.batchStartIndex + batchIdeas.length,
@@ -2080,6 +2097,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
             batchIdeas.push(...recoveredIdeas);
 
             const stillMissing = plan.batchQuantity - batchIdeas.length;
+            let fallbackAdded = 0;
             if (shouldUseLocalFallback && stillMissing > 0) {
               const fallbackIdeas = buildFallbackIdeasForFilters({
                 appName,
@@ -2091,11 +2109,12 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
                 ideaDescription,
               });
               batchIdeas.push(...fallbackIdeas);
+              fallbackAdded = fallbackIdeas.length;
               fallbackCount += fallbackIdeas.length;
             }
 
             batchErrors.push(
-              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} was short; AI refill added ${recoveredIdeas.length}, fallback added ${Math.max(0, stillMissing)}.`
+              `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} was short; AI refill added ${recoveredIdeas.length}, fallback added ${fallbackAdded}.`
             );
           }
           aggregatedIdeas.push(...batchIdeas.slice(0, plan.batchQuantity));
@@ -2105,7 +2124,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           const batchErrorMessage = batchError instanceof Error
             ? batchError.message
             : 'Unknown batch error';
-          const recoveredIdeas = shouldUseAiRefill
+          const shouldRecoverBatch = shouldUseAiRefill && !isNonRecoverableAIGenerationError(batchErrorMessage);
+          const recoveredIdeas = shouldRecoverBatch
             ? await refillIdeasOneByOne(
                 plan.batchQuantity,
                 plan.batchStartIndex,
@@ -2116,6 +2136,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           aggregatedIdeas.push(...recoveredIdeas);
 
           const stillMissing = plan.batchQuantity - recoveredIdeas.length;
+          let fallbackAdded = 0;
           if (shouldUseLocalFallback && stillMissing > 0) {
             const fallbackIdeas = buildFallbackIdeasForFilters({
               appName,
@@ -2127,18 +2148,20 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               ideaDescription,
             });
             aggregatedIdeas.push(...fallbackIdeas);
+            fallbackAdded = fallbackIdeas.length;
             fallbackCount += fallbackIdeas.length;
           }
 
           batchErrors.push(
-            `${rangeLabel}: ${batchErrorMessage}. AI refill added ${recoveredIdeas.length}, fallback added ${Math.max(0, stillMissing)}.`
+            `${rangeLabel}: ${batchErrorMessage}. AI refill added ${recoveredIdeas.length}, fallback added ${fallbackAdded}.`
           );
         }
       }
 
       if (aggregatedIdeas.length < requestedQuantity) {
         const missingCount = requestedQuantity - aggregatedIdeas.length;
-        const recoveredIdeas = shouldUseAiRefill
+        const shouldRecoverFinalTopUp = shouldUseAiRefill && !batchErrors.some(isNonRecoverableAIGenerationError);
+        const recoveredIdeas = shouldRecoverFinalTopUp
           ? await refillIdeasOneByOne(
               missingCount,
               aggregatedIdeas.length,
@@ -2149,6 +2172,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
         aggregatedIdeas.push(...recoveredIdeas);
 
         const stillMissing = requestedQuantity - aggregatedIdeas.length;
+        let fallbackAdded = 0;
         if (shouldUseLocalFallback && stillMissing > 0) {
           const finalTopUp = buildFallbackIdeasForFilters({
             appName,
@@ -2160,18 +2184,21 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
             ideaDescription,
           });
           aggregatedIdeas.push(...finalTopUp);
+          fallbackAdded = finalTopUp.length;
           fallbackCount += finalTopUp.length;
         }
 
         batchErrors.push(
-          `Backend final top-up: AI refill added ${recoveredIdeas.length}, fallback added ${Math.max(0, stillMissing)}.`
+          `Backend final top-up: AI refill added ${recoveredIdeas.length}, fallback added ${fallbackAdded}.`
         );
       }
 
       if (aggregatedIdeas.length === 0) {
+        const terminalError = batchErrors.find(isNonRecoverableAIGenerationError)
+          || 'AI chưa tạo được idea hợp lệ. Vui lòng thử lại hoặc đổi model.';
         return NextResponse.json({
           success: false,
-          error: 'AI chưa tạo được idea hợp lệ. Vui lòng thử lại hoặc đổi model.',
+          error: terminalError,
           meta: {
             requestedQuantity,
             generatedQuantity: 0,
@@ -2233,7 +2260,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const duration = asText(config.duration) || 'Short social-first runtime';
     const visualType = asText(config.visualType) || 'UGC (Người thật)';
     const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
-    const outputLanguage = 'English';
+    const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : 'English';
     const marketContext = buildMarketContext(targetMarketValues);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
