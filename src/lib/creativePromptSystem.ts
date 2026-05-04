@@ -511,7 +511,7 @@ Return ${quantityLabel} objects in this exact schema:
   "id": "P0-A0-I0",
   "title": "Short ${options.language} concept title",
   "duration": "${options.duration}",
-  "creativeType": "UGC|POV|Split Screen|Reaction|ASMR|Trend Format|Social Proof|Interview|Challenge",
+  "creativeType": "2D Animation|3D Animation|UGC|POV|Motion Graphic",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
     "pillar": "exact pillar text from input",
@@ -1090,8 +1090,8 @@ function normalizeBriefTrack(track: string): string {
 }
 
 function creativeTypeForTrack(track: string): string {
-  if (track === 'A') return 'Screen Recording';
-  if (track === 'C') return 'Motion Graphics';
+  if (track === 'A') return '2D Animation';
+  if (track === 'C') return 'Motion Graphic';
   return 'UGC';
 }
 

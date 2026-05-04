@@ -167,6 +167,84 @@ const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'targetMarket', label: 'Thị trường mục tiêu', icon: Globe },
 ];
 
+type CoreUserDimension = {
+  id: string;
+  label: string;
+  placeholder: string;
+  examples: string;
+  hints: string[];
+};
+
+const CORE_USER_DIMENSIONS: CoreUserDimension[] = [
+  {
+    id: 'market',
+    label: 'Quốc gia / Market',
+    placeholder: 'VD: US, VN, AU, UK...',
+    examples: 'US · VN · AU · UK',
+    hints: ['Ngoại hình', 'Setting style', 'Cultural', 'Bảng màu và thẩm mỹ'],
+  },
+  {
+    id: 'age',
+    label: 'Độ tuổi',
+    placeholder: 'VD: 55+, 25-45 Global...',
+    examples: '55+',
+    hints: ['Giọng điệu', 'Kích thước phông chữ', 'Nhịp điệu âm nhạc', 'Reference văn hóa phù hợp tuổi'],
+  },
+  {
+    id: 'gender',
+    label: 'Giới tính',
+    placeholder: 'VD: Nữ, Nam, Gender-neutral...',
+    examples: 'Nữ / Nam / Gender-neutral',
+    hints: ['Bối cảnh vấn đề khó khăn', 'Ngoại hình, style', 'Màu sắc'],
+  },
+  {
+    id: 'language',
+    label: 'Ngôn ngữ',
+    placeholder: 'VD: English, Tiếng Việt...',
+    examples: 'Tiếng Việt / English',
+    hints: ['Toàn bộ script & hook', 'CTA text', 'Văn bản hiển thị trên video', 'Tone trực tiếp vs lịch sự'],
+  },
+];
+
+const CORE_USER_DIMENSION_PREFIX = 'Core User';
+const coreUserDimensionValue = (dimension: CoreUserDimension, value: string) =>
+  `${CORE_USER_DIMENSION_PREFIX} - ${dimension.label}: ${value.trim()}`;
+
+function getCoreUserDimension(item: string): string {
+  const normalized = item.toLowerCase();
+  const prefixed = CORE_USER_DIMENSIONS.find(dimension =>
+    normalized.startsWith(`${CORE_USER_DIMENSION_PREFIX.toLowerCase()} - ${dimension.label.toLowerCase()}:`)
+  );
+  if (prefixed) return prefixed.id;
+  if (/\b(?:55\+|35\+|25|45|tuổi|age|user\s*\d)/i.test(item)) return 'age';
+  if (/\b(?:nữ|nam|female|male|gender|woman|women|man|men)\b/i.test(item)) return 'gender';
+  if (/\b(?:english|tiếng|vietnamese|spanish|language|script|hook|cta)\b/i.test(item)) return 'language';
+  return 'market';
+}
+
+function getCoreUserDisplayValue(item: string): string {
+  const marker = ': ';
+  return item.startsWith(`${CORE_USER_DIMENSION_PREFIX} - `) && item.includes(marker)
+    ? item.slice(item.indexOf(marker) + marker.length)
+    : item;
+}
+
+function normalizeVisualTypeValue(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes('2d')) return '2D Animation';
+  if (normalized.includes('3d')) return '3D Animation';
+  if (normalized.includes('pov') || normalized.includes('screen recording') || normalized.includes('demo app')) return 'POV';
+  if (normalized.includes('motion') || normalized.includes('graphic') || normalized.includes('data visual')) return 'Motion Graphic';
+  if (normalized.includes('ugc') || normalized.includes('người thật') || normalized.includes('nguoi that')) return 'UGC';
+  return GLOBAL_VISUAL_TYPES.includes(value) ? value : null;
+}
+
+function sanitizeVisualTypes(items: string[]) {
+  const mapped = items.map(normalizeVisualTypeValue).filter((item): item is string => Boolean(item));
+  return mapped.length ? [...new Set(mapped)] : [];
+}
+
 const CATEGORIES_STORAGE_KEY = (appId: string) => `idea_tool_categories_${appId}`;
 
 type SeasonalVisualInsights = {
@@ -551,7 +629,7 @@ function matchesHistoryDateFilter(idea: GeneratedIdea, filterKey: string) {
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed, onAppKnowledgeUpdated }) => {
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
-  const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
+  const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: GLOBAL_VISUAL_TYPES, targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
   const [newItem, setNewItem] = useState<{ cat: string | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -603,7 +681,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       solution: [],
       emotion: [],
       videoStructure: [],
-      visualType: [],
+      visualType: GLOBAL_VISUAL_TYPES,
       targetMarket: [],
     });
   }, [app.id]);
@@ -623,8 +701,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
         .map(item => item.trim());
       if (values.length === 0) return;
+      if (key === 'visualType') {
+        merged[key] = GLOBAL_VISUAL_TYPES;
+        return;
+      }
       merged[key] = [...new Set([...(merged[key] || []), ...values])];
     });
+    merged.visualType = GLOBAL_VISUAL_TYPES;
     return merged;
   };
 
@@ -701,7 +784,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const values = raw
               .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
               .map(item => item.trim());
-            return [key, values] as const;
+            return [key, key === 'visualType' ? sanitizeVisualTypes(values) : values] as const;
           })
           .filter(([, values]) => values.length > 0)
       ) as Partial<FilterState>;
@@ -730,7 +813,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const loadOptions = async () => {
     const fullOptions = await dbService.getFilterOptions(app);
-    setOptions(prev => mergeOptionSelections(fullOptions, prefillFilters || filters));
+    setOptions(prev => mergeOptionSelections({ ...fullOptions, visualType: GLOBAL_VISUAL_TYPES }, prefillFilters || filters));
     return;
     // Merge market presets with any DB options
     const marketPresets = ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'];
@@ -809,13 +892,17 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const toggleFilter = (category: string, item: string) => {
+    const normalizedItem = category === 'visualType' ? normalizeVisualTypeValue(item) || item : item;
     setFilters(prev => ({
       ...prev,
-      [category]: (prev[category] || []).includes(item) ? (prev[category] || []).filter(i => i !== item) : [...(prev[category] || []), item]
+      [category]: category === 'visualType'
+        ? ((prev[category] || []).includes(normalizedItem) ? [] : [normalizedItem])
+        : ((prev[category] || []).includes(normalizedItem) ? (prev[category] || []).filter(i => i !== normalizedItem) : [...(prev[category] || []), normalizedItem])
     }));
   };
 
   const handleAddItem = async (category: string) => {
+    if (category === 'visualType') return;
     const value = newItem.text.trim();
     if (value) {
       if ((options[category] || []).includes(value)) {
@@ -832,6 +919,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       setOptions(prev => ({ ...prev, [category]: [...(prev[category] || []), value] }));
       setNewItem({ cat: null, text: '' });
     }
+  };
+
+  const handleAddCoreUserItem = async (dimension: CoreUserDimension) => {
+    const value = newItem.text.trim();
+    if (!value) return;
+    const storedValue = coreUserDimensionValue(dimension, value);
+    if ((options.coreUser || []).includes(storedValue)) {
+      setNewItem({ cat: null, text: '' });
+      return;
+    }
+
+    const saved = await dbService.addFilterOption(app.id, 'coreUser', storedValue);
+    if (!saved) {
+      alert('Lưu lựa chọn vào database thất bại. Vui lòng thử lại.');
+      return;
+    }
+
+    setOptions(prev => ({ ...prev, coreUser: [...(prev.coreUser || []), storedValue] }));
+    setNewItem({ cat: null, text: '' });
   };
 
   const handleDeleteOption = async (category: string, item: string) => {
@@ -939,6 +1045,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
       const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
       const maxIdeasPerAngleRequest = 2;
+      const sanitizedFilters = {
+        ...filters,
+        visualType: sanitizeVisualTypes(filters.visualType || []),
+      } as FilterState;
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(quantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
@@ -948,7 +1058,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             startIndex,
             requestQuantity: Math.min(maxIdeasPerAngleRequest, quantity - startIndex),
             filtersSnapshot: {
-              ...filters,
+              ...sanitizedFilters,
               angle: angle ? [angle] : [],
             } as FilterState,
           };
@@ -1036,7 +1146,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   quantity: missingQuantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
                   ideaDescription,
-                  visualType: task.filtersSnapshot.visualType?.join(', ') || 'UGC (Người thật)',
+                  visualType: sanitizeVisualTypes(task.filtersSnapshot.visualType || [])[0] || 'UGC',
                   seasonalVisualContext,
                   totalVariations: quantity,
                   variationIndex: task.startIndex + collected.length + 1,
@@ -1779,8 +1889,109 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // === RENDER: Filter Card for a category ===
   const renderFilterCard = (cat: CategoryConfig) => {
     const Icon = cat.icon;
-    const filterItems = (options[cat.id] || []) as string[];
+    const filterItems = (cat.id === 'visualType' ? GLOBAL_VISUAL_TYPES : (options[cat.id] || [])) as string[];
     const isEditMode = editModeCat === cat.id;
+    const isLockedVisualType = cat.id === 'visualType';
+
+    if (cat.id === 'coreUser') {
+      const groupedItems = CORE_USER_DIMENSIONS.reduce<Record<string, string[]>>((acc, dimension) => {
+        acc[dimension.id] = [];
+        return acc;
+      }, {});
+      filterItems.forEach(item => {
+        const dimensionId = getCoreUserDimension(item);
+        groupedItems[dimensionId] = [...(groupedItems[dimensionId] || []), item];
+      });
+
+      return (
+        <div key={cat.id} className={`bg-white rounded-2xl border overflow-hidden flex flex-col transition-all shadow-sm md:col-span-2 ${isEditMode ? 'border-teal-500 ring-2 ring-teal-100' : 'border-gray-200'}`}>
+          <div className={`px-4 py-3 border-b flex justify-between items-center ${isEditMode ? 'bg-teal-50 border-teal-200' : 'border-gray-100'}`}>
+            <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700">
+              <Icon size={16} className={isEditMode ? 'text-teal-600' : 'text-gray-400'} />
+              Core User
+              <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">4 phần bắt buộc</span>
+            </h3>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(filters.coreUser || []).length > 0 ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-400'}`}>
+                {(filters.coreUser || []).length}
+              </span>
+              {(filters.coreUser || []).length > 0 && (
+                <button onClick={() => setFilters(prev => ({ ...prev, coreUser: [] }))}
+                  title="Xóa tất cả đã chọn"
+                  className="p-1.5 rounded-lg transition-colors hover:bg-red-50 text-gray-300 hover:text-red-400">
+                  <Trash2 size={13} />
+                </button>
+              )}
+              <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setNewItem({ cat: null, text: '' }); }}
+                className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-teal-100 text-teal-700' : 'hover:bg-gray-100 text-gray-400'}`}>
+                {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="px-4 py-3 border-b border-teal-100 bg-teal-50/70">
+            <div className="text-xs font-extrabold uppercase tracking-wide text-teal-700">Nhóm 1 - Luôn ảnh hưởng creative</div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 p-3">
+            {CORE_USER_DIMENSIONS.map(dimension => {
+              const dimensionItems = groupedItems[dimension.id] || [];
+              const inputKey = `coreUser:${dimension.id}`;
+              return (
+                <div key={dimension.id} className="min-h-[230px] rounded-xl border border-teal-200 bg-teal-50/60 flex flex-col overflow-hidden">
+                  <div className="px-3 py-2 bg-teal-700 text-white">
+                    <div className="text-sm font-extrabold">{dimension.label}</div>
+                    <div className="text-[11px] font-semibold opacity-90">{dimension.examples}</div>
+                  </div>
+                  <div className="flex-1 p-3 space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {dimensionItems.map(item => {
+                        const selected = (filters.coreUser || []).includes(item);
+                        return (
+                          <div key={item} className="flex items-center gap-1">
+                            <button onClick={() => toggleFilter('coreUser', item)}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold text-left transition-all ${selected ? 'bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm' : 'bg-white border border-teal-100 text-gray-700 hover:border-teal-300'}`}>
+                              {getCoreUserDisplayValue(item)}
+                            </button>
+                            {isEditMode && (
+                              <button onClick={() => handleDeleteOption('coreUser', item)}
+                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded">
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {dimensionItems.length === 0 && <div className="text-xs text-teal-700/70 italic">User tự điền lựa chọn.</div>}
+                    </div>
+                    <ul className="space-y-1 text-[11px] text-teal-900/80">
+                      {dimension.hints.map(hint => <li key={hint}>• {hint}</li>)}
+                    </ul>
+                  </div>
+                  <div className="border-t border-teal-100 p-2">
+                    {newItem.cat === inputKey ? (
+                      <div className="flex gap-1.5">
+                        <input autoFocus className="min-w-0 flex-1 text-xs py-1.5 px-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-200 border-teal-200"
+                          value={newItem.text}
+                          onChange={e => setNewItem({ ...newItem, text: e.target.value })}
+                          onKeyDown={e => e.key === 'Enter' && handleAddCoreUserItem(dimension)}
+                          placeholder={dimension.placeholder} />
+                        <button onClick={() => handleAddCoreUserItem(dimension)} className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><Check size={13} /></button>
+                        <button onClick={() => setNewItem({ cat: null, text: '' })} className="p-1.5 bg-white text-gray-400 rounded-lg hover:bg-gray-100"><X size={13} /></button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setNewItem({ cat: inputKey, text: '' })} className="w-full text-[11px] font-extrabold flex items-center justify-center gap-1 py-2 rounded-lg text-teal-700 hover:bg-white transition-colors">
+                        <Plus size={13} /> THÊM LỰA CHỌN
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div key={cat.id} className={`bg-white rounded-2xl border overflow-hidden flex flex-col transition-all shadow-sm ${isEditMode ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200'}`}>
@@ -1803,10 +2014,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <Trash2 size={13} />
               </button>
             )}
-            <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); setConfirmDeleteCat(null); }}
-              className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
-              {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
-            </button>
+            {!isLockedVisualType && (
+              <button onClick={() => { setEditModeCat(isEditMode ? null : cat.id); setEditingItemText(null); setConfirmDeleteCat(null); }}
+                className={`p-1.5 rounded-lg transition-colors ${isEditMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-400'}`}>
+                {isEditMode ? <Check size={14} /> : <Settings2 size={14} />}
+              </button>
+            )}
             {isEditMode && (
               confirmDeleteCat === cat.id ? (
                 <div className="flex items-center gap-1">
@@ -1866,7 +2079,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         </div>
 
         <div className="p-2.5 border-t border-gray-100">
-          {newItem.cat === cat.id ? (
+          {isLockedVisualType ? (
+            <div className="text-center text-[11px] font-semibold text-gray-400 py-2">
+              5 format cố định theo Creative Framework
+            </div>
+          ) : newItem.cat === cat.id ? (
             <div className="flex gap-1.5">
               <input autoFocus className="flex-1 text-sm py-1.5 px-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
                 value={newItem.text} onChange={e => setNewItem({ ...newItem, text: e.target.value })}
@@ -1929,7 +2146,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 (items as string[]).map(item => (
                   <button key={`${key}-${item}`} onClick={() => toggleFilter(key, item)}
                     className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group cursor-pointer">
-                    {item} <X size={12} className="opacity-50 group-hover:opacity-100" />
+                    {key === 'coreUser' ? getCoreUserDisplayValue(item) : item} <X size={12} className="opacity-50 group-hover:opacity-100" />
                   </button>
                 ))
               )}

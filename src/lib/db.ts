@@ -66,14 +66,11 @@ const GLOBAL_VIDEO_STRUCTURE = [
 ];
 
 const GLOBAL_VISUAL_TYPES = [
-  'UGC (Người thật)',
-  'Screen Recording',
-  'Green Screen',
-  '2D Motion Graphics',
-  '3D Render',
-  'Mixed Media',
-  'ASMR',
-  'Trend Format',
+  '2D Animation',
+  '3D Animation',
+  'UGC',
+  'POV',
+  'Motion Graphic',
 ];
 
 const STRATEGY_MAP_STATE_CATEGORY_PREFIX = '__strategy_map_state__:';
@@ -640,7 +637,7 @@ export async function getFilterOptions(app: AppProject): Promise<Record<string, 
     solution: customOptions.solution || [],
     emotion: customOptions.emotion || [],
     videoStructure: customOptions.videoStructure || [],
-    visualType: customOptions.visualType || [],
+    visualType: GLOBAL_VISUAL_TYPES,
     targetMarket: customOptions.targetMarket || [],
   };
 

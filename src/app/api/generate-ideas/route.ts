@@ -55,6 +55,7 @@ const ENABLE_AI_RECOVERY_REFILL = false;
 const ENABLE_LOCAL_FALLBACK_TOPUP = true;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
+const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
 const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
 const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 
@@ -119,6 +120,16 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeFrameworkVisualFormat(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.includes('2d')) return '2D Animation';
+  if (normalized.includes('3d')) return '3D Animation';
+  if (normalized.includes('pov') || normalized.includes('screen recording') || normalized.includes('demo app')) return 'POV';
+  if (normalized.includes('motion') || normalized.includes('graphic') || normalized.includes('data visual')) return 'Motion Graphic';
+  if (normalized.includes('ugc') || normalized.includes('người thật') || normalized.includes('nguoi that')) return 'UGC';
+  return FRAMEWORK_VISUAL_FORMATS.includes(value as typeof FRAMEWORK_VISUAL_FORMATS[number]) ? value : 'UGC';
 }
 
 function shouldUseCreativeRulesV7(appName: string, appKnowledge: string): boolean {
@@ -1183,6 +1194,7 @@ function buildFallbackIdeasForFilters(options: {
   const psp = firstFilterValue(filters, 'solution', options.appName);
   const angleName = firstFilterValue(filters, 'angle', 'Core angle');
   const visualType = firstFilterValue(filters, 'visualType', 'UGC');
+  const selectedVisualFormat = normalizeFrameworkVisualFormat(visualType);
   const targetMarket = asStringList(filters.targetMarket).join(', ') || 'selected market';
   const direction = asText(options.ideaDescription) || angleName || painpoint;
   const isInteriorDecorFallback = isInteriorDecorContext({
@@ -1330,7 +1342,7 @@ function buildFallbackIdeasForFilters(options: {
       id: `P0-A${normalizedAngleIndex}-I${displayIndex}`,
       title: `Idea ${displayIndex + 1}: ${pattern.hookPrimary}`,
       duration: options.duration,
-      creativeType: pattern.creativeType,
+      creativeType: selectedVisualFormat,
       meta: {
         builderVersion: 'prompt_system_builder_v1',
         pillar: painpoint,
@@ -1341,11 +1353,11 @@ function buildFallbackIdeasForFilters(options: {
         hookPrimary: pattern.hookPrimary,
         hookAlt1: pattern.hookAlt1,
         hookAlt2: pattern.hookAlt2,
-        visualRefNotes: `${visualType} cho ${targetMarket}; mở bằng cảnh thật cho thấy "${painpoint}" trước khi demo app.`,
+        visualRefNotes: `${selectedVisualFormat} cho ${targetMarket}; mở bằng cảnh thật cho thấy "${painpoint}" trước khi demo app.`,
         talentProfile: coreUser,
         dontDo: 'Do not show a generic app screen without the selected pain-point object or moment.',
         track: visualType.toLowerCase().includes('motion') ? 'C' : 'B',
-        trackReason: `Fallback pattern keeps angle "${angleName}" visible through ${pattern.scene}.`,
+        trackReason: `Fallback pattern "${pattern.creativeType}" keeps angle "${angleName}" visible inside ${selectedVisualFormat}.`,
         priority: 'A',
       },
       framework: {
@@ -1592,7 +1604,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const featureContext = solutionValues.length ? solutionValues.join(', ') : 'General App Features';
       const requestedQuantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
       const duration = asText(config.duration) || 'Short social-first runtime';
-      const visualType = asText(config.visualType) || 'UGC (Người thật)';
+      const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
       const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
       const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : 'English';
       const marketContext = buildMarketContext(targetMarketValues);
@@ -1827,7 +1839,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Hook, body, and CTA must follow one continuous problem-solution chain.
 - Body is a suggested demo/proof continuation; do not rely on Body alone to explain why the PSP matters.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
-- Creative type cap: output at most 1 POV idea in this batch. Use UGC, Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format for the rest.
+- Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Do not use Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format as visual formats; put those only in reference_pattern or interrupt_mechanism when useful.
 - Production blueprint: each idea must include reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes. reference_pattern can be custom/hybrid. psp_bridge belongs to Hook and must connect the emotion/angle to the PSP. The remaining fields must be concrete enough for a creator to edit the video without asking follow-up questions.`;
 
         const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
@@ -2291,7 +2303,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const featureContext = solutionValues.length ? solutionValues.join(', ') : "General App Features";
     const quantity = Math.min(toPositiveInt(config.quantity, 3), 5); // Cap at 5 to avoid gateway timeout
     const duration = asText(config.duration) || 'Short social-first runtime';
-    const visualType = asText(config.visualType) || 'UGC (Người thật)';
+    const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
     const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
     const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : 'English';
     const marketContext = buildMarketContext(targetMarketValues);
@@ -2407,6 +2419,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
 - If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
 - Hook, body, and CTA must follow one continuous problem-solution chain.
+- Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Use social hook patterns separately from visual format.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.`;
 
     const frameworkInjection = buildFrameworkInjection({
