@@ -1066,7 +1066,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} warnings:`, result.meta.warnings);
             }
             if ((result.meta?.fallbackCount || 0) > 0) {
-              throw new Error(`Angle ${task.angleIndex + 1} chỉ nhận fallback template từ API.`);
+              console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} used ${result.meta?.fallbackCount} fallback ideas.`);
             }
 
             const addedCount = collectUniqueItems(aiItems);

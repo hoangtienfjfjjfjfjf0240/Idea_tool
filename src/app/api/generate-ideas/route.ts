@@ -45,9 +45,14 @@ const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 const MAX_IDEAS_PER_AI_BATCH = 2;
 const MAX_IDEAS_PER_REQUEST = 10;
-const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 65000;
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 60000;
-const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 75000;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 45000;
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 45000;
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 30000;
+const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = 90000;
+const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
+const MAX_IDEA_MODEL_CANDIDATES = 2;
+const ENABLE_AI_RECOVERY_REFILL = false;
+const ENABLE_LOCAL_FALLBACK_TOPUP = true;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
@@ -1180,6 +1185,12 @@ function buildFallbackIdeasForFilters(options: {
   const visualType = firstFilterValue(filters, 'visualType', 'UGC');
   const targetMarket = asStringList(filters.targetMarket).join(', ') || 'selected market';
   const direction = asText(options.ideaDescription) || angleName || painpoint;
+  const isInteriorDecorFallback = isInteriorDecorContext({
+    appName: options.appName,
+    psp,
+    pillar: painpoint,
+    angle: angleName,
+  });
   const normalizedAngleIndex = Math.max(options.angleIndex - 1, 0);
   const patterns = [
     {
@@ -1306,6 +1317,15 @@ function buildFallbackIdeasForFilters(options: {
   return Array.from({ length: options.quantity }, (_, index) => {
     const displayIndex = (options.startIndex || 0) + index;
     const pattern = patterns[displayIndex % patterns.length];
+    const hookVisual = isInteriorDecorFallback
+      ? `Mở bằng cảnh quay handheld trong một phòng/không gian thật đang bị kẹt: ${painpoint}. Nhân vật nhìn vào vật hoặc bố cục gây rối trước khi app UI xuất hiện.`
+      : `Mở bằng cảnh quay handheld ở một tình huống thật đang bị kẹt: ${painpoint}. Khung hình đầu tiên cho thấy vật thể hoặc hành động gây friction trước khi app UI xuất hiện.`;
+    const bodyVisual = isInteriorDecorFallback
+      ? `Cho thấy người dùng chụp ảnh/tải ảnh phòng lên ${options.appName}, chọn restyle/design style, rồi hiện render hoặc màn hình so sánh kết quả.`
+      : `Cho thấy tình huống bị kẹt trong hai nhịp ngắn, rồi chuyển sang ${options.appName}: mở đúng tính năng, thực hiện một thao tác rõ, và hiện kết quả/proof trên màn hình.`;
+    const ctaVisual = isInteriorDecorFallback
+      ? `Kết bằng màn hình ${options.appName} lưu style/render đã chọn, nhân vật nhìn lại căn phòng với một hướng decor rõ hơn.`
+      : `Kết bằng màn hình ${options.appName} với hành động chính và kết quả rõ ràng, không chuyển sang feature phụ.`;
     const rawIdea = {
       id: `P0-A${normalizedAngleIndex}-I${displayIndex}`,
       title: `Idea ${displayIndex + 1}: ${pattern.hookPrimary}`,
@@ -1321,7 +1341,7 @@ function buildFallbackIdeasForFilters(options: {
         hookPrimary: pattern.hookPrimary,
         hookAlt1: pattern.hookAlt1,
         hookAlt2: pattern.hookAlt2,
-        visualRefNotes: `${visualType} for ${targetMarket}; open with ${pattern.scene}.`,
+        visualRefNotes: `${visualType} cho ${targetMarket}; mở bằng cảnh thật cho thấy "${painpoint}" trước khi demo app.`,
         talentProfile: coreUser,
         dontDo: 'Do not show a generic app screen without the selected pain-point object or moment.',
         track: visualType.toLowerCase().includes('motion') ? 'C' : 'B',
@@ -1337,7 +1357,7 @@ function buildFallbackIdeasForFilters(options: {
       explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
       hook: {
         durationSeconds: 3,
-        visual: `Open with ${pattern.scene}. The first frame makes "${painpoint}" visible for ${coreUser} in ${targetMarket}, before the app UI appears.`,
+        visual: hookVisual,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
         viTranslation: `Giữ đúng painpoint "${painpoint}" và mở bằng angle "${angleName}".`,
@@ -1347,13 +1367,13 @@ function buildFallbackIdeasForFilters(options: {
         whyTheyStopScrolling: `Hook đặt câu hỏi trực diện và làm điểm kẹt hiện ra ngay lập tức.`,
       },
       body: {
-        visual: `Show the stuck moment in two quick beats, then switch to ${options.appName} to capture that exact situation without drifting away from the pain point.`,
+        visual: bodyVisual,
         voice: pattern.bodyVoice,
         textOverlay: pattern.bodyOverlay,
         viTranslation: `Demo ${psp} như cách giải quyết trực tiếp cho painpoint đã chọn.`,
       },
       cta: {
-        visual: `End on the ${options.appName} screen with the main action visible and no drift into a secondary feature.`,
+        visual: ctaVisual,
         voice: pattern.ctaVoice,
         textOverlay: pattern.ctaOverlay,
         viTranslation: `Kêu gọi người xem test đúng tình huống này trong app.`,
@@ -1582,9 +1602,16 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const totalAngles = Number(config.totalAngles || 1);
       const requestStartIndex = Math.max(0, Number(config.startIndex || 0) || 0);
       const totalVariations = Math.max(requestedQuantity, Number(config.totalVariations || requestedQuantity) || requestedQuantity);
-      const modelCandidates = resolveIdeaModels(selectedModel);
+      const modelCandidates = resolveIdeaModels(selectedModel).slice(0, MAX_IDEA_MODEL_CANDIDATES);
       const ideaDescription = asText(config.ideaDescription) || undefined;
       const batchPlans = buildIdeaBatchPlans(requestedQuantity);
+      const aiBudgetStartedAt = Date.now();
+      const getRemainingAiBudgetMs = () => GENERATE_IDEAS_REQUEST_AI_BUDGET_MS - (Date.now() - aiBudgetStartedAt);
+      const hasAiBudget = () => getRemainingAiBudgetMs() >= GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS;
+      const getBudgetedTimeoutMs = (timeoutMs: number) => Math.max(
+        GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS,
+        Math.min(timeoutMs, getRemainingAiBudgetMs())
+      );
       const metricLock = getPrimarySolutionMetric(solutionValues);
       const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
         solutionValues,
@@ -1845,15 +1872,17 @@ ${rulesBlock}`;
         let modelUsedIndex = 0;
 
         for (const [candidateIndex, model] of modelCandidates.entries()) {
+          if (!hasAiBudget()) break;
+          const candidateTimeoutMs = candidateIndex === 0
+            ? getIdeaBatchTimeoutMs(model, plan.batchQuantity)
+            : GENERATE_IDEAS_RETRY_TIMEOUT_MS;
           const candidateText = await askAI(prompt, {
             model,
             temperature: plan.batchQuantity > 1 ? 0.82 : 0.75,
             max_tokens: responseTokenBudget,
             useCreativePersona: false,
             priority: 'high',
-            timeoutMs: candidateIndex === 0
-              ? getIdeaBatchTimeoutMs(model, plan.batchQuantity)
-              : GENERATE_IDEAS_RETRY_TIMEOUT_MS,
+            timeoutMs: getBudgetedTimeoutMs(candidateTimeoutMs),
           });
 
           if (!candidateText) {
@@ -1912,7 +1941,7 @@ ${rulesBlock}`;
         const duplicateDetected = valid.length > 1 && hasNearDuplicateIdeas(valid);
         const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < plan.batchQuantity;
 
-        if (needsValidationRetry || duplicateDetected) {
+        if ((needsValidationRetry || duplicateDetected) && hasAiBudget()) {
           if (validation.invalidReasons.length > 0) {
             console.warn('[generate-ideas] Invalid ideas detected:', validation.invalidReasons);
           }
@@ -1941,7 +1970,7 @@ ${retryNotes.join('\n\n')}`, {
             max_tokens: responseTokenBudget,
             useCreativePersona: false,
             priority: 'high',
-            timeoutMs: GENERATE_IDEAS_RETRY_TIMEOUT_MS,
+            timeoutMs: getBudgetedTimeoutMs(GENERATE_IDEAS_RETRY_TIMEOUT_MS),
           });
 
           if (retryText) {
@@ -1986,8 +2015,9 @@ ${retryNotes.join('\n\n')}`, {
           }
         }
 
-        if (valid.length < plan.batchQuantity && modelCandidates.length > modelUsedIndex + 1) {
+        if (valid.length < plan.batchQuantity && modelCandidates.length > modelUsedIndex + 1 && hasAiBudget()) {
           for (const [fallbackOffset, fallbackModel] of modelCandidates.slice(modelUsedIndex + 1).entries()) {
+            if (!hasAiBudget()) break;
             const fallbackText = await askAI(`${prompt}
 
 [MODEL FALLBACK - PREVIOUS MODEL OUTPUT WAS INVALID OR SHORT]
@@ -1998,7 +2028,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               max_tokens: responseTokenBudget,
               useCreativePersona: false,
               priority: 'high',
-              timeoutMs: GENERATE_IDEAS_RETRY_TIMEOUT_MS,
+              timeoutMs: getBudgetedTimeoutMs(GENERATE_IDEAS_RETRY_TIMEOUT_MS),
             });
 
             if (!fallbackText) {
@@ -2077,11 +2107,14 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = true;
-      const shouldUseLocalFallback = false;
+      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL;
+      const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP;
 
       for (const plan of batchPlans) {
         try {
+          if (!hasAiBudget()) {
+            throw new Error('AI request time budget was exhausted before this batch.');
+          }
           const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
             const missingCount = plan.batchQuantity - batchIdeas.length;
