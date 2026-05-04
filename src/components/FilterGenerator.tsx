@@ -172,7 +172,6 @@ type CoreUserDimension = {
   label: string;
   placeholder: string;
   examples: string;
-  hints: string[];
 };
 
 const CORE_USER_DIMENSIONS: CoreUserDimension[] = [
@@ -181,28 +180,24 @@ const CORE_USER_DIMENSIONS: CoreUserDimension[] = [
     label: 'Quốc gia / Market',
     placeholder: 'VD: US, VN, AU, UK...',
     examples: 'US · VN · AU · UK',
-    hints: ['Ngoại hình', 'Setting style', 'Cultural', 'Bảng màu và thẩm mỹ'],
   },
   {
     id: 'age',
     label: 'Độ tuổi',
     placeholder: 'VD: 55+, 25-45 Global...',
     examples: '55+',
-    hints: ['Giọng điệu', 'Kích thước phông chữ', 'Nhịp điệu âm nhạc', 'Reference văn hóa phù hợp tuổi'],
   },
   {
     id: 'gender',
     label: 'Giới tính',
     placeholder: 'VD: Nữ, Nam, Gender-neutral...',
     examples: 'Nữ / Nam / Gender-neutral',
-    hints: ['Bối cảnh vấn đề khó khăn', 'Ngoại hình, style', 'Màu sắc'],
   },
   {
     id: 'language',
     label: 'Ngôn ngữ',
     placeholder: 'VD: English, Tiếng Việt...',
     examples: 'Tiếng Việt / English',
-    hints: ['Toàn bộ script & hook', 'CTA text', 'Văn bản hiển thị trên video', 'Tone trực tiếp vs lịch sự'],
   },
 ];
 
@@ -1964,9 +1959,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       })}
                       {dimensionItems.length === 0 && <div className="text-xs text-teal-700/70 italic">User tự điền lựa chọn.</div>}
                     </div>
-                    <ul className="space-y-1 text-[11px] text-teal-900/80">
-                      {dimension.hints.map(hint => <li key={hint}>• {hint}</li>)}
-                    </ul>
                   </div>
                   <div className="border-t border-teal-100 p-2">
                     {newItem.cat === inputKey ? (
