@@ -52,7 +52,7 @@ const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = 90000;
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = 2;
 const ENABLE_AI_RECOVERY_REFILL = false;
-const ENABLE_LOCAL_FALLBACK_TOPUP = true;
+const ENABLE_LOCAL_FALLBACK_TOPUP = false;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
@@ -553,20 +553,6 @@ function clampPromptContext(value: unknown, maxLength: number) {
   const text = asText(value);
   if (!text) return '';
   return text.length > maxLength ? `${text.slice(0, maxLength)}\n[...truncated]` : text;
-}
-
-function buildGenerateIdeasEmergencyFallback(payload: Record<string, unknown>) {
-  const config = asRecord(payload.config);
-  const quantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
-  return buildFallbackIdeasForFilters({
-    appName: asText(payload.appName) || 'App',
-    filters: payload.filters,
-    quantity,
-    duration: asText(config.duration) || 'Short social-first runtime',
-    startIndex: Math.max(0, Number(config.startIndex || 0) || 0),
-    angleIndex: Math.max(1, Number(config.angleIndex || 1) || 1),
-    ideaDescription: config.ideaDescription,
-  });
 }
 
 function buildRefineEmergencyFallback(payload: Record<string, unknown>) {
@@ -1344,7 +1330,7 @@ function buildFallbackIdeasForFilters(options: {
       duration: options.duration,
       creativeType: selectedVisualFormat,
       meta: {
-        builderVersion: 'prompt_system_builder_v1',
+        builderVersion: 'creative_idea_engine_v2_1_fallback',
         pillar: painpoint,
         pillarIndex: 0,
         angleName,
@@ -1353,6 +1339,14 @@ function buildFallbackIdeasForFilters(options: {
         hookPrimary: pattern.hookPrimary,
         hookAlt1: pattern.hookAlt1,
         hookAlt2: pattern.hookAlt2,
+        hookArchetype: 'POV Narrative',
+        hookAlt1Archetype: 'Before After Demo',
+        hookAlt2Archetype: 'Demo-Magic',
+        emotionJourney: `${emotion} -> Hope -> Satisfaction`,
+        bodyMotivationPattern: 'Demo-Story',
+        ctaFrictionReducer: '1 tap',
+        estimatedThumbStop: 'Medium',
+        ideaReasoning: `Fallback giu dung painpoint "${painpoint}" va bien no thanh canh co the quay ngay.`,
         visualRefNotes: `${selectedVisualFormat} cho ${targetMarket}; mở bằng cảnh thật cho thấy "${painpoint}" trước khi demo app.`,
         talentProfile: coreUser,
         dontDo: 'Do not show a generic app screen without the selected pain-point object or moment.',
@@ -1368,8 +1362,8 @@ function buildFallbackIdeasForFilters(options: {
       },
       explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
       hook: {
-        durationSeconds: 3,
-        visual: hookVisual,
+        durationSeconds: 5,
+        visual: `Sec 0-5 (THE HOOK - 3 phases): Phase 1 (0-1.5s): ${hookVisual} Phase 2 (1.5-3.5s): Text "${pattern.hookPrimary}" hien lon, VO bat dau. Phase 3 (3.5-5s): Mo ${options.appName} nhung chua reveal ket qua de tao curiosity gap.`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
         viTranslation: `Giữ đúng painpoint "${painpoint}" và mở bằng angle "${angleName}".`,
@@ -1379,13 +1373,13 @@ function buildFallbackIdeasForFilters(options: {
         whyTheyStopScrolling: `Hook đặt câu hỏi trực diện và làm điểm kẹt hiện ra ngay lập tức.`,
       },
       body: {
-        visual: bodyVisual,
+        visual: `Sec 5-18 (THE BODY): Demo-Story. ${bodyVisual}`,
         voice: pattern.bodyVoice,
         textOverlay: pattern.bodyOverlay,
         viTranslation: `Demo ${psp} như cách giải quyết trực tiếp cho painpoint đã chọn.`,
       },
       cta: {
-        visual: ctaVisual,
+        visual: `Sec 18-25 (THE CTA): ${ctaVisual}`,
         voice: pattern.ctaVoice,
         textOverlay: pattern.ctaOverlay,
         viTranslation: `Kêu gọi người xem test đúng tình huống này trong app.`,
@@ -1585,13 +1579,9 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const config = asRecord(body.config);
       const previousIdeas = asText(body.previousIdeas);
       const appKnowledge = asText(body.appKnowledge);
-      const useCreativeRulesV7 = shouldUseCreativeRulesV7(appName, appKnowledge);
-      const usePromptSystemBuilderHtml = !useCreativeRulesV7 && shouldUsePromptSystemBuilderHtml(appKnowledge);
-      const creativeRuleset: 'default' | 'v7' | 'builder' = useCreativeRulesV7
-        ? 'v7'
-        : usePromptSystemBuilderHtml
-          ? 'builder'
-          : 'default';
+      const useCreativeRulesV7 = false;
+      const usePromptSystemBuilderHtml = false;
+      const creativeRuleset: 'default' | 'v7' | 'builder' = 'default';
       const selectedModel = asText(body.selectedModel) || undefined;
       const trendingTopics = asStringList(body.trendingTopics);
       const trendingStructures = asStringList(body.trendingStructures);
@@ -1756,6 +1746,22 @@ Hard requirements:
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
 - For multiple ideas, every hook_primary must be meaningfully different. Do not reuse "Why do I..." or the same sentence frame across the batch.`;
 
+        const v21ExecutionOverrideBlock = `
+## CREATIVE IDEA ENGINE V2.1 OVERRIDE - APPLIES TO ALL APPS
+- Use the V2.1 output fields, not legacy hook_primary-first fields.
+- Core User must be interpreted as: Who + what they think + what they do + why unsolved + what makes them act.
+- Pain Point must be a SITUATION: Who + Where + Doing What + What Goes Wrong.
+- Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
+- Angle must be one angle_type + one market/framework approach + one visually different execution.
+- If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
+- visual_scene_1 must be Sec 0-5 with Phase 1 (0-1.5s) Visual Shock, Phase 2 (1.5-3.5s) Context, and Phase 3 (3.5-5s) Curiosity Gap.
+- Phase 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
+- visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
+- visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
+- hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
+- If visible talent speaks, fill hook_character_speech with the exact on-camera line.
+- visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
+
         const frameworkInjection = buildFrameworkInjection({
           appName,
           category: appCategory,
@@ -1830,6 +1836,9 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
+- Use Creative Idea Engine V2.1 schema and timeline.
+- Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
+- visual_scene_1 must be Sec 0-5 with Phase 1/2/3. visual_scene_2 must be Sec 5-18. visual_scene_3 must be Sec 18-25.
 - Duration: ${duration}
 - The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
 - Each idea must stay inside the selected pillar and selected angle focus.
@@ -1859,6 +1868,7 @@ ${variationBlock || ''}
 ${diversityBlock || ''}
 ${singleIdeaSlotBlock || ''}
 ${painpointPrecisionBlock}
+${v21ExecutionOverrideBlock}
 ${filterConsistencyBlock || ''}
 
 ## TASK
@@ -2284,13 +2294,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const config = asRecord(body.config);
     const previousIdeas = asText(body.previousIdeas);
     const appKnowledge = asText(body.appKnowledge);
-    const useCreativeRulesV7 = shouldUseCreativeRulesV7(appName, appKnowledge);
-    const usePromptSystemBuilderHtml = !useCreativeRulesV7 && shouldUsePromptSystemBuilderHtml(appKnowledge);
-    const creativeRuleset: 'default' | 'v7' | 'builder' = useCreativeRulesV7
-      ? 'v7'
-      : usePromptSystemBuilderHtml
-        ? 'builder'
-        : 'default';
+    const useCreativeRulesV7 = false;
+    const usePromptSystemBuilderHtml = false;
+    const creativeRuleset: 'default' | 'v7' | 'builder' = 'default';
     const selectedModel = asText(body.selectedModel) || undefined;
     const trendingTopics = asStringList(body.trendingTopics);
     const trendingStructures = asStringList(body.trendingStructures);
@@ -2387,6 +2393,22 @@ Hard requirements:
 - Body is only a suggested demo/proof continuation. Do not rely on Body alone to explain why the PSP matters.
 - For multiple ideas, every hook_primary must be meaningfully different. Do not reuse "Why do I..." or the same sentence frame across the batch.`;
 
+    const v21ExecutionOverrideBlock = `
+## CREATIVE IDEA ENGINE V2.1 OVERRIDE - APPLIES TO ALL APPS
+- Use the V2.1 output fields, not legacy hook_primary-first fields.
+- Core User must be interpreted as: Who + what they think + what they do + why unsolved + what makes them act.
+- Pain Point must be a SITUATION: Who + Where + Doing What + What Goes Wrong.
+- Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
+- Angle must be one angle_type + one market/framework approach + one visually different execution.
+- If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
+- visual_scene_1 must be Sec 0-5 with Phase 1 (0-1.5s) Visual Shock, Phase 2 (1.5-3.5s) Context, and Phase 3 (3.5-5s) Curiosity Gap.
+- Phase 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
+- visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
+- visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
+- hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
+- If visible talent speaks, fill hook_character_speech with the exact on-camera line.
+- visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
+
     const outputSpec = buildCreativeBriefOutputSpec({
       quantity,
       duration,
@@ -2414,6 +2436,9 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
+- Use Creative Idea Engine V2.1 schema and timeline.
+- Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
+- visual_scene_1 must be Sec 0-5 with Phase 1/2/3. visual_scene_2 must be Sec 5-18. visual_scene_3 must be Sec 18-25.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
@@ -2478,6 +2503,7 @@ ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
 ${painpointPrecisionBlock}
+${v21ExecutionOverrideBlock}
 ${filterConsistencyBlock || ''}
 
 ## TASK
@@ -2496,38 +2522,34 @@ ${rulesBlock}`;
     });
     if (!text) {
       console.error('[generate-ideas] AI returned null');
-      const fallbackIdeas = buildGenerateIdeasEmergencyFallback(body);
       return NextResponse.json({
-        success: true,
-        data: fallbackIdeas,
+        success: false,
+        error: getAIGenerationErrorMessage() || 'AI không trả về nội dung. Vui lòng thử lại.',
         meta: {
-          requestedQuantity: fallbackIdeas.length,
-          generatedQuantity: fallbackIdeas.length,
+          requestedQuantity: quantity,
+          generatedQuantity: 0,
           batchCount: 0,
-          partial: false,
-          fallbackCount: fallbackIdeas.length,
-          warnings: ['Legacy generate path received null from AI; backend returned schema-safe fallback ideas.'],
+          partial: true,
+          fallbackCount: 0,
         },
-      });
+      }, { status: 502 });
     }
     console.log('[generate-ideas] AI response length:', text.length, 'chars');
 
     let parsed = parseJson(text);
     if (!parsed) {
       console.error('[generate-ideas] Failed to parse:', text.substring(0, 300));
-      const fallbackIdeas = buildGenerateIdeasEmergencyFallback(body);
       return NextResponse.json({
-        success: true,
-        data: fallbackIdeas,
+        success: false,
+        error: 'AI trả về không đúng JSON. Vui lòng thử lại.',
         meta: {
-          requestedQuantity: fallbackIdeas.length,
-          generatedQuantity: fallbackIdeas.length,
+          requestedQuantity: quantity,
+          generatedQuantity: 0,
           batchCount: 0,
-          partial: false,
-          fallbackCount: fallbackIdeas.length,
-          warnings: ['Legacy generate path could not parse AI output; backend returned schema-safe fallback ideas.'],
+          partial: true,
+          fallbackCount: 0,
         },
-      });
+      }, { status: 502 });
     }
 
     let parsedPreview: unknown = parsed;
@@ -2668,19 +2690,18 @@ Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`
       if (validation.invalidReasons.length > 0) {
         console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
       }
-      const fallbackIdeas = buildGenerateIdeasEmergencyFallback(body);
       return NextResponse.json({
-        success: true,
-        data: fallbackIdeas,
+        success: false,
+        error: 'AI trả về idea không đạt rule V2.1. Vui lòng thử lại hoặc giảm số lượng idea.',
         meta: {
-          requestedQuantity: fallbackIdeas.length,
-          generatedQuantity: fallbackIdeas.length,
+          requestedQuantity: quantity,
+          generatedQuantity: 0,
           batchCount: 0,
-          partial: false,
-          fallbackCount: fallbackIdeas.length,
-          warnings: ['Legacy generate path produced no valid ideas; backend returned schema-safe fallback ideas.'],
+          partial: true,
+          fallbackCount: 0,
+          warnings: validation.invalidReasons.length > 0 ? validation.invalidReasons.slice(0, 8) : undefined,
         },
-      });
+      }, { status: 502 });
     }
 
     return NextResponse.json({ success: true, data: valid });
@@ -2711,18 +2732,17 @@ Không giữ lại cùng một cảnh rồi chỉ đổi vài chi tiết nhỏ.`
       });
     }
 
-    const fallbackIdeas = buildGenerateIdeasEmergencyFallback(requestBody);
     return NextResponse.json({
-      success: true,
-      data: fallbackIdeas,
+      success: false,
+      error: `Generate ideas exception: ${message}`,
       meta: {
-        requestedQuantity: fallbackIdeas.length,
-        generatedQuantity: fallbackIdeas.length,
+        requestedQuantity: toPositiveInt(asRecord(requestBody.config).quantity, 3),
+        generatedQuantity: 0,
         batchCount: 0,
-        partial: false,
-        fallbackCount: fallbackIdeas.length,
-        warnings: [`Generate ideas exception: ${message}. Backend returned schema-safe fallback ideas.`],
+        partial: true,
+        fallbackCount: 0,
+        warnings: [`Generate ideas exception: ${message}. Backend did not return local fallback ideas.`],
       },
-    });
+    }, { status: 502 });
   }
 }

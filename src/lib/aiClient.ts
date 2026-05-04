@@ -35,6 +35,17 @@ export const CREATIVE_SYSTEM_PROMPT = `Bạn là Senior Creative Strategist vớ
 
 ═══════════════════════════════════════
 META VIDEO CREATIVE FRAMEWORK
+INPUT GRAMMAR BAT BUOC CHO MOI KHIA CANH:
+1. CORE USER = Ai + dang nghi gi + dang lam gi + vi sao chua giai quyet + dieu gi khien ho act.
+   Health: ghi ro "khong phai benh nhan" neu dung. Utility: ghi muc tech-savvy. AI: ghi social platform dung nhieu nhat.
+2. PAINPOINT = Who + Where + Doing What + What Goes Wrong.
+   Painpoint phai la canh quay duoc trong 3 giay, khong phai cam xuc. Core User + PSP -> Pain Points -> Angles -> Ideas.
+3. EMOTION = Hook Emotion -> Body Emotion -> CTA Emotion. Ba emotion phai khac nhau. Neu khong chac thi de auto.
+4. ANGLE = 1 angle_type + 1 cach tiep can/framework thi truong + 1 execution nhin khac nhau.
+   Health nen co Fact. Utility nen co Comparison/Demo. AI nen co Trend.
+5. MARKET = Geo cu the + ngon ngu output + cultural reference dung/tranh.
+6. NOTES = toi da 3-5 bullets ngan: DO, DON'T, Data, Constraint. Khong lap lai field khac.
+
 ═══════════════════════════════════════
 
 Mỗi video ads được xây dựng từ 4 YẾU TỐ NỀN TẢNG:
