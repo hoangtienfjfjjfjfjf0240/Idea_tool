@@ -11,7 +11,22 @@ type IdeaRow = {
   id: string;
   title: string | null;
   duration: string | null;
-  content: any;
+  content: {
+    framework?: {
+      coreUser?: string;
+      painpoint?: string;
+      emotion?: string;
+      psp?: string;
+    };
+    hook?: {
+      visual?: string;
+      script?: string;
+      voice?: string;
+      textOverlay?: string;
+      text?: string;
+    };
+    creativeType?: string;
+  } | null;
   result: string | null;
   created_at: string | null;
   session_id: string | null;

@@ -5,6 +5,7 @@ import type { ScreenType, Hook, AppProject, FilterState, IdeaContent, GeneratedI
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
+import { buildHookFrameworkFallback } from '@/lib/hookFramework';
 
 interface HookLibraryProps {
   setScreen: (s: ScreenType) => void;
@@ -41,6 +42,7 @@ interface FullIdea {
   duration?: string;
   creativeType?: string;
   explanation?: string;
+  meta?: IdeaContent['meta'] & Record<string, unknown>;
   framework?: Partial<IdeaContent['framework']>;
   hook?: Partial<IdeaContent['hook']>;
   body?: Partial<IdeaContent['body']>;
@@ -110,7 +112,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   }, [app?.id]);
 
   useEffect(() => { loadHooks(); }, [loadHooks]);
-  useEffect(() => { setExpandedFullIdeaKeys({}); }, [selectedHook?.id, isViewingFullIdeasHistory, fullIdeas.length]);
+  useEffect(() => { setExpandedFullIdeaKeys({}); }, [selectedHook?.id, isViewingFullIdeasHistory]);
 
   const handleDeleteHook = async (id: string) => {
     if (deletingHookId) return;
@@ -374,6 +376,256 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     return match ? Number(match[0].replace(',', '.')) : null;
   };
 
+  const isRecordValue = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+  const looseFullIdeaKeys = [
+    'title',
+    'hook_text_overlay',
+    'hookTextOverlay',
+    'hook_primary',
+    'hookPrimary',
+    'hook_vo',
+    'hookVoice',
+    'hook_voiceover',
+    'hookVoiceover',
+    'visual_scene_1',
+    'visualScene1',
+    'visual_scene_2',
+    'visualScene2',
+    'visual_scene_3',
+    'visualScene3',
+    'script_vo',
+    'scriptVo',
+    'cta_text',
+    'ctaText',
+    'angle_name',
+    'angleName',
+    'angle_type',
+    'angleType',
+    'angle_desc',
+    'angleDesc',
+    'emotion_journey',
+    'emotionJourney',
+    'body_motivation_pattern',
+    'bodyMotivationPattern',
+  ] as const;
+
+  const rawIdeaTextPattern = /hook_text_overlay|hook_vo|visual_scene_1|visual_scene_2|visual_scene_3|script_vo|cta_text|body_motivation_pattern/i;
+
+  const unescapeLooseText = (value: string) =>
+    value
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+      .replace(/^["'`]+|["'`,]+$/g, '')
+      .trim();
+
+  const findFirstLooseIdeaRecord = (value: unknown, depth = 0): Record<string, unknown> | null => {
+    if (depth > 5) return null;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = findFirstLooseIdeaRecord(item, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (!isRecordValue(value)) return null;
+    const hasIdeaSignal = looseFullIdeaKeys.some(key => typeof value[key] === 'string')
+      || isRecordValue(value.hook)
+      || isRecordValue(value.body)
+      || isRecordValue(value.cta);
+    if (hasIdeaSignal) return value;
+    for (const nested of Object.values(value)) {
+      const found = findFirstLooseIdeaRecord(nested, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const extractLooseFieldsFromRecord = (record: Record<string, unknown>) => {
+    const fields: Record<string, string> = {};
+    looseFullIdeaKeys.forEach(key => {
+      const text = readText(record[key]);
+      if (text) fields[key] = text;
+    });
+    return fields;
+  };
+
+  const extractLooseFieldsFromText = (value: unknown) => {
+    const text = readText(value);
+    const fields: Record<string, string> = {};
+    if (!text || (!rawIdeaTextPattern.test(text) && !/^\s*[\[{]/.test(text))) return fields;
+
+    const jsonCandidates = [
+      text,
+      text.startsWith('{') || text.startsWith('[') ? '' : `{${text}}`,
+      text.startsWith('{') || text.startsWith('[') ? '' : `{"${text}`,
+    ].filter(Boolean);
+
+    for (const candidate of jsonCandidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        const record = findFirstLooseIdeaRecord(parsed);
+        if (record) Object.assign(fields, extractLooseFieldsFromRecord(record));
+      } catch {
+        // Keep regex fallback below.
+      }
+    }
+
+    const keyPattern = /"?([a-zA-Z][a-zA-Z0-9_]*?)"?\s*:\s*(?:"((?:\\.|[^"\\])*)"|([^,\n\r{}[\]]+))/g;
+    let match: RegExpExecArray | null;
+    while ((match = keyPattern.exec(text)) !== null) {
+      const key = match[1] as typeof looseFullIdeaKeys[number];
+      if (!looseFullIdeaKeys.includes(key)) continue;
+      const rawValue = match[2] ?? match[3] ?? '';
+      const nextValue = unescapeLooseText(rawValue);
+      if (nextValue) fields[key] = nextValue;
+    }
+
+    return fields;
+  };
+
+  const collectLooseFieldsFromFullIdea = (idea: FullIdea) => {
+    const rawIdea = idea as FullIdea & Record<string, unknown>;
+    const fields: Record<string, string> = {};
+    const mergeFields = (value: unknown) => Object.assign(fields, extractLooseFieldsFromText(value));
+
+    Object.assign(fields, extractLooseFieldsFromRecord(rawIdea));
+    [rawIdea.title, rawIdea.explanation, rawIdea.meta, rawIdea.hook, rawIdea.body, rawIdea.cta].forEach(value => {
+      if (typeof value === 'string') mergeFields(value);
+      if (isRecordValue(value)) {
+        Object.assign(fields, extractLooseFieldsFromRecord(value));
+        Object.values(value).forEach(mergeFields);
+      }
+    });
+
+    return fields;
+  };
+
+  const looksLikeRawIdeaText = (value: unknown) => {
+    const text = readText(value);
+    return text === '[' || text === '{' || rawIdeaTextPattern.test(text);
+  };
+
+  const cleanFullIdeaText = (value: unknown, fallback = '') => {
+    const text = readText(value);
+    if (!text || looksLikeRawIdeaText(text)) return fallback;
+    return text
+      .replace(/^\s*\[(?:VISUAL|VOICE VIDEO|VOICE|TEXT OVERLAY|CHARACTER SPEECH|NHAN VAT NOI)\]\s*/i, '')
+      .replace(/^Sec\s+0\s*-\s*\d+\s*\(THE HOOK\s*[-—]\s*3 phases\)\s*:\s*/i, '')
+      .trim() || fallback;
+  };
+
+  const stripReadableScriptPrefix = (value: string) =>
+    value
+      .replace(/^Kịch bản\s+\d+(?:\.\d+)?\s*:\s*/i, '')
+      .replace(/^Kich ban\s+\d+(?:\.\d+)?\s*:\s*/i, '')
+      .replace(/^Script\s+\d+(?:\.\d+)?\s*:\s*/i, '')
+      .trim();
+
+  const buildFullIdeaDisplayTitle = (
+    idea: FullIdea,
+    sourceHook: Hook,
+    index: number,
+    looseFields: Record<string, string>
+  ) => {
+    const rawIdea = idea as FullIdea & Record<string, unknown>;
+    const meta = isRecordValue(rawIdea.meta) ? rawIdea.meta : {};
+    const rawTitle = cleanFullIdeaText(
+      rawIdea.title,
+      cleanFullIdeaText(looseFields.title, cleanFullIdeaText(meta.hookPrimary, cleanFullIdeaText(looseFields.hook_text_overlay)))
+    );
+    const title = stripReadableScriptPrefix(rawTitle || stripVariantSuffix(sourceHook.title) || `Idea ${index + 1}`);
+    const idText = readText(rawIdea.id);
+    const idMatch = idText.match(/A(\d+)-I(\d+)/i);
+    const label = idMatch
+      ? `Kịch bản ${Number(idMatch[1]) + 1}.${Number(idMatch[2]) + 1}`
+      : `Kịch bản ${index + 1}`;
+
+    return `${label}: ${title}`;
+  };
+
+  const parseExplicitTimelineEnd = (value: unknown): number | null => {
+    const text = readText(value);
+    const endings = Array.from(text.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:-|–|—|−)\s*(\d+(?:[.,]\d+)?)\s*s?/g))
+      .map(match => Number(match[2].replace(',', '.')))
+      .filter(number => Number.isFinite(number));
+    if (endings.length === 0) return null;
+    const maxEnd = Math.max(...endings);
+    return maxEnd >= 3 && maxEnd <= 30 ? Math.round(maxEnd) : null;
+  };
+
+  const getFullIdeaHookDurationSeconds = (section?: Partial<IdeaContent['hook']>) => {
+    const explicitDuration = parseExplicitTimelineEnd(readText(section?.visual, readText(section?.script)));
+    if (explicitDuration) return explicitDuration;
+    const rawDuration = readNumber((section as Record<string, unknown> | undefined)?.durationSeconds);
+    if (rawDuration && rawDuration >= 3 && rawDuration <= 30 && Math.round(rawDuration) !== 6) return Math.round(rawDuration);
+    return 5;
+  };
+
+  const extractHookPhases = (value: string) => {
+    const cleaned = value
+      .replace(/^Sec\s+0\s*-\s*\d+\s*\(THE HOOK\s*[-—]\s*3 phases\)\s*:\s*/i, '')
+      .trim();
+    const matches = Array.from(cleaned.matchAll(/Phase\s*([123])\s*(?:\(([^)]*)\))?\s*:\s*([\s\S]*?)(?=Phase\s*[123]\s*(?:\(|:)|$)/gi));
+    return matches.map(match => ({
+      phase: Number(match[1]),
+      range: readText(match[2]),
+      text: readText(match[3]),
+    }));
+  };
+
+  const appendHookCopyToContextLine = (line: string, textOverlay: string, voiceover: string) => {
+    const hasCopy = /text\s*(?:hiện|overlay|appears)|voiceover|vo\s*(?:bắt|begins|starts)|\|\s*voice/i.test(line);
+    if (hasCopy) return line;
+    const parts = [
+      textOverlay ? `Text hiện: "${textOverlay}"` : '',
+      voiceover ? `Voiceover: "${voiceover}"` : '',
+    ].filter(Boolean);
+    return parts.length ? `${line}${line ? ' ' : ''}${parts.join(' | ')}` : line;
+  };
+
+  const formatFullIdeaHookTimeline = (
+    rawVisual: string,
+    textOverlay: string,
+    voiceover: string,
+    durationSeconds: number
+  ) => {
+    const visual = cleanFullIdeaText(rawVisual);
+    const existingTimeline = /^\s*\d+(?:[.,]\d+)?\s*(?:-|–|—|−)\s*\d+(?:[.,]\d+)?\s*s?\s*:/m.test(visual);
+    if (existingTimeline) {
+      const lines = visual.split('\n').map(line => line.trim()).filter(Boolean);
+      const contextIndex = lines.findIndex(line => /(?:1[.,]5|2)\s*(?:-|–|—|−)\s*(?:3[.,]5|5)/.test(line));
+      const targetIndex = contextIndex >= 0 ? contextIndex : Math.min(1, lines.length - 1);
+      return lines.map((line, index) => (
+        index === targetIndex ? appendHookCopyToContextLine(line, textOverlay, voiceover) : line
+      )).join('\n');
+    }
+
+    const phases = extractHookPhases(visual);
+    if (phases.length >= 2) {
+      const fallbackRanges = durationSeconds === 8
+        ? ['0-2s', '2-5s', '5-8s']
+        : ['0-1.5s', '1.5-3.5s', `3.5-${durationSeconds}s`];
+      return phases.slice(0, 3).map((phase, index) => {
+        const line = phase.phase === 2
+          ? appendHookCopyToContextLine(phase.text, textOverlay, voiceover)
+          : phase.text;
+        return `${phase.range || fallbackRanges[index] || fallbackRanges[fallbackRanges.length - 1]}: ${line}`;
+      }).join('\n');
+    }
+
+    const ranges = durationSeconds === 8
+      ? ['0-2s', '2-5s', '5-8s']
+      : ['0-1.5s', '1.5-3.5s', `3.5-${durationSeconds}s`];
+    return [
+      `${ranges[0]}: ${visual || 'Open with the proven pain point in a concrete first frame.'}`,
+      `${ranges[1]}: ${appendHookCopyToContextLine('', textOverlay, voiceover) || 'Add context with text overlay and conversational voiceover.'}`,
+      `${ranges[2]}: Cut into the app/demo moment so the viewer needs to see the payoff.`,
+    ].join('\n');
+  };
+
   const getSectionCharacterSpeech = (section?: Record<string, unknown>) =>
     readText(section?.characterSpeech, readText(section?.character_speech, readText(section?.talentSpeech, readText(section?.talent_speech))));
 
@@ -429,6 +681,179 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       .join('\n');
   };
 
+  const normalizeFullIdeaForDisplay = (idea: FullIdea, sourceHook: Hook, index: number): FullIdea => {
+    const rawIdea = idea as FullIdea & Record<string, unknown>;
+    const rawMeta = isRecordValue(rawIdea.meta) ? rawIdea.meta : {};
+    const rawFramework = isRecordValue(rawIdea.framework) ? rawIdea.framework : {};
+    const rawHook = isRecordValue(rawIdea.hook) ? rawIdea.hook : {};
+    const rawBody = isRecordValue(rawIdea.body) ? rawIdea.body : {};
+    const rawCta = isRecordValue(rawIdea.cta) ? rawIdea.cta : {};
+    const looseFields = collectLooseFieldsFromFullIdea(idea);
+
+    const hookTextOverlay = cleanFullIdeaText(
+      rawHook.textOverlay,
+      cleanFullIdeaText(rawHook.text, cleanFullIdeaText(rawMeta.hookPrimary, cleanFullIdeaText(looseFields.hook_text_overlay, cleanFullIdeaText(looseFields.hookTextOverlay))))
+    );
+    const hookVoice = cleanFullIdeaText(
+      rawHook.voiceover,
+      cleanFullIdeaText(rawHook.voice, cleanFullIdeaText(looseFields.hook_vo, cleanFullIdeaText(looseFields.hookVoice, cleanFullIdeaText(looseFields.hook_voiceover, cleanFullIdeaText(looseFields.hookVoiceover)))))
+    );
+    const hookVisual = cleanFullIdeaText(
+      looseFields.visual_scene_1,
+      cleanFullIdeaText(looseFields.visualScene1, cleanFullIdeaText(rawHook.visual, cleanFullIdeaText(rawHook.script)))
+    );
+    const bodyVisual = cleanFullIdeaText(
+      looseFields.visual_scene_2,
+      cleanFullIdeaText(looseFields.visualScene2, cleanFullIdeaText(rawBody.visual, cleanFullIdeaText(rawBody.script)))
+    );
+    const scriptVoiceover = cleanFullIdeaText(
+      looseFields.script_vo,
+      cleanFullIdeaText(looseFields.scriptVo, cleanFullIdeaText(rawBody.voiceover, cleanFullIdeaText(rawBody.voice)))
+    );
+    const ctaText = cleanFullIdeaText(
+      looseFields.cta_text,
+      cleanFullIdeaText(looseFields.ctaText, cleanFullIdeaText(rawCta.textOverlay, cleanFullIdeaText(rawCta.text, cleanFullIdeaText(rawCta.voiceover, cleanFullIdeaText(rawCta.voice)))))
+    );
+    const ctaVisual = cleanFullIdeaText(
+      looseFields.visual_scene_3,
+      cleanFullIdeaText(looseFields.visualScene3, cleanFullIdeaText(rawCta.visual, cleanFullIdeaText(rawCta.script)))
+    );
+    const normalizedHookBase = {
+      ...rawHook,
+      visual: hookVisual,
+      script: hookVisual,
+      textOverlay: hookTextOverlay,
+      text: hookTextOverlay,
+      voiceover: hookVoice,
+      voice: hookVoice,
+    };
+    const hookDuration = getFullIdeaHookDurationSeconds(normalizedHookBase);
+
+    return {
+      ...idea,
+      title: buildFullIdeaDisplayTitle(idea, sourceHook, index, looseFields),
+      duration: cleanFullIdeaText(rawIdea.duration, IDEA_RUNTIME_GUIDANCE),
+      creativeType: cleanFullIdeaText(rawIdea.creativeType, cleanFullIdeaText(rawMeta.track, cleanFullIdeaText(sourceHook.creative_type, sourceHook.subtitle || 'Creative'))),
+      explanation: cleanFullIdeaText(rawIdea.explanation),
+      meta: {
+        ...rawMeta,
+        angleName: cleanFullIdeaText(rawMeta.angleName, cleanFullIdeaText(looseFields.angle_name, cleanFullIdeaText(looseFields.angleName, `Winning Hook: ${sourceHook.title}`))),
+        angleType: cleanFullIdeaText(rawMeta.angleType, cleanFullIdeaText(looseFields.angle_type, cleanFullIdeaText(looseFields.angleType))),
+        angleDesc: cleanFullIdeaText(rawMeta.angleDesc, cleanFullIdeaText(looseFields.angle_desc, cleanFullIdeaText(looseFields.angleDesc))),
+        hookPrimary: hookTextOverlay || cleanFullIdeaText(rawMeta.hookPrimary),
+        emotionJourney: cleanFullIdeaText(rawMeta.emotionJourney, cleanFullIdeaText(looseFields.emotion_journey, cleanFullIdeaText(looseFields.emotionJourney))),
+        bodyMotivationPattern: cleanFullIdeaText(rawMeta.bodyMotivationPattern, cleanFullIdeaText(looseFields.body_motivation_pattern, cleanFullIdeaText(looseFields.bodyMotivationPattern))),
+      },
+      framework: {
+        coreUser: cleanFullIdeaText(rawFramework.coreUser, sourceHook.core_user || 'General viewer'),
+        painpoint: cleanFullIdeaText(rawFramework.painpoint, sourceHook.painpoint || 'General user friction'),
+        emotion: cleanFullIdeaText(rawFramework.emotion, sourceHook.emotion || 'Curiosity'),
+        psp: cleanFullIdeaText(rawFramework.psp, sourceHook.hook_concept || app?.name || 'Product solution'),
+      },
+      hook: {
+        ...normalizedHookBase,
+        durationSeconds: hookDuration,
+        characterSpeech: cleanFullIdeaText(rawHook.characterSpeech),
+        viTranslation: cleanFullIdeaText(rawHook.viTranslation),
+        viewerProfile: cleanFullIdeaText(rawHook.viewerProfile),
+        viewerEmotion: cleanFullIdeaText(rawHook.viewerEmotion),
+        painpointImpact: cleanFullIdeaText(rawHook.painpointImpact),
+        whyTheyStopScrolling: cleanFullIdeaText(rawHook.whyTheyStopScrolling),
+      },
+      body: {
+        ...rawBody,
+        visual: bodyVisual,
+        script: bodyVisual,
+        textOverlay: cleanFullIdeaText(rawBody.textOverlay, cleanFullIdeaText(rawBody.text)),
+        text: cleanFullIdeaText(rawBody.text, cleanFullIdeaText(rawBody.textOverlay)),
+        voiceover: scriptVoiceover,
+        voice: scriptVoiceover,
+        characterSpeech: cleanFullIdeaText(rawBody.characterSpeech),
+        viTranslation: cleanFullIdeaText(rawBody.viTranslation),
+      },
+      cta: {
+        ...rawCta,
+        visual: ctaVisual,
+        script: ctaVisual,
+        textOverlay: ctaText,
+        text: ctaText,
+        voiceover: cleanFullIdeaText(rawCta.voiceover, cleanFullIdeaText(rawCta.voice, ctaText)),
+        voice: cleanFullIdeaText(rawCta.voice, cleanFullIdeaText(rawCta.voiceover, ctaText)),
+        characterSpeech: cleanFullIdeaText(rawCta.characterSpeech),
+        endCard: cleanFullIdeaText(rawCta.endCard, ctaText),
+        viTranslation: cleanFullIdeaText(rawCta.viTranslation),
+      },
+    };
+  };
+
+  const buildReadableFullIdeaSectionScript = (
+    idea: FullIdea,
+    sectionKey: 'hook' | 'body' | 'cta'
+  ) => {
+    const section = idea[sectionKey] || {};
+    const rawSection = section as Record<string, unknown>;
+    const visual = cleanFullIdeaText(section.visual, cleanFullIdeaText(section.script));
+    const textOverlay = cleanFullIdeaText(section.textOverlay, cleanFullIdeaText(section.text));
+    const voiceover = cleanFullIdeaText(getSectionVoiceover(rawSection), cleanFullIdeaText(section.voice));
+    const characterSpeech = cleanFullIdeaText(getSectionCharacterSpeech(rawSection));
+
+    if (sectionKey === 'hook') {
+      return formatFullIdeaHookTimeline(
+        visual,
+        textOverlay || cleanFullIdeaText(idea.meta?.hookPrimary),
+        voiceover || characterSpeech,
+        getFullIdeaHookDurationSeconds(section as Partial<IdeaContent['hook']>)
+      );
+    }
+
+    if (sectionKey === 'body') {
+      return [
+        `Diễn biến (Body): ${visual || cleanFullIdeaText(section.script) || 'Tiếp tục câu chuyện và show app/demo giải quyết đúng pain point.'}`,
+        textOverlay ? `Text body: "${textOverlay}"` : '',
+        characterSpeech ? `Lời nhân vật: "${characterSpeech}"` : '',
+        voiceover ? `Voiceover chính: "${voiceover}"` : '',
+      ].filter(Boolean).join('\n');
+    }
+
+    const ctaText = textOverlay || voiceover || cleanFullIdeaText((section as Partial<IdeaContent['cta']>).endCard);
+    return [
+      `Kêu gọi hành động (CTA): ${ctaText || 'Try it now'}`,
+      visual ? `Visual CTA: ${visual}` : '',
+      voiceover && voiceover !== ctaText ? `Voiceover CTA: "${voiceover}"` : '',
+      cleanFullIdeaText((section as Partial<IdeaContent['cta']>).endCard) && cleanFullIdeaText((section as Partial<IdeaContent['cta']>).endCard) !== ctaText
+        ? `Màn hình kết: ${cleanFullIdeaText((section as Partial<IdeaContent['cta']>).endCard)}`
+        : '',
+    ].filter(Boolean).join('\n');
+  };
+
+  const buildFullIdeaCopyText = (idea: FullIdea, sourceHook: Hook, index: number) => {
+    const normalizedIdea = normalizeFullIdeaForDisplay(idea, sourceHook, index);
+    const framework = normalizedIdea.framework || {};
+    const meta = normalizedIdea.meta || {};
+    const angleName = cleanFullIdeaText(meta.angleName, `Winning Hook: ${sourceHook.title}`);
+    const angleType = cleanFullIdeaText(meta.angleType, normalizedIdea.creativeType || '');
+    const angleDesc = cleanFullIdeaText(meta.angleDesc, normalizedIdea.explanation || '');
+    const hookDuration = getFullIdeaHookDurationSeconds(normalizedIdea.hook);
+
+    return [
+      'TÌNH HUỐNG GỐC (PAIN POINT)',
+      framework.painpoint || sourceHook.painpoint || '',
+      '',
+      `ANGLE: ${angleName}${angleType ? ` (${angleType})` : ''}`,
+      angleDesc ? `Mục tiêu: ${angleDesc}` : '',
+      '',
+      normalizedIdea.title || `Kịch bản ${index + 1}`,
+      '',
+      `Hook (${hookDuration}s đầu):`,
+      buildReadableFullIdeaSectionScript(normalizedIdea, 'hook'),
+      '',
+      buildReadableFullIdeaSectionScript(normalizedIdea, 'body'),
+      '',
+      buildReadableFullIdeaSectionScript(normalizedIdea, 'cta'),
+      normalizedIdea.explanation ? `\nLý do hiệu quả: ${normalizedIdea.explanation}` : '',
+    ].filter(line => String(line).trim()).join('\n');
+  };
+
   const toggleFullIdeaDetails = (key: string) => {
     setExpandedFullIdeaKeys(prev => ({
       ...prev,
@@ -460,21 +885,23 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     };
   }, []);
 
-  const mapHistoryIdeaToFullIdea = useCallback((idea: GeneratedIdea): FullIdea => {
+  const mapHistoryIdeaToFullIdea = (idea: GeneratedIdea, index = 0): FullIdea => {
     const content = idea.content;
-    return {
+    const mapped: FullIdea = {
       id: idea.id,
       title: readText(idea.title, 'Full Idea'),
       duration: readText(idea.duration),
       creativeType: readText(content.creativeType, 'Creative'),
       explanation: readText(content.explanation),
+      meta: content.meta as FullIdea['meta'],
       framework: content.framework,
       hook: content.hook,
       body: content.body,
       cta: content.cta,
       savedIdeaId: idea.id,
     };
-  }, []);
+    return selectedHook ? normalizeFullIdeaForDisplay(mapped, selectedHook, index) : mapped;
+  };
 
   const applyModifyHistoryIdeas = useCallback((ideas: GeneratedIdea[]) => {
     setGeneratedIdeas(ideas.map(mapHistoryIdeaToModifiedHook));
@@ -484,13 +911,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setModifiedHooksSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
   }, [mapHistoryIdeaToModifiedHook]);
 
-  const applyFullIdeaHistoryIdeas = useCallback((ideas: GeneratedIdea[]) => {
-    setFullIdeas(ideas.map(mapHistoryIdeaToFullIdea));
+  const applyFullIdeaHistoryIdeas = (ideas: GeneratedIdea[]) => {
+    setFullIdeas(ideas.map((idea, index) => mapHistoryIdeaToFullIdea(idea, index)));
     setAvailableFullIdeasHistoryCount(ideas.length);
     setSavedFullIdeasCount(ideas.length);
     setSavedFullIdeasSessionId(ideas[0]?.session_id || null);
     setFullIdeasSaveStatus(ideas.length > 0 ? 'saved' : 'idle');
-  }, [mapHistoryIdeaToFullIdea]);
+  };
 
   const checkModifyHistoryAvailability = useCallback(async () => {
     if (!app?.id || !selectedHook) return;
@@ -532,7 +959,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     }
   }, [app?.id, selectedHook, applyModifyHistoryIdeas]);
 
-  const loadFullIdeasHistoryForSelectedHook = useCallback(async () => {
+  const loadFullIdeasHistoryForSelectedHook = async () => {
     if (!app?.id || !selectedHook) return;
     setLoadingFullIdeasHistory(true);
     try {
@@ -544,7 +971,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     } finally {
       setLoadingFullIdeasHistory(false);
     }
-  }, [app?.id, selectedHook, applyFullIdeaHistoryIdeas]);
+  };
 
   const handleOpenModifyHistory = useCallback(async () => {
     if (isViewingModifyHistory) {
@@ -559,7 +986,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     });
   }, [isViewingModifyHistory, loadModifyHistoryForSelectedHook, modifyLiveIdeas]);
 
-  const handleOpenFullIdeasHistory = useCallback(async () => {
+  const handleOpenFullIdeasHistory = async () => {
     if (isViewingFullIdeasHistory) {
       setFullIdeas(fullIdeasLive);
       setIsViewingFullIdeasHistory(false);
@@ -570,7 +997,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     window.requestAnimationFrame(() => {
       fullIdeasResultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [fullIdeasLive, isViewingFullIdeasHistory, loadFullIdeasHistoryForSelectedHook]);
+  };
 
   useEffect(() => {
     if (!app?.id || !selectedHook) return;
@@ -594,16 +1021,23 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setIsViewingFullIdeasHistory(false);
   }, [currentScreen, selectedHook?.id]);
 
-  const buildHookFilterSnapshot = (hook: Hook): FilterState => ({
-    coreUser: hook.core_user ? [hook.core_user] : [],
-    painPoint: hook.painpoint ? [hook.painpoint] : [],
-    solution: hook.hook_concept ? [hook.hook_concept] : [],
-    emotion: hook.emotion ? [hook.emotion] : [],
-    videoStructure: ['Hook Library'],
-    visualType: hook.creative_type || hook.subtitle ? [hook.creative_type || hook.subtitle || ''] : [],
-    targetMarket: [],
-    angle: [`Winning Hook: ${hook.title}`],
-  });
+  const buildHookFilterSnapshot = (hook: Hook): FilterState => {
+    const framework = buildHookFrameworkFallback(hook, {
+      appName: app?.name || '',
+      appCategory: app?.category || '',
+    });
+
+    return {
+      coreUser: framework.coreUser ? [framework.coreUser] : [],
+      painPoint: framework.painpoint ? [framework.painpoint] : [],
+      solution: framework.psp ? [framework.psp] : [],
+      emotion: framework.emotion ? [framework.emotion] : [],
+      videoStructure: ['Hook Library'],
+      visualType: framework.creativeType ? [framework.creativeType] : [],
+      targetMarket: [],
+      angle: [framework.angle || `Winning Hook: ${hook.title}`],
+    };
+  };
 
   const buildStructuredLocalFullIdeas = (
     sourceHook: Hook,
@@ -689,17 +1123,24 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   };
 
   const normalizeFullIdeaContent = (idea: FullIdea, sourceHook: Hook): IdeaContent => {
-    const framework = idea.framework || {};
-    const hook = idea.hook || {};
-    const body = idea.body || {};
-    const cta = idea.cta || {};
+    const normalizedIdea = normalizeFullIdeaForDisplay(idea, sourceHook, 0);
+    const framework = normalizedIdea.framework || {};
+    const hook = normalizedIdea.hook || {};
+    const body = normalizedIdea.body || {};
+    const cta = normalizedIdea.cta || {};
+    const meta = normalizedIdea.meta || {};
 
     return {
-      creativeType: readText(idea.creativeType, sourceHook.creative_type || sourceHook.subtitle || 'UGC'),
+      creativeType: readText(normalizedIdea.creativeType, sourceHook.creative_type || sourceHook.subtitle || 'UGC'),
       meta: {
         builderVersion: 'hook_library_full_idea_v1',
         pillar: readText(framework.painpoint, sourceHook.painpoint || 'Hook Library'),
-        angleName: `Winning Hook: ${sourceHook.title}`,
+        angleName: readText(meta.angleName, `Winning Hook: ${sourceHook.title}`),
+        angleType: readText(meta.angleType),
+        angleDesc: readText(meta.angleDesc),
+        hookPrimary: readText(meta.hookPrimary, readText(hook.textOverlay, readText(hook.text))),
+        emotionJourney: readText(meta.emotionJourney),
+        bodyMotivationPattern: readText(meta.bodyMotivationPattern),
         visualRefNotes: sourceHook.visual_detail || undefined,
         sourceHookId: sourceHook.id,
         sourceHookTitle: sourceHook.title,
@@ -712,7 +1153,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         emotion: readText(framework.emotion, sourceHook.emotion || 'Curiosity'),
         psp: readText(framework.psp, sourceHook.hook_concept || app?.name || 'Product solution'),
       },
-      explanation: readText(idea.explanation),
+      explanation: readText(normalizedIdea.explanation),
       hook: {
         durationSeconds: estimateSectionDurationSeconds(hook as Record<string, unknown>),
         script: readText(hook.script, readText(hook.visual)),
@@ -754,15 +1195,19 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
   const normalizeModifiedHookContent = (idea: HookIdea, sourceHook: Hook): IdeaContent => {
     const hook = idea.hook || {};
+    const framework = buildHookFrameworkFallback(sourceHook, {
+      appName: app?.name || '',
+      appCategory: app?.category || '',
+    });
     return {
       creativeType: 'Modified Hook',
       meta: {
         builderVersion: 'hook_library_modify_history_v1',
-        pillar: sourceHook.painpoint || 'Hook Modify',
+        pillar: framework.painpoint || 'Hook Modify',
         angleName: `Modified Hook: ${sourceHook.title}`,
         hookPrimary: readText(hook.textOverlay, readText(hook.text, idea.title)),
-        visualRefNotes: sourceHook.visual_detail || undefined,
-        talentProfile: sourceHook.core_user || undefined,
+        visualRefNotes: sourceHook.visual_detail || framework.angle || undefined,
+        talentProfile: framework.coreUser || undefined,
         track: 'hook-modify',
         trackReason: readText(modifyPrompt, 'Generated from Hook Library Modify'),
         sourceHookId: sourceHook.id,
@@ -770,10 +1215,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         sessionType: 'modify-hook',
       },
       framework: {
-        coreUser: readText(sourceHook.core_user, 'General viewer'),
-        painpoint: readText(sourceHook.painpoint, 'General user friction'),
-        emotion: readText(sourceHook.emotion, 'Curiosity'),
-        psp: readText(sourceHook.hook_concept, app?.name || 'Product solution'),
+        coreUser: framework.coreUser,
+        painpoint: framework.painpoint,
+        emotion: framework.emotion,
+        psp: framework.psp,
       },
       explanation: readText(idea.explanation, `Modified hook generated from "${sourceHook.title}"`),
       hook: {
@@ -863,11 +1308,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
     const filtersSnapshot = buildHookFilterSnapshot(selectedHook);
     const sessionId = crypto.randomUUID();
+    const normalizedIdeas = ideas.map((idea, index) => normalizeFullIdeaForDisplay(idea, selectedHook, index));
 
     try {
       const savedIdeas = await dbService.saveIdeas(
         app.id,
-        ideas.map((idea, index) => ({
+        normalizedIdeas.map((idea, index) => ({
           title: readText(idea.title, `${selectedHook.title} - Full Idea ${index + 1}`),
           duration: readText(idea.duration, IDEA_RUNTIME_GUIDANCE),
           content: normalizeFullIdeaContent(idea, selectedHook),
@@ -883,14 +1329,14 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       setSavedFullIdeasSessionId(savedCount > 0 ? sessionId : null);
       setFullIdeasSaveStatus(savedCount > 0 ? 'saved' : 'error');
 
-      return ideas.map((idea, index) => ({
+      return normalizedIdeas.map((idea, index) => ({
         ...idea,
         savedIdeaId: savedIdeas[index]?.id,
       }));
     } catch (err) {
       console.error('Save full ideas failed:', err);
       setFullIdeasSaveStatus('error');
-      return ideas;
+      return normalizedIdeas;
     }
   };
 
@@ -1100,7 +1546,12 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       const res = await authenticatedFetch('/api/analyze-hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, fileName }),
+        body: JSON.stringify({
+          imageBase64,
+          fileName,
+          appName: app?.name || '',
+          appCategory: app?.category || '',
+        }),
       });
       const result = await res.json();
       if (res.ok && result.success) {
@@ -1497,6 +1948,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       setSavedFullIdeasCount(0);
       setSavedFullIdeasSessionId(null);
       setIsViewingFullIdeasHistory(false);
+      setExpandedFullIdeaKeys({});
       const controller = new AbortController();
       abortRef.current = controller;
       startProgress();
@@ -1510,6 +1962,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               duration: IDEA_RUNTIME_GUIDANCE,
               ideaDirection: ideaDirection || null,
               appKnowledge: app?.app_knowledge || null,
+            previousIdeas: fullIdeasLive.slice(0, 6).map((idea, index) => (
+              `${index + 1}. ${idea.title || 'Full Idea'} | hook="${readText(idea.hook?.textOverlay, readText(idea.hook?.voice, readText(idea.hook?.visual)))}" | body="${readText(idea.body?.textOverlay, readText(idea.body?.visual))}"`
+            )).join('\n'),
             appName: app?.name || '',
             appCategory: app?.category || '',
             selectedModel: selectedModel || '',
@@ -1523,11 +1978,19 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         if ((result?.meta?.fallbackCount || 0) > 0) {
           throw new Error('Backend đang trả fallback ideas thay vì output AI sạch. Cần siết prompt/context rồi chạy lại.');
         }
-        if (res.ok && result.success && result.data?.length > 0) {
-          const generated = (result.data as FullIdea[]).slice(0, fullIdeasQty);
+        const resultData = Array.isArray(result?.data) ? (result.data as FullIdea[]) : [];
+        if (res.ok && result.success && resultData.length >= fullIdeasQty) {
+          const generated = resultData.slice(0, fullIdeasQty);
           const saved = await saveFullIdeasToDatabase(generated);
           setFullIdeas(saved);
           setFullIdeasLive(saved);
+          setExpandedFullIdeaKeys(saved.reduce<Record<string, boolean>>((acc, idea, index) => {
+            const key = String(idea.savedIdeaId || idea.id || `${selectedHook?.id || 'full-idea'}-${index}`);
+            acc[key] = true;
+            return acc;
+          }, {}));
+        } else if (res.ok && result.success && resultData.length > 0) {
+          alert(`Chỉ tạo được ${resultData.length}/${fullIdeasQty} full ideas hợp lệ. Mình không lưu partial batch này, hãy bấm tạo lại.`);
         } else {
           alert(result.error || 'Có lỗi khi tạo ideas.');
         }
@@ -1544,6 +2007,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         setFullIdeasLoading(false);
       }
     };
+    const frameworkView = buildHookFrameworkFallback(selectedHook, {
+      appName: app?.name || '',
+      appCategory: app?.category || '',
+    });
 
     return (
       <div className="p-6 sm:p-8 max-w-[95%] mx-auto">
@@ -1566,8 +2033,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               <div className="p-5">
                 <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">🏆 Winning Hook — Framework Analysis</span>
                 <h2 className="text-xl font-bold text-gray-800 mt-1">&quot;{selectedHook.title}&quot;</h2>
-                {selectedHook.hook_concept && (
-                  <p className="text-sm text-gray-500 mt-2 italic border-l-2 border-amber-200 pl-3">{selectedHook.hook_concept}</p>
+                {frameworkView.psp && (
+                  <p className="text-sm text-gray-500 mt-2 italic border-l-2 border-amber-200 pl-3">{frameworkView.psp}</p>
                 )}
               </div>
             </div>
@@ -1576,28 +2043,28 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl p-5 border border-amber-200 space-y-3">
               <h3 className="font-bold text-amber-700 flex items-center gap-2 text-sm"><Target size={14} className="text-amber-500" /> Framework Analysis</h3>
               <div className="space-y-2">
-                {selectedHook.core_user && (
+                {frameworkView.coreUser && (
                   <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
                     <span className="text-[10px] font-bold text-indigo-500 uppercase">👤 Core User</span>
-                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.core_user}</p>
+                    <p className="text-sm text-gray-700 mt-0.5">{frameworkView.coreUser}</p>
                   </div>
                 )}
-                {selectedHook.painpoint && (
+                {frameworkView.painpoint && (
                   <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
                     <span className="text-[10px] font-bold text-red-500 uppercase">💔 Painpoint</span>
-                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.painpoint}</p>
+                    <p className="text-sm text-gray-700 mt-0.5">{frameworkView.painpoint}</p>
                   </div>
                 )}
-                {selectedHook.emotion && (
+                {frameworkView.emotion && (
                   <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
                     <span className="text-[10px] font-bold text-orange-500 uppercase">😱 Emotion</span>
-                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.emotion}</p>
+                    <p className="text-sm text-gray-700 mt-0.5">{frameworkView.emotion}</p>
                   </div>
                 )}
-                {selectedHook.creative_type && (
+                {frameworkView.creativeType && (
                   <div className="bg-white/70 rounded-xl px-4 py-2.5 border border-amber-100">
                     <span className="text-[10px] font-bold text-emerald-500 uppercase">🎬 Creative Type</span>
-                    <p className="text-sm text-gray-700 mt-0.5">{selectedHook.creative_type}</p>
+                    <p className="text-sm text-gray-700 mt-0.5">{frameworkView.creativeType}</p>
                   </div>
                 )}
                 {selectedHook.visual_detail && (
@@ -1606,7 +2073,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                     <p className="text-sm text-gray-700 mt-0.5">{selectedHook.visual_detail}</p>
                   </div>
                 )}
-                {!selectedHook.core_user && !selectedHook.painpoint && !selectedHook.emotion && (
+                {false && (
                   <p className="text-sm text-amber-600 italic">Chưa có framework data. Chỉnh sửa hook để thêm phân tích.</p>
                 )}
               </div>
@@ -1626,8 +2093,8 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                         {n}
                       </button>
                     ))}
-                    <input type="number" min={1} max={10} value={fullIdeasQty}
-                      onChange={e => setFullIdeasQty(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                    <input type="number" min={1} max={5} value={fullIdeasQty}
+                      onChange={e => setFullIdeasQty(Math.max(1, Math.min(5, parseInt(e.target.value) || 1)))}
                       className="w-12 py-2 rounded-lg text-xs font-bold text-center border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-200" />
                   </div>
                 </div>
@@ -1716,12 +2183,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             ) : fullIdeas.length > 0 ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {fullIdeas.map((idea, idx) => {
-                  const detailKey = String(idea.savedIdeaId || idea.id || `${selectedHook?.id || 'full-idea'}-${idx}`);
+                  const normalizedIdea = normalizeFullIdeaForDisplay(idea, selectedHook, idx);
+                  const detailKey = String(normalizedIdea.savedIdeaId || normalizedIdea.id || `${selectedHook?.id || 'full-idea'}-${idx}`);
                   const isDetailOpen = Boolean(expandedFullIdeaKeys[detailKey]);
                   const visibleSections = isDetailOpen
                     ? FULL_IDEA_SECTIONS
                     : FULL_IDEA_SECTIONS.filter(sec => sec.key === 'hook');
-                  const copyText = `IDEA: ${idea.title}\n\nFRAMEWORK:\n- Core User: ${idea.framework?.coreUser}\n- Painpoint: ${idea.framework?.painpoint}\n- Emotion: ${idea.framework?.emotion}\n- PSP: ${idea.framework?.psp}\n\nHOOK:\n${buildIdeaSectionScript(idea.hook) || '—'}\n\nBODY:\n${buildIdeaSectionScript(idea.body) || '—'}\n\nCTA:\n${buildIdeaSectionScript(idea.cta) || '—'}`;
+                  const copyText = buildFullIdeaCopyText(normalizedIdea, selectedHook, idx);
 
                   return (
                     <div key={detailKey} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
@@ -1729,10 +2197,13 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                       <div className="p-6">
                         <div className="flex justify-between items-start mb-4">
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-lg text-gray-800 mb-1">{idea.title || `Ý tưởng ${idx + 1}`}</h4>
+                            <h4 className="font-bold text-lg text-gray-800 mb-1">{normalizedIdea.title || `Ý tưởng ${idx + 1}`}</h4>
                             <div className="flex gap-2 flex-wrap">
-                              <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{idea.creativeType || 'Creative'}</span>
-                              {idea.savedIdeaId && (
+                              <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-medium">{normalizedIdea.creativeType || 'Creative'}</span>
+                              {normalizedIdea.meta?.angleType && (
+                                <span className="text-xs px-2 py-0.5 bg-cyan-50 text-cyan-700 rounded font-medium">{normalizedIdea.meta.angleType}</span>
+                              )}
+                              {normalizedIdea.savedIdeaId && (
                                 <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-medium">Đã lưu DB</span>
                               )}
                             </div>
@@ -1761,36 +2232,21 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                           </button>
                         </div>
 
-                        {isDetailOpen && idea.explanation && (
-                          <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{idea.explanation}</p>
+                        {isDetailOpen && normalizedIdea.explanation && (
+                          <p className="text-gray-400 italic text-sm mb-4 border-l-2 border-amber-200 pl-3">{normalizedIdea.explanation}</p>
                         )}
 
                         {visibleSections.map(sec => {
-                          const secData = idea[sec.key] || {};
-                          const scriptContent = buildIdeaSectionScript(secData);
-                          const textOverlay = readText(secData?.textOverlay, readText(secData?.text));
-                          const endCard = sec.key === 'cta' ? readText(idea.cta?.endCard) : '';
+                          const secData = normalizedIdea[sec.key] || {};
+                          const scriptContent = buildReadableFullIdeaSectionScript(normalizedIdea, sec.key);
                           const sectionLabel = sec.key === 'hook'
-                            ? `${sec.label} (${estimateSectionDurationSeconds(secData as Record<string, unknown>)}s)`
+                            ? `${sec.label} (${getFullIdeaHookDurationSeconds(secData as Partial<IdeaContent['hook']>)}s)`
                             : sec.label;
 
                           return (
                             <div key={sec.key} className={`mb-4 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
                               <span className={`text-[10px] font-bold ${sec.title} uppercase tracking-widest flex items-center gap-1 mb-3`}>{sectionLabel}</span>
-                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed mb-3">{scriptContent || '—'}</p>
-
-                              <div className="flex gap-3">
-                                <div className="flex-1">
-                                  <span className="text-[10px] font-bold text-amber-600 uppercase">Text Overlay</span>
-                                  <p className="text-sm text-gray-800 font-bold mt-0.5">{textOverlay || '—'}</p>
-                                </div>
-                                {sec.key === 'cta' && isDetailOpen && (
-                                  <div className="flex-1">
-                                    <span className="text-[10px] font-bold text-emerald-600 uppercase">End Card</span>
-                                    <p className="text-sm text-gray-700 mt-0.5">{endCard || '—'}</p>
-                                  </div>
-                                )}
-                              </div>
+                              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{scriptContent || '—'}</p>
                             </div>
                           );
                         })}
@@ -2025,7 +2481,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <div className="p-4">
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Modified Hook</span>
-                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Tiếng Việt</span>
+                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">English Copy</span>
                       {idea.savedIdeaId && (
                         <span className="text-[11px] px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-md text-emerald-700">Đã lưu History</span>
                       )}

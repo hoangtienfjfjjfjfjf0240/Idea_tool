@@ -210,7 +210,7 @@ export const generateHookImage = async (visualDescription: string): Promise<stri
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const refineIdea = async (originalIdea: any, instruction: string) => {
   if (!ai) throw new Error("AI not initialized");
-  const prompt = `[OBJECTIVE]\nModify an existing ad idea based on user instructions.\nLanguage: ENGLISH for title, character speech, voice/video voiceover, text overlay, script, and CTA. Visual/production notes can stay Vietnamese.\n\n[ORIGINAL IDEA JSON]\n${JSON.stringify(originalIdea)}\n\n[USER INSTRUCTION]\n"${instruction}"\n\n[TASK]\n1. Apply the User Instruction.\n2. Keep the exact same JSON structure.\n3. Return ONLY the new JSON object. No Markdown.`;
+  const prompt = `[OBJECTIVE]\nModify an existing ad idea based on user instructions.\nLanguage: ENGLISH for every generated field, including title, visual, character speech, voice/video voiceover, text overlay, script, CTA, and production notes.\n\n[ORIGINAL IDEA JSON]\n${JSON.stringify(originalIdea)}\n\n[USER INSTRUCTION]\n"${instruction}"\n\n[TASK]\n1. Apply the User Instruction.\n2. Keep the exact same JSON structure.\n3. Return ONLY the new JSON object. No Markdown.`;
   try {
     const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
     const text = response.text;

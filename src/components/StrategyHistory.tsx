@@ -3,6 +3,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, Loader2, Copy, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, IdeaContent } from '@/types/database';
 import { getIdeaSessions, isHookLibraryIdea, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
+import { isInvalidStrategyIdea } from '@/lib/ideaStructure';
 import { getProxiedIconUrl } from '@/lib/iconProxy';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
@@ -98,7 +100,7 @@ function toResultType(value: unknown): ResultType {
 function removeHookLibrarySessions(sessions: IdeaSession[]): IdeaSession[] {
   return sessions
     .map(session => {
-      const ideas = session.ideas.filter(idea => !isHookLibraryIdea(idea));
+      const ideas = session.ideas.filter(idea => !isHookLibraryIdea(idea) && !isInvalidStrategyIdea(idea));
       if (ideas.length === 0) return null;
       return {
         ...session,
@@ -120,13 +122,19 @@ export const StrategyHistory: React.FC<{ app: AppProject; onBack: () => void; in
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const data = await getIdeaSessions(app.id);
-      const visibleSessions = removeHookLibrarySessions(data);
-      setSessions(visibleSessions);
-      const r: Record<string, ResultType> = {};
-      visibleSessions.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
-      setIdeaResults(r);
-      setLoading(false);
+      try {
+        const data = await getIdeaSessions(app.id);
+        const visibleSessions = removeHookLibrarySessions(data);
+        setSessions(visibleSessions);
+        const r: Record<string, ResultType> = {};
+        visibleSessions.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
+        setIdeaResults(r);
+        cleanupInvalidStrategyIdeas(app.id).catch(error => {
+          console.warn('Cleanup invalid strategy ideas failed:', error);
+        });
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [app.id]);
 

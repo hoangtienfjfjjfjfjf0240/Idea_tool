@@ -59,6 +59,14 @@ export interface IdeaMeta {
   hookPrimary?: string;
   hookAlt1?: string;
   hookAlt2?: string;
+  hookArchetype?: string;
+  hookAlt1Archetype?: string;
+  hookAlt2Archetype?: string;
+  emotionJourney?: string;
+  bodyMotivationPattern?: string;
+  ctaFrictionReducer?: string;
+  estimatedThumbStop?: string;
+  ideaReasoning?: string;
   visualRefNotes?: string;
   talentProfile?: string;
   dontDo?: string;
@@ -76,6 +84,12 @@ export interface IdeaMeta {
   sourceHookId?: string;
   sourceHookTitle?: string;
   sessionType?: string;
+  strategyCode?: string;
+  strategyCodes?: string[];
+  strategyCodeMap?: string[];
+  isFavorite?: boolean;
+  favoriteKeys?: string[];
+  favoriteMarkedAt?: string | null;
 }
 
 export interface IdeaContent {

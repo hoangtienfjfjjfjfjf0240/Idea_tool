@@ -604,6 +604,33 @@ export async function updateIdeaContent(ideaId: string, title: string, content: 
   return true;
 }
 
+export async function updateIdeaFavorite(
+  appId: string,
+  idea: GeneratedIdea,
+  isFavorite: boolean,
+  favoriteKeys: string[]
+): Promise<boolean> {
+  const content = idea.content || {} as GeneratedIdea['content'];
+  const nextContent = {
+    ...content,
+    meta: {
+      ...(content.meta || {}),
+      isFavorite,
+      favoriteKeys: isFavorite ? Array.from(new Set(favoriteKeys.filter(Boolean))) : [],
+      favoriteMarkedAt: isFavorite ? new Date().toISOString() : null,
+    },
+  } as GeneratedIdea['content'];
+
+  const { error } = await supabase
+    .from('generated_ideas')
+    .update({ content: nextContent })
+    .eq('app_id', appId)
+    .eq('id', idea.id);
+
+  if (error) { console.error('updateIdeaFavorite error:', error); return false; }
+  return true;
+}
+
 export async function deleteIdea(ideaId: string): Promise<boolean> {
   const { error } = await supabase
     .from('generated_ideas')

@@ -1,9 +1,12 @@
 'use client';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff, Search, Eye } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, StrategyMapState, StrategyMapCustomNodeState, StrategyWorkflowLevel } from '@/types/database';
 import { addFilterOption, getFilterOptions, getIdeaSessions, getIdeasByIds, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
+import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
+import { isInvalidStrategyIdea } from '@/lib/ideaStructure';
+import { FAVORITES_UPDATED_EVENT, hasFavoriteIdeaKey, loadFavoriteKeys, mergeFavoriteKeys } from '@/lib/favorites';
 
 type ResultType = 'win' | 'failed' | 'monitoring' | null;
 
@@ -22,7 +25,10 @@ interface TreeNode {
 
 // ===== Layout constants =====
 const NODE_W = 220;
-const NODE_H = 74;
+const NODE_H = 84;
+const FORMULA_NODE_W = 190;
+const FORMULA_NODE_H = 30;
+const FORMULA_NODE_GAP = 26;
 const ROW_GAP = 42;
 const LEVEL_LABEL_W = 170;
 const VIEWPORT_HEIGHT = 720;
@@ -112,7 +118,7 @@ type BranchGenerationStatus = 'generated' | 'ungenerated' | 'partial';
 function removeHookLibrarySessions(sessions: IdeaSession[]): IdeaSession[] {
   return sessions
     .map(session => {
-      const ideas = session.ideas.filter(idea => !isHookLibraryIdea(idea));
+      const ideas = session.ideas.filter(idea => !isHookLibraryIdea(idea) && !isInvalidStrategyIdea(idea));
       if (ideas.length === 0) return null;
       return {
         ...session,
@@ -252,6 +258,15 @@ const LEVEL_TO_FILTER_KEY: Partial<Record<WorkflowLevel, keyof FilterState>> = {
   visual: 'visualType',
   painPoint: 'painPoint',
   angle: 'angle',
+};
+
+const LEVEL_TO_STRATEGY_PREFIX: Partial<Record<WorkflowLevel, string>> = {
+  coreUser: 'A',
+  psp: 'B',
+  emotion: 'C',
+  visual: 'D',
+  painPoint: 'E',
+  angle: 'F',
 };
 
 const LEVEL_TO_OPTION_CATEGORY: Partial<Record<WorkflowLevel, string>> = {
@@ -589,8 +604,23 @@ function buildVerticalWorkflowLayout(
     flatNodes,
     flatLines,
     canvasW,
-    canvasH: 24 + LEVEL_ORDER.length * NODE_H + (LEVEL_ORDER.length - 1) * ROW_GAP + 32,
+    canvasH: 24 + LEVEL_ORDER.length * NODE_H + (LEVEL_ORDER.length - 1) * ROW_GAP + FORMULA_NODE_GAP + FORMULA_NODE_H + 48,
   };
+}
+
+function filterFavoriteSessions(appId: string, sessions: IdeaSession[], favoriteKeys: Set<string>): IdeaSession[] {
+  return sessions
+    .map(session => {
+      const ideas = session.ideas.filter(idea => hasFavoriteIdeaKey(appId, idea, favoriteKeys));
+      if (ideas.length === 0) return null;
+      return {
+        ...session,
+        ideas,
+        ideaCount: ideas.length,
+        createdAt: ideas[0]?.created_at || session.createdAt,
+      };
+    })
+    .filter((session): session is IdeaSession => Boolean(session));
 }
 
 // ===== Week helpers =====
@@ -704,6 +734,7 @@ interface StrategyMapProps {
   onBack: () => void;
   inline?: boolean;
   onCreateFromBranch?: (filters: Partial<FilterState>) => void;
+  onOpenResults?: () => void;
 }
 
 function normalizeFilterSnapshot(value: unknown): Partial<FilterState> {
@@ -726,6 +757,24 @@ function toResultType(value: unknown): ResultType {
   return value === 'win' || value === 'failed' || value === 'monitoring' ? value : null;
 }
 
+function collectTreeNodeIdeas(node: TreeNode | null | undefined): GeneratedIdea[] {
+  if (!node) return [];
+
+  const seen = new Set<string>();
+  const ideas: GeneratedIdea[] = [];
+  const walk = (current: TreeNode) => {
+    current.ideas.forEach(idea => {
+      if (seen.has(idea.id)) return;
+      seen.add(idea.id);
+      ideas.push(idea);
+    });
+    current.children.forEach(walk);
+  };
+
+  walk(node);
+  return ideas;
+}
+
 function hydrateCustomNodes(savedNodes: StrategyMapCustomNodeState[] | undefined): CustomWorkflowNode[] {
   return (savedNodes || []).map(node => ({
     ...node,
@@ -746,8 +795,9 @@ function getMaxCustomNodeSequence(nodes: StrategyMapCustomNodeState[] | undefine
   }, 0);
 }
 
-export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = false, onCreateFromBranch }) => {
+export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = false, onCreateFromBranch, onOpenResults }) => {
   const [sessions, setSessions] = useState<IdeaSession[]>([]);
+  const [favoriteIdeaKeys, setFavoriteIdeaKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [activePath, setActivePath] = useState<string[]>([]);
   const [selectedNode, setSelectedNode] = useState<TreeNode | null>(null);
@@ -808,24 +858,48 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       setIdeaDetailCache({});
       setLoadingIdeaDetails(false);
       const [data, savedOptionMap] = await Promise.all([
-        getIdeaSessions(app.id, { includeContent: false }),
+        getIdeaSessions(app.id),
         getFilterOptions(app),
       ]);
       if (cancelled) return;
 
       const visibleSessions = removeHookLibrarySessions(data);
       setSessions(visibleSessions);
+      setFavoriteIdeaKeys(prev => mergeFavoriteKeys(app.id, prev, visibleSessions.flatMap(session => session.ideas)));
       setStoredOptionValues(mapFilterOptionsToWorkflowLevels(savedOptionMap));
       const r: Record<string, ResultType> = {};
       visibleSessions.forEach(s => s.ideas.forEach(i => { r[i.id] = toResultType(i.result); }));
       setIdeaResults(r);
       setLoading(false);
+      cleanupInvalidStrategyIdeas(app.id).catch(error => {
+        console.warn('Cleanup invalid strategy ideas failed:', error);
+      });
     })();
 
     return () => {
       cancelled = true;
     };
   }, [app, app.id]);
+
+  useEffect(() => {
+    const sessionIdeas = sessions.flatMap(session => session.ideas);
+    const syncFavoriteKeys = () => setFavoriteIdeaKeys(mergeFavoriteKeys(app.id, loadFavoriteKeys(app.id), sessionIdeas));
+    syncFavoriteKeys();
+
+    const handleFavoritesUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ appId?: string }>).detail;
+      if (!detail?.appId || detail.appId === app.id) syncFavoriteKeys();
+    };
+
+    window.addEventListener('focus', syncFavoriteKeys);
+    window.addEventListener('storage', syncFavoriteKeys);
+    window.addEventListener(FAVORITES_UPDATED_EVENT, handleFavoritesUpdated);
+    return () => {
+      window.removeEventListener('focus', syncFavoriteKeys);
+      window.removeEventListener('storage', syncFavoriteKeys);
+      window.removeEventListener(FAVORITES_UPDATED_EVENT, handleFavoritesUpdated);
+    };
+  }, [app.id, sessions]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -948,14 +1022,19 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   }, [selectedWeek, app.id]);
 
   // ===== Count ideas per week (for badges) =====
+  const favoriteSessions = useMemo(
+    () => filterFavoriteSessions(app.id, sessions, favoriteIdeaKeys),
+    [app.id, favoriteIdeaKeys, sessions]
+  );
+
   const weekIdeaCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    sessions.forEach(s => {
+    favoriteSessions.forEach(s => {
       const wk = getWeekKey(s.createdAt);
       counts.set(wk, (counts.get(wk) || 0) + s.ideas.length);
     });
     return counts;
-  }, [sessions]);
+  }, [favoriteSessions]);
 
   // ===== Full weekly timeline: history weeks + current week → year end =====
   const allWeeks = useMemo(() => generateWeekTimeline(Array.from(weekIdeaCounts.keys())), [weekIdeaCounts]);
@@ -971,7 +1050,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       angle: new Set<string>(),
     };
 
-    sessions.forEach(session => {
+    favoriteSessions.forEach(session => {
       session.ideas.forEach(idea => {
         const filters = normalizeFilterSnapshot(idea.filters_snapshot || session.filters);
         (filters.coreUser || []).forEach(value => values.coreUser.add(value));
@@ -989,7 +1068,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         return [level, mergeUniqueLabels(storedOptionValues[level], fromApp, FALLBACK_OPTIONS[level])];
       })
     ) as Record<WorkflowLevel, string[]>;
-  }, [sessions, storedOptionValues]);
+  }, [favoriteSessions, storedOptionValues]);
 
   // Current week key for highlighting
   const currentWeekKey = useMemo(() => getWeekKey(new Date()), []);
@@ -1015,9 +1094,14 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
   // ===== Filter sessions by selected week =====
   const filteredSessions = useMemo(() => {
-    if (selectedWeek === 'all') return sessions;
-    return sessions.filter(s => getWeekKey(s.createdAt) === selectedWeek);
-  }, [sessions, selectedWeek]);
+    if (selectedWeek === 'all') return favoriteSessions;
+    return favoriteSessions.filter(s => getWeekKey(s.createdAt) === selectedWeek);
+  }, [favoriteSessions, selectedWeek]);
+
+  const strategyVisibleIdeaCount = useMemo(
+    () => filteredSessions.reduce((sum, session) => sum + session.ideas.length, 0),
+    [filteredSessions]
+  );
 
   const strategyMapSnapshot = useMemo<StrategyMapState>(() => ({
     version: 1,
@@ -1348,6 +1432,79 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     return new Map(flatNodes.map(item => [item.node.id, item.node] as const));
   }, [flatNodes]);
 
+  useEffect(() => {
+    if (selectedNode && !workflowNodeById.has(selectedNode.id)) {
+      setSelectedNode(null);
+      setActivePath([]);
+    }
+    if (selectedCustomNodeId && !workflowNodeById.has(selectedCustomNodeId)) {
+      setSelectedCustomNodeId(null);
+    }
+  }, [selectedCustomNodeId, selectedNode, workflowNodeById]);
+
+  const nodeOwnStrategyCodeById = useMemo(() => {
+    const counters: Partial<Record<WorkflowLevel, number>> = {};
+    const map = new Map<string, string>();
+    const registryItems = Array.from(workflowNodeRegistry.values()).map((node, index) => ({ node, index }));
+
+    registryItems
+      .filter(({ node }) => node.level !== 'root')
+      .sort((a, b) => {
+        const levelDiff = LEVEL_ORDER.indexOf(a.node.level) - LEVEL_ORDER.indexOf(b.node.level);
+        return levelDiff || a.index - b.index;
+      })
+      .forEach(({ node }) => {
+        const prefix = LEVEL_TO_STRATEGY_PREFIX[node.level];
+        if (!prefix) return;
+
+        counters[node.level] = (counters[node.level] || 0) + 1;
+        map.set(node.id, `${prefix}${counters[node.level]}`);
+      });
+
+    return map;
+  }, [workflowNodeRegistry]);
+
+  const nodePathStrategyCodeById = useMemo(() => {
+    const map = new Map<string, string>();
+    const resolving = new Set<string>();
+
+    const resolve = (nodeId: string): string => {
+      if (map.has(nodeId)) return map.get(nodeId) || '';
+      if (nodeId === 'root') return '';
+      if (resolving.has(nodeId)) return nodeOwnStrategyCodeById.get(nodeId) || '';
+
+      resolving.add(nodeId);
+      const parentId = Array.from(workflowParentAdjacency.get(nodeId) || [])[0] || null;
+      const parentCode = parentId ? resolve(parentId) : '';
+      const ownCode = nodeOwnStrategyCodeById.get(nodeId) || '';
+      const code = `${parentCode}${ownCode}`;
+      map.set(nodeId, code);
+      resolving.delete(nodeId);
+      return code;
+    };
+
+    workflowNodeRegistry.forEach((_, nodeId) => resolve(nodeId));
+    return map;
+  }, [nodeOwnStrategyCodeById, workflowNodeRegistry, workflowParentAdjacency]);
+
+  const getNodeStrategyCode = useCallback((node: WorkflowNode | null | undefined) => {
+    if (!node || node.level === 'root') return '';
+    return nodePathStrategyCodeById.get(node.id) || '';
+  }, [nodePathStrategyCodeById]);
+
+  const getNodeOwnStrategyCode = useCallback((node: WorkflowNode | null | undefined) => {
+    if (!node || node.level === 'root') return '';
+    return nodeOwnStrategyCodeById.get(node.id) || '';
+  }, [nodeOwnStrategyCodeById]);
+
+  const getNodeOwnStrategyCodeRows = useCallback((node: WorkflowNode | null | undefined) => {
+    if (!node || node.level === 'root') return [];
+    const code = getNodeOwnStrategyCode(node);
+    if (!code) return [];
+    const field = BRANCH_FILTER_FIELDS.find(item => item.level === node.level);
+    return [`${code} = ${field?.label || node.level}: ${node.label}`];
+  }, [getNodeOwnStrategyCode]);
+
   const workflowFlatNodeById = useMemo(() => {
     return new Map(flatNodes.map(item => [item.node.id, item] as const));
   }, [flatNodes]);
@@ -1365,7 +1522,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     }
 
     const maxRight = Math.max(...flatNodes.map(({ absX }) => absX + NODE_W / 2), LEVEL_LABEL_W - 12) + 24;
-    const maxBottom = Math.max(...flatNodes.map(({ absY }) => absY + NODE_H)) + 24;
+    const maxBottom = Math.max(...flatNodes.map(({ node, absY }) => (
+      absY + NODE_H + (node.level === 'angle' ? FORMULA_NODE_GAP + FORMULA_NODE_H : 0)
+    ))) + 24;
     const minX = 12;
     const minY = 16;
 
@@ -1615,6 +1774,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     if (!normalizedMapSearchQuery) return [];
     return flatNodes.filter(({ node }) => {
       const searchable = [
+        getNodeStrategyCode(node),
+        getNodeOwnStrategyCode(node),
         node.label,
         node.level,
         node.filters?.coreUser?.join(' '),
@@ -1626,7 +1787,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       ].filter(Boolean).join(' ');
       return normalizeWorkflowKeyPart(searchable).includes(normalizedMapSearchQuery);
     });
-  }, [flatNodes, normalizedMapSearchQuery]);
+  }, [flatNodes, getNodeOwnStrategyCode, getNodeStrategyCode, normalizedMapSearchQuery]);
   const searchMatchNodeIds = useMemo(() => new Set(searchMatches.map(({ node }) => node.id)), [searchMatches]);
 
   const handleViewportWheelAt = useCallback((clientX: number, clientY: number, deltaY: number) => {
@@ -1783,6 +1944,20 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     setSelectedNode(node);
   };
 
+  const openWorkflowNode = (nodeId: string) => {
+    focusWorkflowNode(nodeId);
+    const node = workflowNodeById.get(nodeId);
+    if (!node) return;
+
+    if (isTreeNode(node)) {
+      setSelectedCustomNodeId(null);
+      handleNodeClick(node);
+    } else {
+      setSelectedCustomNodeId(node.id);
+      setSelectedNode(null);
+    }
+  };
+
   const getWorkflowNodeFilters = useCallback((nodeId: string | null | undefined) => {
     if (!nodeId) return {};
     const node = workflowNodeById.get(nodeId);
@@ -1909,6 +2084,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     setCustomNodes(prev => [...prev, customNode]);
     setSelectedCustomNodeId(customNode.id);
     setSelectedNode(null);
+    void persistWorkflowOptionValue(level, customNode.label);
     return customNode.id;
   };
 
@@ -2041,7 +2217,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     await updateIdeaResult(ideaId, result);
   };
 
-  const isHigh = (nodeId: string) => activePath.length === 0 || activePath.includes(nodeId);
+  const hasFocusedBranch = activePath.length > 0 || Boolean(selectedCustomNodeId);
+  const isHigh = (nodeId: string) => !hasFocusedBranch || activePath.includes(nodeId);
 
   const selectedCustomNode = selectedCustomNodeId
     ? customNodes.find(node => node.id === selectedCustomNodeId) || null
@@ -2051,14 +2228,18 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     : null;
   const activeCreateFilters = selectedTreeFilters || selectedCustomNode?.filters || null;
   const canCreateFromBranch = !!activeCreateFilters && Object.keys(activeCreateFilters).length > 0;
-  const selectedIdeaIds = useMemo(
-    () => (selectedNode?.ideas || []).map(idea => idea.id).filter(Boolean),
+  const selectedNodeIdeas = useMemo(
+    () => collectTreeNodeIdeas(selectedNode),
     [selectedNode]
+  );
+  const selectedIdeaIds = useMemo(
+    () => selectedNodeIdeas.map(idea => idea.id).filter(Boolean),
+    [selectedNodeIdeas]
   );
   const selectedIdeaIdsKey = selectedIdeaIds.join('|');
   const detailIdeas = useMemo(
-    () => (selectedNode?.ideas || []).map(idea => ideaDetailCache[idea.id] || idea),
-    [ideaDetailCache, selectedNode]
+    () => selectedNodeIdeas.map(idea => ideaDetailCache[idea.id] || idea),
+    [ideaDetailCache, selectedNodeIdeas]
   );
   const detailLabel = selectedNode?.label || '';
   const detailIdeaCount = selectedNode?.ideaCount || detailIdeas.length;
@@ -2069,6 +2250,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     : null;
   const selectedBranchStatusTheme = selectedBranchStatus ? BRANCH_STATUS_THEME[selectedBranchStatus] : null;
   const selectedBranchLevelTheme = selectedBranchNode ? LEVEL_COLORS[selectedBranchNode.level] : null;
+  const selectedBranchStrategyCode = getNodeOwnStrategyCode(selectedBranchNode);
+  const selectedBranchStrategyCodeRows = getNodeOwnStrategyCodeRows(selectedBranchNode);
   const selectedBranchFilterRows = BRANCH_FILTER_FIELDS.map(field => {
     const values = activeCreateFilters?.[field.key];
     const cleanValues = Array.isArray(values)
@@ -2312,6 +2495,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${strategyStateBadge.className}`}>
           {strategyStateBadge.label}
         </span>
+        <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-bold text-rose-600">
+          Map idea đã thả tim ({strategyVisibleIdeaCount})
+        </span>
         <button
           onClick={() => {
             autoFitPendingRef.current = true;
@@ -2378,6 +2564,14 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 {selectedBranchStatusTheme && (
                   <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${selectedBranchStatusTheme.chipClassName}`}>
                     <span>{selectedBranchStatusTheme.icon}</span> {selectedBranchStatusTheme.label}
+                  </span>
+                )}
+                {selectedBranchStrategyCode && (
+                  <span
+                    className="rounded-full border border-slate-900 bg-slate-900 px-2.5 py-1 font-mono text-[10px] font-black text-white"
+                    title={selectedBranchStrategyCodeRows.join(' | ')}
+                  >
+                    {selectedBranchStrategyCode}
                   </span>
                 )}
                 <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500">
@@ -2465,23 +2659,23 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       </div>
 
       {/* Vertical connectable workflow */}
-      <div className="flex items-center justify-between gap-3 mb-3 px-1 flex-wrap">
+      <div className="mb-3 space-y-2 px-1">
         <div>
           <p className="text-xs font-bold text-gray-700">Vertical Strategy Map</p>
           <p className="text-[11px] text-gray-400">Level chạy theo trục Y. Kéo từ chấm dưới ra canvas để mở picker node kế tiếp.</p>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="relative w-full sm:w-72">
+        <div className="flex w-full flex-wrap items-center justify-start gap-1.5">
+          <div className="relative w-full sm:w-72 lg:w-80">
             <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={mapSearchQuery}
               onChange={(event) => setMapSearchQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && searchMatches[0]) {
-                  focusWorkflowNode(searchMatches[0].node.id);
+                  openWorkflowNode(searchMatches[0].node.id);
                 }
               }}
-              placeholder="Tìm painpoint, angle, visual..."
+              placeholder="Tìm mã A1B1, painpoint, angle..."
               className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-8 pr-8 text-[11px] font-semibold text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-50"
             />
             {mapSearchQuery && (
@@ -2496,7 +2690,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           </div>
           {mapSearchQuery && (
             <button
-              onClick={() => searchMatches[0] && focusWorkflowNode(searchMatches[0].node.id)}
+              onClick={() => searchMatches[0] && openWorkflowNode(searchMatches[0].node.id)}
               disabled={searchMatches.length === 0}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
             >
@@ -2516,6 +2710,15 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               </button>
             );
           })}
+          {onOpenResults && (
+            <button
+              onClick={onOpenResults}
+              className="order-last ml-auto inline-flex items-center gap-2 rounded-xl border border-indigo-500 bg-indigo-600 px-4 py-2 text-[12px] font-black text-white shadow-md shadow-indigo-200 transition-all hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-lg"
+            >
+              <Eye size={15} />
+              Xem kết quả ({strategyVisibleIdeaCount})
+            </button>
+          )}
         </div>
       </div>
 
@@ -2633,28 +2836,29 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                   const branchStatus = branchStatusByNodeId.get(line.childId) || 'ungenerated';
                   const branchTheme = BRANCH_STATUS_THEME[branchStatus];
                   const isActive = line.custom
-                    ? selectedCustomNodeId === line.parentId || selectedCustomNodeId === line.childId || dragConnection?.fromId === line.parentId
-                    : activePath.length === 0 || (activePath.includes(line.parentId) && activePath.includes(line.childId));
+                    ? !hasFocusedBranch || selectedCustomNodeId === line.parentId || selectedCustomNodeId === line.childId || dragConnection?.fromId === line.parentId
+                    : !hasFocusedBranch || (activePath.includes(line.parentId) && activePath.includes(line.childId));
+                  const lineOpacity = isActive ? 1 : 0.12;
                   return (
                     <g key={`${line.parentId}-${line.childId}-${i}`}>
                       <path
                         d={`M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`}
                         fill="none"
                         stroke="#cbd5e1"
-                        strokeWidth={isActive ? (line.custom ? 5.8 : 5) : 2.6}
+                        strokeWidth={isActive ? (line.custom ? 6.2 : 5.4) : 1.4}
                         strokeDasharray={line.custom ? '7 6' : branchTheme.lineDash}
                         strokeLinecap="round"
-                        style={{ opacity: isActive ? 0.5 : 0.22 }}
+                        style={{ opacity: isActive ? 0.58 : 0.06 }}
                       />
                       <path
                         d={`M ${line.x1} ${line.y1} C ${line.x1} ${midY}, ${line.x2} ${midY}, ${line.x2} ${line.y2}`}
                         fill="none"
                         stroke={branchTheme.line}
-                        strokeWidth={isActive ? (line.custom ? 3.4 : 3) : 1.7}
+                        strokeWidth={isActive ? (line.custom ? 3.6 : 3.2) : 1.1}
                         strokeDasharray={line.custom ? '7 6' : branchTheme.lineDash}
                         strokeLinecap="round"
                         className="transition-all duration-300"
-                        style={{ opacity: isActive ? 0.95 : 0.3 }}
+                        style={{ opacity: isActive ? 0.98 : lineOpacity }}
                       />
                       {isActive && (
                         <>
@@ -2664,6 +2868,30 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                             fill={LEVEL_COLORS[line.childLevel]?.accent || '#94a3b8'} opacity={0.8} />
                         </>
                       )}
+                    </g>
+                  );
+                })}
+                {flatNodes.map(({ node, absX, absY }) => {
+                  if (node.level !== 'angle') return null;
+                  const formulaCode = getNodeStrategyCode(node);
+                  if (!formulaCode) return null;
+                  const style = LEVEL_COLORS[node.level];
+                  const isSearchMatched = searchMatchNodeIds.has(node.id);
+                  const highlighted = isHigh(node.id) || isSearchMatched;
+                  const y1 = absY + NODE_H + 8;
+                  const y2 = absY + NODE_H + FORMULA_NODE_GAP;
+
+                  return (
+                    <g key={`formula-edge-${node.id}`}>
+                      <path
+                        d={`M ${absX} ${y1} L ${absX} ${y2}`}
+                        fill="none"
+                        stroke={style.accent}
+                        strokeWidth={highlighted ? 2.8 : 1.4}
+                        strokeLinecap="round"
+                        opacity={highlighted ? 0.8 : 0.1}
+                      />
+                      <circle cx={absX} cy={y2} r={highlighted ? 3.8 : 2.5} fill={style.accent} opacity={highlighted ? 0.88 : 0.14} />
                     </g>
                   );
                 })}
@@ -2716,10 +2944,13 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               {flatNodes.map(({ node, absX, absY }) => {
                 const style = LEVEL_COLORS[node.level];
                 const treeNode = isTreeNode(node) ? node : null;
-                const highlighted = treeNode ? isHigh(node.id) : selectedCustomNodeId === node.id || activePath.length === 0;
+                const highlighted = treeNode ? isHigh(node.id) : !hasFocusedBranch || selectedCustomNodeId === node.id;
                 const isSelected = selectedNode?.id === node.id || selectedCustomNodeId === node.id;
                 const isSearchMatched = searchMatchNodeIds.has(node.id);
+                const isDimmed = hasFocusedBranch && !highlighted && !isSearchMatched;
                 const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
+                const strategyCode = getNodeOwnStrategyCode(node);
+                const strategyCodeRows = getNodeOwnStrategyCodeRows(node);
                 const branchStatus = branchStatusByNodeId.get(node.id) || 'ungenerated';
                 const branchTheme = BRANCH_STATUS_THEME[branchStatus];
                 const canHideNode = node.id !== 'root';
@@ -2759,8 +2990,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                       width: NODE_W,
                       height: NODE_H,
                       zIndex: isSelected ? 20 : isSearchMatched ? 16 : highlighted ? 10 : 1,
-                      opacity: highlighted || isSearchMatched ? 1 : 0.88,
-                      transform: draggedCustomNodeId === node.id ? 'scale(1.02)' : 'scale(1)',
+                      opacity: isDimmed ? 0.24 : 1,
+                      filter: isDimmed ? 'grayscale(0.65) saturate(0.55)' : 'none',
+                      transform: draggedCustomNodeId === node.id ? 'scale(1.02)' : isSelected ? 'scale(1.035)' : 'scale(1)',
                     }}
                   >
                     <button
@@ -2776,9 +3008,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                         background: style.bg,
                         border: `2px solid ${isSelected || isSearchMatched ? style.accent : style.border}`,
                         boxShadow: isSelected
-                          ? `0 0 0 3px ${style.accent}22, 0 8px 24px ${style.accent}20`
+                          ? `0 0 0 4px ${style.accent}30, 0 12px 30px ${style.accent}28`
                           : isSearchMatched ? `0 0 0 4px ${style.accent}22, 0 10px 26px ${style.accent}18`
-                          : highlighted ? `0 2px 8px rgba(0,0,0,0.06)` : `0 1px 4px rgba(0,0,0,0.04)`,
+                          : highlighted ? `0 4px 14px rgba(15,23,42,0.10)` : `0 1px 4px rgba(0,0,0,0.04)`,
                       }}
                     >
                       <div className="absolute inset-0 pointer-events-none" style={{ background: branchTheme.overlay }} />
@@ -2796,6 +3028,14 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                             {displayLabel}
                           </span>
                         </div>
+                        {strategyCode && (
+                          <span
+                            className="mb-1 rounded-full bg-slate-900 px-2 py-0.5 font-mono text-[9px] font-black text-white"
+                            title={strategyCodeRows.join(' | ')}
+                          >
+                            {strategyCode}
+                          </span>
+                        )}
                         <div className="flex items-center gap-1">
                           <span
                             className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -2851,6 +3091,44 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                     >
                       {dragConnection?.fromId === node.id && <Link2 size={8} className="text-white" />}
                     </button>
+                  </div>
+                );
+              })}
+              {flatNodes.map(({ node, absX, absY }) => {
+                if (node.level !== 'angle') return null;
+                const formulaCode = getNodeStrategyCode(node);
+                if (!formulaCode) return null;
+                const style = LEVEL_COLORS[node.level];
+                const isSearchMatched = searchMatchNodeIds.has(node.id);
+                const isSelected = selectedNode?.id === node.id || selectedCustomNodeId === node.id;
+                const highlighted = isHigh(node.id) || isSearchMatched;
+                const isDimmed = hasFocusedBranch && !highlighted;
+
+                return (
+                  <div
+                    key={`formula-card-${node.id}`}
+                    className="absolute flex flex-col items-center justify-center rounded-xl border bg-white px-3 shadow-sm transition-all duration-300"
+                    style={{
+                      left: absX - FORMULA_NODE_W / 2,
+                      top: absY + NODE_H + FORMULA_NODE_GAP,
+                      width: FORMULA_NODE_W,
+                      height: FORMULA_NODE_H,
+                      borderColor: isSelected || isSearchMatched ? style.accent : style.border,
+                      boxShadow: isSelected || isSearchMatched
+                        ? `0 0 0 3px ${style.accent}20, 0 8px 18px ${style.accent}18`
+                        : '0 2px 8px rgba(15, 23, 42, 0.08)',
+                      zIndex: isSelected || isSearchMatched ? 19 : 8,
+                      opacity: isDimmed ? 0.22 : 1,
+                      filter: isDimmed ? 'grayscale(0.6) saturate(0.55)' : 'none',
+                    }}
+                    title={`Công thức nhánh: ${formulaCode}`}
+                  >
+                    <span className="text-[7px] font-black uppercase tracking-[0.14em] text-slate-400 leading-none">
+                      Công thức nhánh
+                    </span>
+                    <span className="mt-1 max-w-full truncate font-mono text-[10px] font-black text-slate-900 leading-none">
+                      {formulaCode}
+                    </span>
                   </div>
                 );
               })}
@@ -3032,6 +3310,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
             {detailIdeas.map((idea) => {
               const c = idea.content;
               const result = ideaResults[idea.id] || toResultType(idea.result);
+              const ideaStrategyCode = c?.meta?.strategyCode || '';
               return (
                 <div key={idea.id} className="border border-gray-100 rounded-xl bg-gradient-to-br from-white to-gray-50/50 overflow-hidden hover:shadow-md transition-shadow">
                   <div className="p-4">
@@ -3050,7 +3329,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                         ))}
                       </div>
                     </div>
-                    <p className="text-[10px] text-gray-400 mb-3">{idea.duration} · {new Date(idea.created_at).toLocaleDateString('vi-VN')}</p>
+                    <p className="text-[10px] text-gray-400 mb-3">
+                      {ideaStrategyCode && <span className="mr-2 rounded bg-slate-900 px-1.5 py-0.5 font-mono font-black text-white">{ideaStrategyCode}</span>}
+                      {idea.duration} · {new Date(idea.created_at).toLocaleDateString('vi-VN')}
+                    </p>
 
                     {c?.hook?.script && (
                       <div className="bg-rose-50/60 rounded-lg p-3 border border-rose-100 mb-2">

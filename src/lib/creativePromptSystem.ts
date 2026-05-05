@@ -98,6 +98,12 @@ function trimWords(text: string, maxWords: number): string {
   return words.length > maxWords ? words.slice(0, maxWords).join(' ') : text;
 }
 
+function stripOverlayTimePrefix(text: string): string {
+  return text
+    .replace(/^\s*(?:sec\s*)?\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?\s*s?\s*:\s*/i, '')
+    .trim();
+}
+
 export function estimateHookDurationSeconds(input: {
   voice?: unknown;
   voiceover?: unknown;
@@ -1267,8 +1273,122 @@ function creativeTypeForTrack(track: string): string {
   return 'UGC';
 }
 
+const HOOK_ARCHETYPE_LABELS: Record<string, string> = {
+  'stat shock': 'Stat Shock',
+  'body signal question': 'Body Signal Question',
+  'whisper secret': 'Whisper Secret',
+  'pov narrative': 'POV Narrative',
+  'counter intuitive': 'Counter-intuitive',
+  'social proof': 'Social Proof',
+  'social proof fomo': 'Social Proof',
+  'zoom problem': 'Zoom Problem',
+  'before after demo': 'Before After Demo',
+  'question accusation': 'Question Accusation',
+  'speed ease claim': 'Speed Ease Claim',
+  'tutorial opener': 'Tutorial Opener',
+  'trend jack': 'Trend Jack',
+  'result first': 'Result First',
+  'demo magic': 'Demo-Magic',
+  'identity personal': 'Identity Personal',
+  'challenge dare': 'Challenge Dare',
+};
+
+function getCategoryHookRules(category?: string): { allowed: Set<string>; tier1: Set<string>; label: string } | null {
+  const normalized = normalizeCompareText(category || '');
+  const healthAllowed = new Set(['stat shock', 'body signal question', 'whisper secret', 'pov narrative', 'counter intuitive', 'social proof']);
+  const utilityAllowed = new Set([
+    'before after demo',
+    'zoom problem',
+    'question accusation',
+    'tutorial opener',
+    'demo magic',
+    'speed ease claim',
+    'trend jack',
+    'stat shock',
+    'counter intuitive',
+    'pov narrative',
+    'social proof',
+  ]);
+  const aiAllowed = new Set([
+    'result first',
+    'before after demo',
+    'trend jack',
+    'demo magic',
+    'identity personal',
+    'challenge dare',
+    'social proof',
+    'social proof fomo',
+    'pov narrative',
+  ]);
+
+  if (/\bhealth\b|\bfitness\b|\bcardiac\b|\bheart\b/.test(normalized)) {
+    return {
+      label: 'Health & Fitness',
+      allowed: healthAllowed,
+      tier1: new Set(['stat shock', 'body signal question', 'whisper secret']),
+    };
+  }
+  if (/\butility\b|\bcleaner\b|\bstorage\b|\bphone\b/.test(normalized)) {
+    return {
+      label: 'Utility',
+      allowed: utilityAllowed,
+      tier1: new Set(['before after demo', 'zoom problem', 'question accusation']),
+    };
+  }
+  if (/\bai\b|\bartificial intelligence\b/.test(normalized)) {
+    return {
+      label: 'AI App',
+      allowed: aiAllowed,
+      tier1: new Set(['result first', 'before after demo', 'trend jack']),
+    };
+  }
+  return null;
+}
+
+function getCategoryHookPreference(category?: string, context = ''): string[] {
+  const rules = getCategoryHookRules(category);
+  const normalizedContext = normalizeCompareText(context);
+  if (!rules) return Object.keys(HOOK_ARCHETYPE_LABELS);
+
+  if (rules.label === 'AI App') {
+    if (/\btrend\b|\btiktok\b|\breel\b|\bviral\b/.test(normalizedContext)) {
+      return ['trend jack', 'result first', 'before after demo', 'demo magic', 'identity personal', 'challenge dare', 'pov narrative', 'social proof'];
+    }
+    if (/\bcompare\b|\bcomparison\b|\bbefore\b|\bafter\b/.test(normalizedContext)) {
+      return ['before after demo', 'result first', 'trend jack', 'demo magic', 'identity personal', 'challenge dare', 'pov narrative', 'social proof'];
+    }
+    return ['result first', 'before after demo', 'trend jack', 'demo magic', 'identity personal', 'challenge dare', 'pov narrative', 'social proof'];
+  }
+
+  if (rules.label === 'Utility') {
+    return ['before after demo', 'zoom problem', 'question accusation', 'tutorial opener', 'demo magic', 'speed ease claim', 'trend jack', 'stat shock', 'counter intuitive', 'pov narrative', 'social proof'];
+  }
+
+  return ['stat shock', 'body signal question', 'whisper secret', 'pov narrative', 'counter intuitive', 'social proof'];
+}
+
+function coerceHookArchetypeForCategory(category: string | undefined, value: string, used: Set<string>, context: string): string {
+  const rules = getCategoryHookRules(category);
+  const currentKey = normalizeCompareText(value);
+  if (currentKey && (!rules || rules.allowed.has(currentKey)) && !used.has(currentKey)) {
+    used.add(currentKey);
+    return HOOK_ARCHETYPE_LABELS[currentKey] || value;
+  }
+
+  const preference = getCategoryHookPreference(category, context);
+  const fallbackKey = preference.find(key => !used.has(key) && (!rules || rules.allowed.has(key)));
+  if (fallbackKey) {
+    used.add(fallbackKey);
+    return HOOK_ARCHETYPE_LABELS[fallbackKey] || fallbackKey;
+  }
+
+  if (currentKey) used.add(currentKey);
+  return value || 'POV Narrative';
+}
+
 function createBriefValidationErrors(input: {
   id: string;
+  category?: string;
   angleType: string;
   hookPrimary: string;
   hookAlt1: string;
@@ -1351,6 +1471,16 @@ function createBriefValidationErrors(input: {
     .filter(Boolean);
   if (hookArchetypes.length === 3 && new Set(hookArchetypes).size !== 3) {
     errors.push('primary and alternative hooks must use 3 different archetypes');
+  }
+  const categoryHookRules = getCategoryHookRules(input.category);
+  if (categoryHookRules && hookArchetypes.length > 0) {
+    const invalidArchetypes = hookArchetypes.filter(archetype => !categoryHookRules.allowed.has(archetype));
+    if (invalidArchetypes.length > 0) {
+      errors.push(`hook_archetype must match ${categoryHookRules.label}; invalid: ${Array.from(new Set(invalidArchetypes)).join(', ')}`);
+    }
+    if (!hookArchetypes.some(archetype => categoryHookRules.tier1.has(archetype))) {
+      errors.push(`at least one hook variation must use a Tier 1 ${categoryHookRules.label} archetype`);
+    }
   }
   const isV7 = false;
   const isBuilder = false;
@@ -1463,6 +1593,7 @@ export function normalizeCreativeBriefOutput(
   defaults: {
     duration: string;
     appName: string;
+    category?: string;
     pillar?: string;
     coreUser?: string;
     emotion?: string;
@@ -1525,9 +1656,26 @@ export function normalizeCreativeBriefOutput(
         let hookPrimary = readFirstText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'hook_primary', 'hookPrimary']);
         let hookAlt1 = readFirstText(ideaRecord, ['hook_alt_1_text', 'hookAlt1Text', 'hook_alt_1', 'hookAlt1']);
         let hookAlt2 = readFirstText(ideaRecord, ['hook_alt_2_text', 'hookAlt2Text', 'hook_alt_2', 'hookAlt2']);
-        const hookArchetype = readFirstText(ideaRecord, ['hook_archetype', 'hookArchetype']);
-        const hookAlt1Archetype = readFirstText(ideaRecord, ['hook_alt_1_archetype', 'hookAlt1Archetype']);
-        const hookAlt2Archetype = readFirstText(ideaRecord, ['hook_alt_2_archetype', 'hookAlt2Archetype']);
+        const hookArchetypeContext = `${normalizedAngleType} ${angleName} ${angleDesc} ${hookPrimary} ${hookAlt1} ${hookAlt2}`;
+        const usedHookArchetypes = new Set<string>();
+        const hookArchetype = coerceHookArchetypeForCategory(
+          defaults.category,
+          readFirstText(ideaRecord, ['hook_archetype', 'hookArchetype']),
+          usedHookArchetypes,
+          hookArchetypeContext
+        );
+        const hookAlt1Archetype = coerceHookArchetypeForCategory(
+          defaults.category,
+          readFirstText(ideaRecord, ['hook_alt_1_archetype', 'hookAlt1Archetype']),
+          usedHookArchetypes,
+          hookArchetypeContext
+        );
+        const hookAlt2Archetype = coerceHookArchetypeForCategory(
+          defaults.category,
+          readFirstText(ideaRecord, ['hook_alt_2_archetype', 'hookAlt2Archetype']),
+          usedHookArchetypes,
+          hookArchetypeContext
+        );
         const hookAlt1Vo = readFirstText(ideaRecord, ['hook_alt_1_vo', 'hookAlt1Vo']);
         const hookAlt2Vo = readFirstText(ideaRecord, ['hook_alt_2_vo', 'hookAlt2Vo']);
         const emotionJourney = readFirstText(ideaRecord, ['emotion_journey', 'emotionJourney']);
@@ -1654,6 +1802,7 @@ export function normalizeCreativeBriefOutput(
 
         const errors = createBriefValidationErrors({
           id,
+          category: defaults.category,
           angleType: normalizedAngleType,
           hookPrimary,
           hookAlt1,
@@ -1697,8 +1846,8 @@ export function normalizeCreativeBriefOutput(
 
         acceptedHookPrimaries.push(hookPrimary);
         acceptedOpeningScenes.push(visualScene1);
-        const bodyOverlay = textOverlays.find(line => /\b(?:6|9|12|15)\b/.test(line)) || hookAlt1;
-        const ctaOverlay = textOverlays.find(line => /\b(?:18|22|25)\b/.test(line)) || ctaText;
+        const bodyOverlay = stripOverlayTimePrefix(textOverlays.find(line => /\b(?:6|9|12|15)\b/.test(line)) || hookAlt1);
+        const ctaOverlay = stripOverlayTimePrefix(textOverlays.find(line => /\b(?:18|22|25)\b/.test(line)) || ctaText);
 
         items.push(normalizeIdeaOutput({
           id,

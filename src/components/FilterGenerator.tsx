@@ -1,13 +1,22 @@
 'use client';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2, Hash, Eye } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Copy, ListOrdered, FileEdit, Filter, Users, Zap, Lightbulb, Layout, Settings2, Trash2, Pencil, ChevronRight, Save, Video, Globe, Sparkles, RotateCcw, Compass, AlertTriangle, Heart, Image, ExternalLink, ChevronDown, ChevronUp, TrendingUp, Link2, Hash } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 import { CATEGORY_SEEDS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
-import { buildFavoriteFingerprint, loadFavoriteKeys, saveFavoriteKeys } from '@/lib/favorites';
+import { buildIdeaFavoriteFingerprint, buildIdeaFavoriteKeys, hasFavoriteIdeaKey, loadFavoriteKeys, mergeFavoriteKeys, notifyFavoriteKeysChanged, saveFavoriteKeys } from '@/lib/favorites';
 import { authenticatedFetch } from '@/lib/authFetch';
+import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
+import { isInvalidStrategyIdea } from '@/lib/ideaStructure';
 import { formatHealthMetricConflictMessage, getHealthMetricConflict } from '@/lib/filterConsistency';
+import {
+  buildStrategyCodeLookup,
+  formatStrategyCodeForFilterGroups,
+  formatStrategyValueGroup,
+  getStrategyCodeMapRows,
+  getStrategyGroupCodeMapRows,
+} from '@/lib/strategyCodes';
 
 interface FilterGeneratorProps {
   app: AppProject;
@@ -110,6 +119,21 @@ function getGeneratedIdeaDedupKey(item: GeneratedIdeaApiItem) {
     item.body?.text_overlay,
   ];
   return normalizeCompareText(parts.filter(Boolean).join(' | ')).slice(0, 220);
+}
+
+function getIdeaBuilderVersion(item: GeneratedIdeaApiItem | GeneratedIdea) {
+  return 'content' in item
+    ? item.content?.meta?.builderVersion
+    : item.meta?.builderVersion;
+}
+
+function isLocalFallbackIdea(item: GeneratedIdeaApiItem | GeneratedIdea) {
+  const version = normalizeCompareText(getIdeaBuilderVersion(item));
+  return version.includes('fallback') || version.includes('local backup') || version.includes('template');
+}
+
+function isVisibleStrategyIdea(idea: GeneratedIdea) {
+  return !isLocalFallbackIdea(idea) && !isInvalidStrategyIdea(idea);
 }
 
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
@@ -224,6 +248,93 @@ function getCoreUserDisplayValue(item: string): string {
     : item;
 }
 
+type AngleTypeLabel = 'Fact' | 'POV' | 'Comparison' | 'Demo' | 'Trend' | 'Social' | 'Curiosity' | 'Relief' | 'Tutorial' | 'Challenge' | 'Fear';
+
+function normalizeAngleTypeLabel(value: string): AngleTypeLabel | null {
+  const normalized = normalizeCompareText(value);
+  if (/\bfact\b/.test(normalized)) return 'Fact';
+  if (/\bpov\b/.test(normalized)) return 'POV';
+  if (/\bcomparison\b|\bcompare\b|so sanh/.test(normalized)) return 'Comparison';
+  if (/\bdemo\b|trinh dien/.test(normalized)) return 'Demo';
+  if (/\btrend\b|viral/.test(normalized)) return 'Trend';
+  if (/\bsocial\b|proof\b/.test(normalized)) return 'Social';
+  if (/\bcuriosity\b|to mo/.test(normalized)) return 'Curiosity';
+  if (/\brelief\b|an tam|nhe nhom/.test(normalized)) return 'Relief';
+  if (/\btutorial\b|huong dan/.test(normalized)) return 'Tutorial';
+  if (/\bchallenge\b|thu thach/.test(normalized)) return 'Challenge';
+  if (/\bfear\b|shock\b|so hai/.test(normalized)) return 'Fear';
+  return null;
+}
+
+function getAppCategoryKind(app: AppProject): 'health' | 'utility' | 'ai' | 'other' {
+  const normalized = normalizeCompareText(`${app.category} ${app.name}`);
+  if (/\bhealth\b|\bfitness\b|\btim\b|\bheart\b|\bblood\b|\bsuc khoe\b/.test(normalized)) return 'health';
+  if (/\butility\b|\bcleaner\b|\bstorage\b|\bphone\b|\btool\b|\bclean\b/.test(normalized)) return 'utility';
+  if (/\bai\b|\bphoto editor\b|\bavatar\b|\binterior\b|\bdesign\b|\bdecor\b|\broom\b|\bnha\b|\bphong\b/.test(normalized)) return 'ai';
+  return 'other';
+}
+
+function getDefaultAngleTypePlan(app: AppProject, count: number): AngleTypeLabel[] {
+  const kind = getAppCategoryKind(app);
+  const base: AngleTypeLabel[] =
+    kind === 'health' ? ['Fact', 'POV', 'Social', 'Curiosity', 'Relief'] :
+    kind === 'utility' ? ['Comparison', 'Demo', 'Tutorial', 'Fact', 'POV'] :
+    kind === 'ai' ? ['Trend', 'Demo', 'Challenge', 'Social', 'POV'] :
+    ['Fact', 'POV', 'Comparison', 'Demo', 'Trend'];
+
+  return Array.from({ length: count }, (_, index) => base[index % base.length]);
+}
+
+function parseAngleTypeLocks(angleRequest = '', count: number): Map<number, AngleTypeLabel> {
+  const locks = new Map<number, AngleTypeLabel>();
+  const normalized = normalizeCompareText(angleRequest);
+  const pattern = /angle\s*(\d+)\D{0,32}(fact|pov|comparison|compare|demo|trend|social|curiosity|relief|tutorial|challenge|fear|shock)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(normalized)) !== null) {
+    const index = Number(match[1]) - 1;
+    const type = normalizeAngleTypeLabel(match[2]);
+    if (Number.isInteger(index) && index >= 0 && index < count && type) {
+      locks.set(index, type);
+    }
+  }
+
+  if (locks.size === 0 && /\b(?:bat buoc|required|force)\b/.test(normalized)) {
+    const directType = normalizeAngleTypeLabel(normalized);
+    if (directType) locks.set(0, directType);
+  }
+
+  return locks;
+}
+
+function buildStrategicAutoAngles(brief: CompactCreativeBrief | null, app: AppProject, fallbackAngles: string[], autoAngleCount: number): string[] {
+  if (fallbackAngles.length > 0) {
+    const defaultPlan = getDefaultAngleTypePlan(app, fallbackAngles.length);
+    const hasRequiredType = fallbackAngles.some(angle => normalizeAngleTypeLabel(angle) === defaultPlan[0]);
+    return fallbackAngles.map((angle, index) => {
+      const detectedType = normalizeAngleTypeLabel(angle);
+      const requiredType = detectedType || (!hasRequiredType && index === 0 ? defaultPlan[0] : defaultPlan[index]);
+      return `ANGLE TYPE ${requiredType}: ${angle}. This angle must look visually different from other angles.`;
+    });
+  }
+
+  const requestedCount = Math.min(5, Math.max(1, brief?.requestedAngleCount || autoAngleCount || 0));
+  if (requestedCount <= 0) return [];
+
+  const defaultPlan = getDefaultAngleTypePlan(app, requestedCount);
+  const locks = parseAngleTypeLocks(brief?.angleRequest || '', requestedCount);
+  const used = new Set<AngleTypeLabel>();
+
+  return Array.from({ length: requestedCount }, (_, index) => {
+    const lockedType = locks.get(index);
+    const plannedType = lockedType || defaultPlan.find(type => !used.has(type)) || defaultPlan[index % defaultPlan.length];
+    used.add(plannedType);
+    return `AUTO ANGLE ${index + 1}/${requestedCount} - REQUIRED angle_type: ${plannedType}. ` +
+      `Choose one ${plannedType} angle from the brief and pain point. Do not repeat other AUTO ANGLE slots. ` +
+      `Operator angle request: ${brief?.angleRequest || 'AI chooses the strongest distinct angles'}. App context: ${app.name} / ${app.category}.`;
+  });
+}
+
 function normalizeVisualTypeValue(value: string): string | null {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return null;
@@ -238,6 +349,125 @@ function normalizeVisualTypeValue(value: string): string | null {
 function sanitizeVisualTypes(items: string[]) {
   const mapped = items.map(normalizeVisualTypeValue).filter((item): item is string => Boolean(item));
   return mapped.length ? [...new Set(mapped)] : [];
+}
+
+type CompactCreativeBrief = {
+  coreUser?: string;
+  painPoint?: string;
+  emotion?: string;
+  angleRequest?: string;
+  market?: string;
+  requestedAngleCount?: number;
+  ideasPerAngle?: number;
+};
+
+const COMPACT_BRIEF_LABELS = [
+  'Core User',
+  'Pain points?',
+  'Painpoint',
+  'Pain point',
+  'Emotion Trigger',
+  'Emotion',
+  'Angles?',
+  'Market',
+  'Thị trường',
+  'Thi truong',
+  'Output',
+  'Hãy tạo',
+  'Hay tao',
+];
+
+function extractCompactBriefSection(text: string, labelPattern: string): string {
+  const stopLabels = COMPACT_BRIEF_LABELS.join('|');
+  const match = text.match(new RegExp(`(?:^|\\n)\\s*(?:${labelPattern})\\s*[:：]?\\s*([\\s\\S]*?)(?=\\n\\s*(?:${stopLabels})\\s*[:：]?|$)`, 'i'));
+  return match?.[1]?.trim() || '';
+}
+
+function parseCompactCreativeBrief(text: string): CompactCreativeBrief | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  const normalized = normalizeCompareText(raw);
+  const looksLikeBrief = /\bcore user\b/.test(normalized)
+    || /\bpain points?\b/.test(normalized)
+    || /\bemotion trigger\b/.test(normalized)
+    || /\bangles?\b/.test(normalized);
+  if (!looksLikeBrief) return null;
+
+  const coreUser = extractCompactBriefSection(raw, 'Core User');
+  const painPoint = extractCompactBriefSection(raw, 'Pain points?|Painpoint|Pain point');
+  const emotion = extractCompactBriefSection(raw, 'Emotion Trigger|Emotion');
+  const angleRequest = extractCompactBriefSection(raw, 'Angles?');
+  const market = extractCompactBriefSection(raw, 'Market|Thị trường|Thi truong')
+    || raw.match(/(?:Thị trường|Thi truong|Market)\s+([^\n.]+)/i)?.[1]?.trim()
+    || '';
+  const requestedAngleCount = Number(
+    angleRequest.match(/(\d+)\s*angles?/i)?.[1]
+      || raw.match(/(\d+)\s*angles?/i)?.[1]
+      || normalized.match(/(\d+)\s*angles?/i)?.[1]
+      || 0
+  ) || undefined;
+  const ideasPerAngle = Number(
+    raw.match(/(\d+)\s*ideas?\s*(?:cho|per|mỗi|moi)?\s*(?:mỗi|moi|per)?\s*angles?/i)?.[1]
+      || normalized.match(/(\d+)\s*ideas?\s*(?:cho|per|moi)?\s*(?:moi|per)?\s*angles?/i)?.[1]
+      || raw.match(/(\d+)\s*ideas?/i)?.[1]
+      || normalized.match(/(\d+)\s*ideas?/i)?.[1]
+      || 0
+  ) || undefined;
+
+  return {
+    coreUser: coreUser || undefined,
+    painPoint: painPoint || undefined,
+    emotion: emotion || undefined,
+    angleRequest: angleRequest || undefined,
+    market: market || undefined,
+    requestedAngleCount,
+    ideasPerAngle,
+  };
+}
+
+function inferCompactSolution(app: AppProject, brief: CompactCreativeBrief | null): string {
+  const haystack = normalizeCompareText([
+    app.name,
+    app.category,
+    brief?.coreUser,
+    brief?.painPoint,
+    brief?.angleRequest,
+  ].filter(Boolean).join(' '));
+
+  if (/\b(?:home|house|room|interior|decor|design|furniture|nha|phong|thiet ke|noi that)\b/.test(haystack)) {
+    return 'AI thiết kế lại nhà/phòng từ 1 ảnh -> có nhiều concept nhanh, giảm thời gian và chi phí thuê designer';
+  }
+
+  return `${app.name} tạo kết quả nhanh từ input của user -> lựa chọn gọn hơn, ít công sức hơn`;
+}
+
+function buildCompactGenerationFilters(
+  currentFilters: FilterState,
+  brief: CompactCreativeBrief | null,
+  app: AppProject
+): FilterState {
+  if (!brief) {
+    return {
+      ...currentFilters,
+      visualType: sanitizeVisualTypes(currentFilters.visualType || []),
+    } as FilterState;
+  }
+
+  const next = {
+    ...currentFilters,
+    coreUser: (currentFilters.coreUser || []).length ? currentFilters.coreUser : [brief.coreUser].filter(Boolean) as string[],
+    painPoint: (currentFilters.painPoint || []).length ? currentFilters.painPoint : [brief.painPoint].filter(Boolean) as string[],
+    emotion: (currentFilters.emotion || []).length ? currentFilters.emotion : [brief.emotion].filter(Boolean) as string[],
+    targetMarket: (currentFilters.targetMarket || []).length ? currentFilters.targetMarket : [brief.market || 'Global'].filter(Boolean) as string[],
+    solution: (currentFilters.solution || []).length ? currentFilters.solution : [inferCompactSolution(app, brief)],
+    visualType: sanitizeVisualTypes(currentFilters.visualType || []).length ? sanitizeVisualTypes(currentFilters.visualType || []) : ['UGC'],
+  } as FilterState;
+
+  return next;
+}
+
+function buildCompactAutoAngles(brief: CompactCreativeBrief | null, app: AppProject, fallbackAngles: string[], autoAngleCount: number): string[] {
+  return buildStrategicAutoAngles(brief, app, fallbackAngles, autoAngleCount);
 }
 
 const CATEGORIES_STORAGE_KEY = (appId: string) => `idea_tool_categories_${appId}`;
@@ -631,6 +861,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [progressLabel, setProgressLabel] = useState('');
   const progressRef = useRef<NodeJS.Timeout | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const historyLoadPromiseRef = useRef<Promise<GeneratedIdea[]> | null>(null);
   const [results, setResults] = useState<GeneratedIdea[]>([]);
   const [quantity, setQuantity] = useState(3);
   const [ideaDescription, setIdeaDescription] = useState('');
@@ -638,8 +869,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [editingItemText, setEditingItemText] = useState<{ original: string; current: string } | null>(null);
   const [savedHistory, setSavedHistory] = useState<GeneratedIdea[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [historyWeekFilter, setHistoryWeekFilter] = useState(HISTORY_TODAY);
   const [editingIdea, setEditingIdea] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editBuffer, setEditBuffer] = useState<any>(null);
   const [refiningIdea, setRefiningIdea] = useState<string | null>(null);
   const [refineInstruction, setRefineInstruction] = useState('');
@@ -661,6 +894,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [wizardStep, setWizardStep] = useState(0);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [selectedSeasonMonth, setSelectedSeasonMonth] = useState<string | null>(null);
+  const [autoAngleCount, setAutoAngleCount] = useState(3);
   const [generatingAngles, setGeneratingAngles] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
@@ -764,9 +998,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   useEffect(() => {
     setCategories(loadCategories(app.id));
+    historyLoadPromiseRef.current = null;
+    setSavedHistory([]);
+    setShowHistory(false);
     setHistoryWeekFilter(HISTORY_TODAY);
     loadOptions();
-    loadHistory();
+    loadHistory(true);
   }, [app.id]);
 
   // Auto-fill from Strategy Map → xuyên suốt
@@ -798,10 +1035,17 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   // Auto-load results from DB when entering results screen
   useEffect(() => {
     if (currentScreen === 'f2.1.2' && results.length === 0) {
-      dbService.getIdeas(app.id, { limit: HISTORY_LOAD_LIMIT }).then(ideas => {
-        setResults(ideas);
-        setSavedHistory(ideas);
+      if (savedHistory.length > 0) {
+        setResults(savedHistory);
         setShowHistory(true);
+        return;
+      }
+
+      loadHistory().then(cleanIdeas => {
+        setResults(cleanIdeas);
+        setShowHistory(true);
+      }).catch(error => {
+        console.warn('Load result history failed:', error);
       });
     }
   }, [currentScreen]);
@@ -817,9 +1061,33 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setOptions(prev => mergeOptionSelections({ ...fullOptions, targetMarket: mergedMarket }, prefillFilters || filters));
   };
 
-  const loadHistory = async () => {
-    const ideas = await dbService.getIdeas(app.id, { limit: HISTORY_LOAD_LIMIT });
-    setSavedHistory(ideas);
+  const cleanupHistoryInBackground = useCallback(() => {
+    window.setTimeout(() => {
+      cleanupInvalidStrategyIdeas(app.id).catch(error => {
+        console.warn('Cleanup invalid strategy ideas failed:', error);
+      });
+    }, 0);
+  }, [app.id]);
+
+  const loadHistory = async (force = false) => {
+    if (!force && savedHistory.length > 0) return savedHistory;
+    if (historyLoadPromiseRef.current) return historyLoadPromiseRef.current;
+
+    const request = (async () => {
+      setHistoryLoading(true);
+      const ideas = await dbService.getIdeas(app.id, { limit: HISTORY_LOAD_LIMIT });
+      const cleanIdeas = ideas.filter(isVisibleStrategyIdea);
+      setSavedHistory(cleanIdeas);
+      setFavoriteIdeas(prev => mergeFavoriteKeys(app.id, prev, cleanIdeas));
+      cleanupHistoryInBackground();
+      return cleanIdeas;
+    })().finally(() => {
+      historyLoadPromiseRef.current = null;
+      setHistoryLoading(false);
+    });
+
+    historyLoadPromiseRef.current = request;
+    return request;
   };
 
   useEffect(() => {
@@ -834,18 +1102,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     });
   }, [savedHistory]);
 
-  const getIdeaFavoriteKey = useCallback((idea: GeneratedIdea) => buildFavoriteFingerprint([
-    'filter-generator',
-    app.id,
-    idea.title,
-    idea.duration,
-    idea.content?.hook?.voice,
-    idea.content?.hook?.textOverlay,
-    idea.content?.hook?.script,
-    idea.content?.body?.voice,
-    idea.content?.cta?.voice,
-    idea.content?.cta?.endCard,
-  ]), [app.id]);
+  const getIdeaFavoriteKey = useCallback((idea: GeneratedIdea) => buildIdeaFavoriteFingerprint(app.id, idea), [app.id]);
+  const getAllIdeaFavoriteKeys = useCallback((idea: GeneratedIdea) => buildIdeaFavoriteKeys(app.id, idea), [app.id]);
 
   useEffect(() => {
     setFavoriteIdeas(loadFavoriteKeys(app.id));
@@ -853,7 +1111,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   }, [app.id]);
 
   useEffect(() => {
+    if (savedHistory.length === 0) return;
+    setFavoriteIdeas(prev => mergeFavoriteKeys(app.id, prev, savedHistory));
+  }, [app.id, savedHistory]);
+
+  useEffect(() => {
     saveFavoriteKeys(app.id, favoriteIdeas);
+    notifyFavoriteKeysChanged(app.id);
   }, [app.id, favoriteIdeas]);
 
   // === Category Management ===
@@ -1006,11 +1270,33 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setTimeout(() => setProgressLabel(''), 1500);
   };
 
+  const getGenerationValidationMessage = (filtersToCheck: FilterState, plannedAngles: string[]): string => {
+    if ((filtersToCheck.coreUser || []).length === 0) return 'Chua chon Core User.';
+    if ((filtersToCheck.solution || []).length === 0) return 'Chua chon Tinh nang / Giai phap.';
+    if ((filtersToCheck.emotion || []).length === 0) return 'Chua chon Emotion Trigger.';
+    if (sanitizeVisualTypes(filtersToCheck.visualType || []).length === 0) return 'Chua chon Dang Visual.';
+    if ((filtersToCheck.painPoint || []).length === 0) return 'Chua chon Painpoint.';
+    if (plannedAngles.length === 0) return 'Chua co Angle. Hay chon angle hoac dat so luong angle de AI tu chon.';
+    return '';
+  };
+
   const handleGenerate = async () => {
+    const compactBrief = parseCompactCreativeBrief(ideaDescription);
+    const generationBaseFilters = buildCompactGenerationFilters(filters, compactBrief, app);
+    const selectedAnglesFromFilters = Array.from(new Set((generationBaseFilters.angle || []).map(angle => angle.trim()).filter(Boolean)));
+    const generatedAngleList = buildCompactAutoAngles(compactBrief, app, selectedAnglesFromFilters, autoAngleCount);
+    const anglesToGenerate: Array<string | null> = generatedAngleList.length > 0 ? generatedAngleList : [null];
+    const effectiveQuantity = Math.min(10, Math.max(1, compactBrief?.ideasPerAngle || quantity));
+    const generationValidationMessage = getGenerationValidationMessage(generationBaseFilters, generatedAngleList);
+    if (generationValidationMessage) {
+      setValidationError(generationValidationMessage);
+      setGenerationNotice(null);
+      return;
+    }
     const metricConflict = getHealthMetricConflict({
-      solutionValues: filters.solution,
-      angleValues: filters.angle,
-      painPointValues: filters.painPoint,
+      solutionValues: generationBaseFilters.solution,
+      angleValues: generatedAngleList,
+      painPointValues: generationBaseFilters.painPoint,
     });
 
     if (metricConflict) {
@@ -1037,21 +1323,44 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         return `${i + 1}. "${idea.title}" | type="${c?.creativeType || ''}" | pain="${c?.framework?.painpoint || ''}" | hook="${hookSummary}"`;
       }).join('\n');
 
-      const selectedAngles = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
-      const anglesToGenerate = selectedAngles.length > 0 ? selectedAngles : [null];
-      const maxIdeasPerAngleRequest = 2;
+      const maxIdeasPerAngleRequest = Math.min(5, Math.max(1, effectiveQuantity));
       const sanitizedFilters = {
-        ...filters,
-        visualType: sanitizeVisualTypes(filters.visualType || []),
+        ...generationBaseFilters,
+        visualType: sanitizeVisualTypes(generationBaseFilters.visualType || []),
       } as FilterState;
+      const strategyAngleValues = anglesToGenerate
+        .filter((angle): angle is string => typeof angle === 'string' && angle.trim().length > 0)
+        .map(angle => angle.trim());
+      const strategyCodeSource = {
+        coreUser: [formatStrategyValueGroup(sanitizedFilters.coreUser)].filter(Boolean),
+        solution: [formatStrategyValueGroup(sanitizedFilters.solution)].filter(Boolean),
+        emotion: [formatStrategyValueGroup(sanitizedFilters.emotion)].filter(Boolean),
+        visualType: [formatStrategyValueGroup(sanitizedFilters.visualType)].filter(Boolean),
+        painPoint: [formatStrategyValueGroup(sanitizedFilters.painPoint)].filter(Boolean),
+        angle: strategyAngleValues.length > 0
+          ? strategyAngleValues
+          : [formatStrategyValueGroup(sanitizedFilters.angle)].filter(Boolean),
+      };
+      const strategyCodeLookup = buildStrategyCodeLookup(strategyCodeSource);
+      const strategyCodePromptRows = getStrategyCodeMapRows(strategyCodeSource, strategyCodeLookup);
+      const ideaDescriptionWithStrategyCodes = [
+        ideaDescription,
+        strategyCodePromptRows.length > 0
+          ? [
+              'STRATEGY CODE MAP (for metadata and output reference)',
+              ...strategyCodePromptRows,
+              'Use the matching continuous code like A1B1C1D1E1F1 for each idea.',
+            ].join('\n')
+          : '',
+      ].filter(Boolean).join('\n\n');
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
-        Array.from({ length: Math.ceil(quantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
+        Array.from({ length: Math.ceil(effectiveQuantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
           return {
             selectedAngle: angle,
             angleIndex,
             startIndex,
-            requestQuantity: Math.min(maxIdeasPerAngleRequest, quantity - startIndex),
+            requestQuantity: Math.min(maxIdeasPerAngleRequest, effectiveQuantity - startIndex),
             filtersSnapshot: {
               ...sanitizedFilters,
               angle: angle ? [angle] : [],
@@ -1059,16 +1368,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           };
         })
       );
-      const totalRequestedIdeas = anglesToGenerate.length * quantity;
+      const totalRequestedIdeas = anglesToGenerate.length * effectiveQuantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-      const isGemini3Pro = selectedModel === 'gemini-3-pro';
-      const maxConcurrent = Math.min(isGemini3Pro ? 3 : 5, generationTasks.length);
-      const maxAttemptsPerAngle = 4;
+      const maxConcurrent = Math.min(3, generationTasks.length);
+      const maxAttemptsPerAngle = 1;
       const failedGenerationMessages: string[] = [];
-      const getAttemptModel = (attempt: number) => {
-        if (isGemini3Pro && attempt > 1) return 'gpt-5.4-mini';
-        return selectedModel || '';
-      };
+      const getAttemptModel = () => selectedModel || '';
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
 
@@ -1114,12 +1419,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
         const attemptRequest = async (attempt = 1) => {
           const missingQuantity = Math.max(1, task.requestQuantity - collected.length);
-          const attemptModel = getAttemptModel(attempt);
-          const retryModelLabel = attempt > 1 && isGemini3Pro ? ' bằng GPT mini' : '';
+          const attemptModel = getAttemptModel();
+          const retryModelLabel = '';
           const retryLabel = attempt > 1 ? ` (thử lại ${attempt}/${maxAttemptsPerAngle}${retryModelLabel})` : '';
           const rangeStart = task.startIndex + collected.length + 1;
           const rangeEnd = task.startIndex + collected.length + missingQuantity;
-          setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${rangeStart}-${rangeEnd}/${quantity}${retryLabel}...`);
+          setProgressLabel(`Đang tạo angle ${task.angleIndex + 1}/${anglesToGenerate.length}, idea ${rangeStart}-${rangeEnd}/${effectiveQuantity}${retryLabel}...`);
 
           try {
             const inRunIdeasSummary = buildInRunIdeasSummary();
@@ -1140,10 +1445,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 config: {
                   quantity: missingQuantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
-                  ideaDescription,
+                  ideaDescription: ideaDescriptionWithStrategyCodes,
                   visualType: sanitizeVisualTypes(task.filtersSnapshot.visualType || [])[0] || 'UGC',
                   seasonalVisualContext,
-                  totalVariations: quantity,
+                  totalVariations: effectiveQuantity,
                   variationIndex: task.startIndex + collected.length + 1,
                   startIndex: task.startIndex + collected.length,
                   angleIndex: task.angleIndex + 1,
@@ -1164,6 +1469,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const result = await res.json().catch(() => null) as GenerateIdeasApiResponse | null;
             const aiItems = res.ok && result?.success && Array.isArray(result.data) ? result.data : [];
             if (!res.ok || !result?.success || aiItems.length === 0) {
+              const warningDetail = result?.meta?.warnings?.filter(Boolean).slice(0, 2).join(' | ');
+              const apiError = result?.error || `Angle ${task.angleIndex + 1} không có idea hợp lệ từ API.`;
+              if (warningDetail) throw new Error(`${apiError} ${warningDetail}`);
               throw new Error(result?.error || `Angle ${task.angleIndex + 1} không có idea hợp lệ từ API.`);
             }
 
@@ -1257,21 +1565,35 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         : null;
 
       if (allData.length === 0) {
-        throw new Error(
-          `Không tạo được idea hợp lệ nào. ${recentFailureMessages.join(' | ')}`
-        );
+        const message = `Không tạo được idea hợp lệ nào. ${recentFailureMessages.join(' | ')}`;
+        setValidationError(message);
+        alert(message);
+        stopProgress();
+        setIsGenerating(false);
+        return;
       }
 
       let ideas: { title: string; duration: string; content: IdeaContent; filtersSnapshot: FilterState }[];
 
       if (result.success && result.data?.length > 0) {
-        ideas = result.data.map(({ item, filtersSnapshot }) => ({
+        ideas = result.data.map(({ item, filtersSnapshot }) => {
+          const strategyCode = formatStrategyCodeForFilterGroups(filtersSnapshot, strategyCodeLookup);
+          const strategyCodeMap = getStrategyGroupCodeMapRows(filtersSnapshot, strategyCodeLookup);
+
+          return {
           title: item.title || `Ý tưởng: ${app.name}`,
           duration: item.duration || IDEA_RUNTIME_GUIDANCE,
           filtersSnapshot,
           content: {
             creativeType: item.creativeType || '',
-            meta: item.meta || undefined,
+            meta: {
+              ...(item.meta || {}),
+              generatedId: (item as Record<string, unknown>).id || (item.meta as Record<string, unknown> | undefined)?.generatedId,
+              scriptTitle: item.title || (item.meta as Record<string, unknown> | undefined)?.scriptTitle,
+              strategyCode,
+              strategyCodes: strategyCode ? strategyCode.match(/[A-F]\d+/g) || [strategyCode] : [],
+              strategyCodeMap,
+            },
             framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
             explanation: item.explanation || '',
             hook: {
@@ -1304,9 +1626,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               endCard: item.cta?.endCard || item.cta?.end_card || '',
             },
           },
-        }));
+        };
+        });
       } else {
-        throw new Error(result.error || 'API không trả idea hợp lệ.');
+        const message = result.error || 'API không trả idea hợp lệ.';
+        setValidationError(message);
+        alert(message);
+        stopProgress();
+        setIsGenerating(false);
+        return;
       }
 
       const tempResults: GeneratedIdea[] = ideas.map((idea, idx) => ({
@@ -1331,15 +1659,38 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
 
       const sessionId = crypto.randomUUID();
-      dbService.saveIdeas(app.id, ideas, sessionId, filters).then(async saved => {
+      dbService.saveIdeas(app.id, ideas, sessionId, generationBaseFilters).then(async saved => {
         if (saved.length === 0) {
           alert('Tạo idea xong nhưng lưu database thất bại. Kết quả tạm vẫn đang hiển thị, hãy thử tạo/lưu lại trước khi refresh.');
           return;
         }
 
+        const liveFavoriteKeys = loadFavoriteKeys(app.id);
+        const savedWithFavoriteMeta = saved.map(idea => {
+          if (!hasFavoriteIdeaKey(app.id, idea, liveFavoriteKeys)) return idea;
+          const keys = buildIdeaFavoriteKeys(app.id, idea);
+          return {
+            ...idea,
+            content: {
+              ...idea.content,
+              meta: {
+                ...(idea.content?.meta || {}),
+                isFavorite: true,
+                favoriteKeys: keys,
+                favoriteMarkedAt: new Date().toISOString(),
+              },
+            },
+          };
+        });
+
         const tempIds = new Set(tempResults.map(t => t.id));
-        setResults(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
-        setSavedHistory(prev => [...saved, ...prev.filter(r => !tempIds.has(r.id))]);
+        setResults(prev => [...savedWithFavoriteMeta, ...prev.filter(r => !tempIds.has(r.id))]);
+        setSavedHistory(prev => [...savedWithFavoriteMeta, ...prev.filter(r => !tempIds.has(r.id))]);
+        savedWithFavoriteMeta
+          .filter(idea => idea.content?.meta?.isFavorite)
+          .forEach(idea => {
+            void dbService.updateIdeaFavorite(app.id, idea, true, buildIdeaFavoriteKeys(app.id, idea));
+          });
 
         try {
           const response = await authenticatedFetch('/api/learn-app', {
@@ -1370,10 +1721,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       });
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      console.error('Generate failed:', err);
       const message = err instanceof Error && err.message
         ? err.message
         : 'Có lỗi khi tạo ý tưởng. Vui lòng thử lại.';
+      console.warn('[generate-ideas] handled client failure:', message);
+      setValidationError(message);
       alert(message);
       stopProgress();
       setIsGenerating(false);
@@ -1382,6 +1734,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
 
   /* Legacy copy helper retained during transition.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const c = idea.content as any;
     const fw = c.framework;
     const meta = c.meta || {};
@@ -1399,7 +1752,97 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   */
+  const getReadableScriptLabel = (idea: GeneratedIdea, fallbackIndex?: number) => {
+    const content = idea.content as IdeaContent;
+    const meta = (content.meta || {}) as NonNullable<IdeaContent['meta']> & Record<string, unknown>;
+    const sourceId = String(meta.generatedId || meta.id || '');
+    const scriptIndex = sourceId.match(/A(\d+)-I(\d+)/);
+    const rawTitle = String(meta.scriptTitle || idea.title || 'Tên kịch bản');
+    const title = rawTitle.replace(/^Kịch bản\s+\d+(?:\.\d+)?:\s*/i, '').trim() || rawTitle;
+
+    if (scriptIndex) {
+      return `Kịch bản ${Number(scriptIndex[1]) + 1}.${Number(scriptIndex[2]) + 1}: ${title}`;
+    }
+
+    if (typeof fallbackIndex === 'number') {
+      return `Kịch bản ${fallbackIndex + 1}: ${title}`;
+    }
+
+    return `Kịch bản: ${title}`;
+  };
+
   const handleCopy = (idea: GeneratedIdea) => {
+    {
+    const content = idea.content as IdeaContent;
+    const framework = content.framework || {};
+    const meta = (content.meta || {}) as NonNullable<IdeaContent['meta']> & Record<string, unknown>;
+    const hookSpeech = getSectionSpokenLines(content.hook);
+    const bodySpeech = getSectionSpokenLines(content.body);
+    const ctaSpeech = getSectionSpokenLines(content.cta);
+    const hookVisual = normalizeHookTimingLabel(content.hook?.visual || content.hook?.script || '');
+    const bodyVisual = content.body?.visual || content.body?.script || '';
+    const ctaVisual = content.cta?.visual || content.cta?.script || '';
+    const hookText = content.hook?.textOverlay || content.hook?.text || meta.hookPrimary || '';
+    const bodyText = content.body?.textOverlay || content.body?.text || '';
+    const ctaText = content.cta?.textOverlay || content.cta?.text || content.cta?.voice || '';
+    const angleName = String(meta.angleName || meta.referencePattern || 'Góc khai thác');
+    const angleType = String(meta.angleType || content.creativeType || '');
+    const angleDesc = String(meta.angleDesc || content.explanation || '');
+    const scriptIndex = String(idea.id || '').match(/A(\d+)-I(\d+)/);
+    const readableScriptLabel = getReadableScriptLabel(idea);
+    const strategyCode = String(meta.strategyCode || '');
+    const strategyCodeMap = Array.isArray(meta.strategyCodeMap)
+      ? meta.strategyCodeMap.map(item => String(item || '').trim()).filter(Boolean)
+      : [];
+    const scriptLabel = scriptIndex
+      ? `Kịch bản ${Number(scriptIndex[1]) + 1}.${Number(scriptIndex[2]) + 1}: ${idea.title}`
+      : `Kịch bản: ${idea.title}`;
+    void scriptLabel;
+    const hookVariants = [
+      meta.hookPrimary ? `[Chính] ${meta.hookPrimary}` : '',
+      meta.hookAlt1 ? `[Phụ 1] ${meta.hookAlt1}` : '',
+      meta.hookAlt2 ? `[Phụ 2] ${meta.hookAlt2}` : '',
+    ].filter(Boolean).join('\n');
+    const hookVisualIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
+    const mainBodyVoiceover = bodySpeech.voiceover || content.body?.voice || '';
+    const finalCtaText = ctaText || ctaSpeech.voiceover || content.cta?.endCard || '';
+
+    const readableText = [
+      'TÌNH HUỐNG GỐC (PAIN POINT)',
+      framework.painpoint || '',
+      '',
+      `ANGLE: ${angleName}${angleType ? ` (${angleType})` : ''}`,
+      angleDesc ? `Mục tiêu: ${angleDesc}` : '',
+      '',
+      readableScriptLabel,
+      strategyCode ? `Mã chiến lược: ${strategyCode}` : '',
+      strategyCodeMap.length > 0 ? `Map: ${strategyCodeMap.join(' | ')}` : '',
+      '',
+      'Hook (5s đầu):',
+      hookVisual || '',
+      hookText && !hookVisualIncludesCopy ? `Text hiện: "${hookText}"` : '',
+      hookSpeech.characterSpeech ? `Lời nhân vật: "${hookSpeech.characterSpeech}"` : '',
+      hookSpeech.voiceover && !hookVisualIncludesCopy ? `Voiceover: "${hookSpeech.voiceover}"` : '',
+      hookVariants ? `Biến thể hook:\n${hookVariants}` : '',
+      '',
+      bodyVisual ? `Diễn biến (Body): ${bodyVisual}` : 'Diễn biến (Body):',
+      bodyText ? `Text body: "${bodyText}"` : '',
+      bodySpeech.characterSpeech ? `Lời nhân vật: "${bodySpeech.characterSpeech}"` : '',
+      mainBodyVoiceover ? `Voiceover chính: "${mainBodyVoiceover}"` : '',
+      '',
+      finalCtaText ? `Kêu gọi hành động (CTA): ${finalCtaText}` : 'Kêu gọi hành động (CTA):',
+      ctaVisual ? `Visual CTA: ${ctaVisual}` : '',
+      ctaSpeech.voiceover && ctaSpeech.voiceover !== finalCtaText ? `Voiceover CTA: "${ctaSpeech.voiceover}"` : '',
+      content.cta?.endCard && content.cta.endCard !== finalCtaText ? `Màn hình kết: ${content.cta.endCard}` : '',
+      meta.visualRefNotes ? `Ghi chú quay dựng: ${meta.visualRefNotes}` : '',
+      meta.dontDo ? `Không làm: ${meta.dontDo}` : '',
+    ].filter(line => String(line).trim()).join('\n');
+
+    navigator.clipboard.writeText(readableText);
+    return;
+    }
+
+/*
     const content = idea.content as IdeaContent;
     const framework = content.framework;
     const meta = content.meta;
@@ -1469,6 +1912,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     ];
 
     navigator.clipboard.writeText(sections.join('\n'));
+*/
   };
   const cleanPreviewText = (value: unknown) => {
     if (typeof value !== 'string') return '';
@@ -1529,15 +1973,27 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     return cleanPreviewText(meta.builderVersion).toLowerCase() === 'prompt_system_builder_html_v1';
   };
 
-  const normalizeHookTimingLabel = (value: string) => value
-    .replace(/\b(?:second|sec|giây)\s*0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s?\b/gi, '0-3s')
-    .replace(/\b0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s\b/gi, '0-3s')
-    .replace(/\b8\s*[-–]\s*12\s*s\b/gi, '0-3s');
+  const normalizeHookTimingLabel = (value: string) => value;
 
   const getHookDurationSeconds = (hook: Partial<IdeaContent['hook']> | IdeaApiSection | Record<string, unknown> | undefined): number => {
     const rawHook = (hook || {}) as Record<string, unknown> & IdeaApiSection;
-    const timingSource = cleanPreviewText(rawHook.visual ?? rawHook.script ?? rawHook.textOverlay ?? rawHook.text);
-    if (/\b(?:0\s*[-–]\s*(?:3|8|10|12)|8\s*[-–]\s*12)(?:\s*\/\s*12)?\s*s?\b/i.test(timingSource)) {
+    const rawTimingSource = String(rawHook.visual ?? rawHook.script ?? rawHook.textOverlay ?? rawHook.text ?? '');
+    const timingSource = cleanPreviewText(rawTimingSource);
+    const explicitRanges = Array.from(rawTimingSource.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*(\d+(?:[.,]\d+)?)\s*s?/gi))
+      .map(match => Number(match[2].replace(',', '.')))
+      .filter(value => Number.isFinite(value));
+    const explicitDuration = explicitRanges.length ? Math.max(...explicitRanges) : NaN;
+    if (Number.isFinite(explicitDuration) && explicitDuration >= 3 && explicitDuration <= 30) {
+      return Math.round(explicitDuration);
+    }
+    if (
+      /\b(?:sec\s*)?0\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*5\s*s?\b/i.test(rawTimingSource)
+      || /\b0\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*1[.,]?5\s*s?\b/i.test(rawTimingSource)
+      || /\b3[.,]?5\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*5\s*s?\b/i.test(rawTimingSource)
+    ) {
+      return 5;
+    }
+    if (/\b0\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*3(?:\s*\/\s*3)?\s*s?\b/i.test(timingSource)) {
       return 3;
     }
     const rawDuration = rawHook.durationSeconds ?? rawHook.duration_seconds ?? rawHook.hookDurationSeconds ?? rawHook.hook_duration_seconds;
@@ -1576,9 +2032,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const startEditIdea = (idea: GeneratedIdea) => {
     setEditingIdea(idea.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const c = idea.content as any;
     setEditBuffer({
-      title: idea.title,
+      title: idea.title || '',
       explanation: c.explanation || '',
       hook: { durationSeconds: getHookDurationSeconds(c.hook), script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', visual: c.hook?.visual || '', text: c.hook?.text || '', characterSpeech: getSectionCharacterSpeech(c.hook), voiceover: getSectionVoiceover(c.hook), voice: c.hook?.voice || '' },
       body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', visual: c.body?.visual || '', text: c.body?.text || '', characterSpeech: getSectionCharacterSpeech(c.body), voiceover: getSectionVoiceover(c.body), voice: c.body?.voice || '' },
@@ -1631,7 +2088,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setSavedHistory(removeIdea);
     setFavoriteIdeas(prev => {
       const next = new Set(prev);
-      next.delete(ideaKey);
+      getAllIdeaFavoriteKeys(idea).forEach(key => next.delete(key));
       return next;
     });
     setExpandedIdeas(prev => {
@@ -1648,6 +2105,48 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       setRefineInstruction('');
     }
   };
+
+  const patchIdeaFavoriteMeta = useCallback((ideaId: string, isFavorite: boolean, favoriteKeys: string[]) => {
+    const patch = (list: GeneratedIdea[]) => list.map(item => {
+      if (item.id !== ideaId) return item;
+      return {
+        ...item,
+        content: {
+          ...item.content,
+          meta: {
+            ...(item.content?.meta || {}),
+            isFavorite,
+            favoriteKeys: isFavorite ? favoriteKeys : [],
+            favoriteMarkedAt: isFavorite ? new Date().toISOString() : null,
+          },
+        },
+      };
+    });
+
+    setResults(patch);
+    setSavedHistory(patch);
+  }, []);
+
+  const handleToggleFavoriteIdea = useCallback((idea: GeneratedIdea, currentlyFavorite: boolean, ideaFavoriteKeys: string[]) => {
+    const nextFavorite = !currentlyFavorite;
+    const keys = ideaFavoriteKeys.length > 0 ? ideaFavoriteKeys : getAllIdeaFavoriteKeys(idea);
+
+    setFavoriteIdeas(prev => {
+      const next = new Set(prev);
+      keys.forEach(key => {
+        if (nextFavorite) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+
+    patchIdeaFavoriteMeta(idea.id, nextFavorite, keys);
+    void dbService.updateIdeaFavorite(app.id, idea, nextFavorite, keys).then(saved => {
+      if (!saved) {
+        console.warn('Favorite idea DB update failed:', idea.id);
+      }
+    });
+  }, [app.id, getAllIdeaFavoriteKeys, patchIdeaFavoriteMeta]);
 
   const historyWeekOptions = useMemo(() => {
     const dayCounts = new Map<string, number>();
@@ -1716,9 +2215,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const filteredHistoryCount = filteredHistory.length;
   const favoriteCount = useMemo(() => {
     const favoriteSource = showHistory ? filteredHistory : (results.length > 0 ? results : savedHistory);
-    const keys = new Set(favoriteSource.map(getIdeaFavoriteKey).filter(key => favoriteIdeas.has(key)));
+    const keys = new Set(
+      favoriteSource
+        .filter(idea => hasFavoriteIdeaKey(app.id, idea, favoriteIdeas))
+        .map(getIdeaFavoriteKey)
+    );
     return keys.size;
-  }, [favoriteIdeas, filteredHistory, getIdeaFavoriteKey, results, savedHistory, showHistory]);
+  }, [app.id, favoriteIdeas, filteredHistory, getIdeaFavoriteKey, results, savedHistory, showHistory]);
 
   useEffect(() => {
     if (favoriteCount === 0 && showFavoriteIdeas) {
@@ -1729,8 +2232,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const visibleResults = useMemo(() => {
     const source = showHistory ? filteredHistory : results;
     if (!showFavoriteIdeas) return source;
-    return source.filter(idea => favoriteIdeas.has(getIdeaFavoriteKey(idea)));
-  }, [favoriteIdeas, filteredHistory, getIdeaFavoriteKey, results, showFavoriteIdeas, showHistory]);
+    return source.filter(idea => hasFavoriteIdeaKey(app.id, idea, favoriteIdeas));
+  }, [app.id, favoriteIdeas, filteredHistory, results, showFavoriteIdeas, showHistory]);
 
   const seasonalVisualContext = useMemo<SeasonalVisualContext | null>(() => {
     const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
@@ -1765,31 +2268,42 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     };
   }, [selectedSeason, selectedSeasonMonth, selectedSeasonInsights, selectedSeasonEvents]);
 
-  const selectedAngleCount = Math.max(1, Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean))).length);
+  const selectedAngleCount = Math.max(1, Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean))).length || autoAngleCount);
   const totalIdeasToGenerate = selectedAngleCount * quantity;
-
-  const handleOpenResults = () => {
-    setShowHistory(results.length === 0 && savedHistory.length > 0);
-    setScreen('f2.1.2');
-  };
 
   const WIZARD_STEPS = [
     { label: 'Core User & PSP', icon: Users, categories: ['coreUser', 'solution'], required: ['coreUser', 'solution'] },
-    { label: 'Emotion & Visual', icon: Target, categories: ['emotion', 'visualType'], required: ['emotion'] },
+    { label: 'Emotion & Visual', icon: Target, categories: ['emotion', 'visualType'], required: ['emotion', 'visualType'] },
     { label: 'Painpoint', icon: Zap, categories: ['painPoint'], required: ['painPoint'] },
-    { label: 'Angle', icon: Compass, categories: ['angle', 'targetMarket'], required: ['angle'] },
+    { label: 'Angle', icon: Compass, categories: ['angle'], required: [] },
     { label: 'Cấu hình & Tạo', icon: Settings2, categories: [], required: [] },
   ];
 
   // === Validation: check if current step has required selections ===
   const isStepValid = (stepIndex: number): boolean => {
     const step = WIZARD_STEPS[stepIndex];
+    if (stepIndex === 0) {
+      return (filters.coreUser || []).length > 0 && (filters.solution || []).length > 0;
+    }
+    if (stepIndex === 3) {
+      return (filters.angle || []).length > 0 || autoAngleCount > 0;
+    }
     if (!step?.required || step.required.length === 0) return true;
     return step.required.every(cat => (filters[cat] || []).length > 0);
   };
 
   const getStepValidationMessage = (stepIndex: number): string => {
     const step = WIZARD_STEPS[stepIndex];
+    if (stepIndex === 0) {
+      if ((filters.coreUser || []).length === 0) return 'Vui long chon it nhat 1 Core User';
+      if ((filters.solution || []).length === 0) return 'Vui long chon Tinh nang / Giai phap';
+      return '';
+    }
+    if (stepIndex === 3) {
+      return (filters.angle || []).length > 0 || autoAngleCount > 0
+        ? ''
+        : 'Vui long chon Angle hoac de AI tu chon so luong angle';
+    }
     if (!step?.required) return '';
     const missing = step.required.filter(cat => (filters[cat] || []).length === 0);
     if (missing.length === 0) return '';
@@ -1813,6 +2327,26 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     }
     setValidationError(null);
     setWizardStep(wizardStep + 1);
+  };
+
+  const handleJumpToStep = (targetStep: number) => {
+    if (targetStep <= wizardStep) {
+      setWizardStep(targetStep);
+      setValidationError(null);
+      return;
+    }
+
+    for (let index = 0; index < targetStep; index += 1) {
+      if (!isStepValid(index)) {
+        setWizardStep(index);
+        setValidationError(getStepValidationMessage(index));
+        setTimeout(() => setValidationError(null), 3000);
+        return;
+      }
+    }
+
+    setWizardStep(targetStep);
+    setValidationError(null);
   };
 
   // === Auto-generate angles from selected painpoints ===
@@ -1904,7 +2438,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700">
               <Icon size={16} className={isEditMode ? 'text-teal-600' : 'text-gray-400'} />
               Core User
-              <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">4 phần bắt buộc</span>
+              <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">chọn ít nhất 1</span>
             </h3>
             <div className="flex items-center gap-1.5">
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${(filters.coreUser || []).length > 0 ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-400'}`}>
@@ -2417,6 +2951,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 {generatingAngles ? 'Đang tạo...' : 'Gen Angle từ Painpoint'}
               </button>
             </div>
+            <div className="mb-3 rounded-xl border border-teal-100 bg-white/75 p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-teal-700">AI tự chọn angle nếu không chọn chip</div>
+                  <p className="mt-1 text-xs text-teal-600">
+                    Health luôn có Fact. Utility luôn có Comparison/Demo. AI luôn có Trend. Mỗi angle phải có angle_type khác nhau.
+                  </p>
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={autoAngleCount}
+                  onChange={(event) => setAutoAngleCount(Math.min(5, Math.max(1, parseInt(event.target.value, 10) || 1)))}
+                  className="w-full rounded-lg border border-teal-200 bg-white px-3 py-2 text-center text-lg font-bold text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-200 sm:w-24"
+                />
+              </div>
+            </div>
             {(filters.painPoint || []).length === 0 && (
               <div className="flex items-center gap-2 text-amber-600 bg-amber-50 rounded-lg px-3 py-2 text-xs font-medium border border-amber-200">
                 <AlertTriangle size={14} />
@@ -2465,9 +3017,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   <option key={option.key} value={option.key}>{option.label}</option>
                 ))}
               </select>
-            <button onClick={() => setShowHistory(prev => !prev)}
-              className="text-sm flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600">
-              {showHistory ? 'Ẩn Lịch sử' : `📜 Lịch sử (${filteredHistoryCount}/${historyCount})`}
+            <button
+              onClick={async () => {
+                if (showHistory) {
+                  setShowHistory(false);
+                  return;
+                }
+                if (savedHistory.length === 0) await loadHistory();
+                setShowHistory(true);
+              }}
+              disabled={historyLoading}
+              className="text-sm flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600 disabled:cursor-wait disabled:opacity-60">
+              {historyLoading ? 'Đang tải...' : showHistory ? 'Ẩn Lịch sử' : `📜 Lịch sử (${filteredHistoryCount}/${historyCount})`}
             </button>
             </>
           )}
@@ -2511,11 +3072,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       {visibleResults.length > 0 ? (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {visibleResults.map((idea, idx) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const c = idea.content as any;
             const isEditing = editingIdea === idea.id;
             const ideaKey = getIdeaFavoriteKey(idea) || idea.id || `idea-${idx}`;
             const isExpanded = expandedIdeas.has(ideaKey);
-            const isFavorite = favoriteIdeas.has(ideaKey);
+            const ideaFavoriteKeys = getAllIdeaFavoriteKeys(idea);
+            const isFavorite = hasFavoriteIdeaKey(app.id, idea, favoriteIdeas);
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
             const angleTag = Array.isArray(idea.filters_snapshot?.angle) ? idea.filters_snapshot?.angle?.[0] : '';
             const isBuilderIdea = isBuilderIdeaContent(c);
@@ -2524,8 +3087,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
             const primaryHook = c?.meta?.hookPrimary || '';
+            const hookPreviewIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
             const showPrimaryHookLine = cleanPreviewText(primaryHook).toLowerCase() !== cleanPreviewText(hookText).toLowerCase();
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
+            const scriptDisplayLabel = getReadableScriptLabel(idea, idx);
+            const strategyCode = String(c?.meta?.strategyCode || '');
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -2535,10 +3101,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         <input value={editBuffer?.title || ''} onChange={e => setEditBuffer({ ...editBuffer, title: e.target.value })}
                           className="font-bold text-base text-gray-800 mb-1 w-full border-b-2 border-indigo-300 focus:outline-none bg-transparent" />
                       ) : (
-                        <h4 className="font-bold text-base text-gray-900 leading-snug mb-1">{idea.title}</h4>
+                        <h4 className="font-bold text-base text-gray-900 leading-snug mb-1">{scriptDisplayLabel}</h4>
                       )}
                       <div className="flex gap-2 flex-wrap">
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
+                        {strategyCode && <span className="text-[11px] px-2 py-0.5 bg-slate-900 text-white rounded-md font-bold">{strategyCode}</span>}
                         <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
                         {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
                         {angleTag && <span className="text-[11px] px-2 py-0.5 bg-teal-50 text-teal-600 rounded-md">{truncatePreviewText(angleTag, 32)}</span>}
@@ -2576,7 +3143,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   <div className="mb-2 flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => toggleIdeaSet(setFavoriteIdeas, ideaKey)}
+                      onClick={() => handleToggleFavoriteIdea(idea, isFavorite, ideaFavoriteKeys)}
                       className={`h-8 w-8 rounded-md border flex items-center justify-center transition-colors ${isFavorite ? 'border-rose-200 bg-rose-50 text-rose-500' : 'border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50'}`}
                       title={isFavorite ? 'Bỏ khỏi danh sách đã chọn' : 'Đánh dấu đã chọn'}
                     >
@@ -2614,11 +3181,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       </div>
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
-                        <p className="whitespace-pre-line">[VISUAL] {hookVisual || 'Hook visual will appear here.'}</p>
+                        <p className="whitespace-pre-line">{hookVisual || 'Hook visual will appear here.'}</p>
                         {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
-                        {hookSpeech.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
+                        {hookSpeech.voiceover && !hookPreviewIncludesCopy && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
                         {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
-                        {hookText && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
+                        {hookText && !hookPreviewIncludesCopy && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>
                     )}
@@ -2666,17 +3233,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                             });
                             const result = await res.json();
                             if (res.ok && result.success && result.data) {
-                              const refined = result.data;
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              const refined = result.data as any;
                               const newContent = {
                                 ...idea.content,
-                                meta: refined.meta || (idea.content as any).meta,
-                                framework: refined.framework || (idea.content as any).framework,
-                                explanation: refined.explanation || (idea.content as any).explanation,
-                                hook: refined.hook ? { durationSeconds: getHookDurationSeconds(refined.hook), script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.hook), voiceover: getSectionVoiceover(refined.hook), voice: refined.hook.voice || getSectionVoiceover(refined.hook) || getSectionCharacterSpeech(refined.hook), viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : (idea.content as any).hook,
-                                body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.body), voiceover: getSectionVoiceover(refined.body), voice: refined.body.voice || getSectionVoiceover(refined.body) || getSectionCharacterSpeech(refined.body), viTranslation: refined.body.viTranslation || '' } : (idea.content as any).body,
-                                cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', characterSpeech: getSectionCharacterSpeech(refined.cta), voiceover: getSectionVoiceover(refined.cta), voice: refined.cta.voice || getSectionVoiceover(refined.cta) || getSectionCharacterSpeech(refined.cta), text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : (idea.content as any).cta,
+                                meta: refined.meta || idea.content.meta,
+                                framework: refined.framework || idea.content.framework,
+                                explanation: refined.explanation || idea.content.explanation,
+                                hook: refined.hook ? { durationSeconds: getHookDurationSeconds(refined.hook), script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.hook), voiceover: getSectionVoiceover(refined.hook), voice: refined.hook.voice || getSectionVoiceover(refined.hook) || getSectionCharacterSpeech(refined.hook), viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : idea.content.hook,
+                                body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.body), voiceover: getSectionVoiceover(refined.body), voice: refined.body.voice || getSectionVoiceover(refined.body) || getSectionCharacterSpeech(refined.body), viTranslation: refined.body.viTranslation || '' } : idea.content.body,
+                                cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', characterSpeech: getSectionCharacterSpeech(refined.cta), voiceover: getSectionVoiceover(refined.cta), voice: refined.cta.voice || getSectionVoiceover(refined.cta) || getSectionCharacterSpeech(refined.cta), text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : idea.content.cta,
                               };
-                              const newTitle = refined.title || idea.title;
+                              const newTitle = refined.title || idea.title || '';
                                await dbService.updateIdeaContent(idea.id, newTitle, newContent);
                                const updater = (list: GeneratedIdea[]) => list.map(i => i.id === idea.id ? { ...i, title: newTitle, content: newContent } : i);
                                setResults(updater);
@@ -2812,15 +3380,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-800">Tạo Ý Tưởng <span className="text-gray-400 font-normal text-sm">/ {app.name}</span></h1>
         </div>
-        {(results.length > 0 || savedHistory.length > 0) && (
-          <button
-            onClick={handleOpenResults}
-            className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
-          >
-            <Eye size={14} />
-            Xem kết quả ({results.length > 0 ? results.length : (filteredHistoryCount || savedHistory.length)})
-          </button>
-        )}
       </div>
 
       {/* ===== PROGRESS BAR ===== */}
@@ -2837,7 +3396,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     }`} />
                 )}
                 <button
-                  onClick={() => setWizardStep(i)}
+                  onClick={() => handleJumpToStep(i)}
                   className="flex flex-col items-center gap-1.5 group"
                 >
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${isActive

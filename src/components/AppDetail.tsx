@@ -176,7 +176,7 @@ export const AppDetail: React.FC<AppDetailProps> = ({ app, onBack, onNavigate, o
           return;
         }
         onNavigate('f2.1');
-      }} />
+      }} onOpenResults={() => onNavigate('f2.1.2')} />
     </div>
   );
 

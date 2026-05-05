@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { askAI, getAIApiKey, getAIChatCompletionsUrl, getLastAIErrorMessage } from '@/lib/aiClient';
+import { GoogleGenAI } from '@google/genai';
+import { askAI, callAI, getAIApiKey, getAIChatCompletionsUrl, getLastAIErrorMessage } from '@/lib/aiClient';
 import {
   buildCreativeBriefOutputSpec,
   buildFrameworkInjection,
@@ -43,14 +44,42 @@ const PATTERN_INTERRUPT_PATTERN = /(?:\?|\d|=|vs\b|still\b|without\b|stop\b|neve
 const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|heal(?:ed|ing)?|detect disease|replace doctor|medical results?|clinical diagnosis|chẩn đoán|điều trị|chữa(?: khỏi)?|phát hiện bệnh|thay thế bác sĩ|kết quả y tế chính xác)\b/i;
 const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
-const MAX_IDEAS_PER_AI_BATCH = 2;
+const SAFE_HEALTH_BEFORE_AFTER_PATTERN = /\b(?:before\s+(?:checking|measuring|opening|using|logging|tracking)|after\s+(?:checking|measuring|opening|using|logging|tracking)|app\s+(?:screen|ui)|data|chart|graph|trend|history|log|reading|number|reference|wellness|check|tracking|monitoring|camera|phone|bpm|heart\s+rate|blood\s+pressure|ui|screen|trước\s+khi\s+(?:kiểm tra|do|đo|mở|ghi)|sau\s+khi\s+(?:kiểm tra|do|đo|mở|ghi)|màn hình|biểu đồ|dữ liệu|du lieu|chỉ số|chi so|tham chiếu|tham chieu|nhật ký|nhat ky)\b/i;
+const SEVERE_UNSAFE_HEALTH_BEFORE_AFTER_PATTERN = /\b(?:body|face|skin|belly|weight|fat|disease|illness|patient|recovered|recovery|cured|treated|medical\s+outcome|health\s+outcome|symptom\s+(?:improvement|improved|gone|relief|reduced)|normal\s+again|healthy\s+again|cơ thể|co the|khuôn mặt|khuon mat|bụng|bung|cân nặng|can nang|mỡ|mo|khỏi bệnh|khoi benh|hồi phục|hoi phuc|cải thiện|cai thien|kết quả bệnh|ket qua benh)\b/i;
+function hasUnsafeHealthBeforeAfter(text: string): boolean {
+  if (!BEFORE_AFTER_PATTERN.test(text) || !HEALTH_CONTEXT_PATTERN.test(text)) return false;
+
+  const beforeAfterMatches = text.matchAll(new RegExp(BEFORE_AFTER_PATTERN.source, 'gi'));
+  const beforeAfterSnippets = Array.from(beforeAfterMatches).map(match => {
+    const start = Math.max(0, match.index ? match.index - 160 : 0);
+    const end = Math.min(text.length, (match.index || 0) + match[0].length + 220);
+    return text.slice(start, end);
+  });
+
+  if (beforeAfterSnippets.some(snippet => SAFE_HEALTH_BEFORE_AFTER_PATTERN.test(snippet) && !SEVERE_UNSAFE_HEALTH_BEFORE_AFTER_PATTERN.test(snippet))) {
+    return false;
+  }
+
+  if (beforeAfterSnippets.some(snippet => SEVERE_UNSAFE_HEALTH_BEFORE_AFTER_PATTERN.test(snippet))) {
+    return true;
+  }
+
+  return false;
+}
+
+function positiveIntEnv(name: string, fallback: number) {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
-const GENERATE_IDEAS_BATCH_TIMEOUT_MS = 45000;
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = 45000;
-const GENERATE_IDEAS_RETRY_TIMEOUT_MS = 30000;
-const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = 90000;
+const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 60000);
+const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
+const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
-const MAX_IDEA_MODEL_CANDIDATES = 2;
+const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
 const ENABLE_AI_RECOVERY_REFILL = false;
 const ENABLE_LOCAL_FALLBACK_TOPUP = false;
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
@@ -58,6 +87,8 @@ const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
 const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
 const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
+const DIRECT_GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+let directGeminiClient: GoogleGenAI | null = null;
 
 const CREATIVE_ADS_GENERATION_RULES_V7 = `CREATIVE ADS GENERATION RULES (VERSION 7.0)
 ROLE:
@@ -120,6 +151,40 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function sanitizeMedicalClaimText(text: string): string {
+  return text
+    .replace(/\bdiagnos(?:e|is|ing)\b/gi, 'check')
+    .replace(/\bclinical diagnosis\b/gi, 'wellness reference')
+    .replace(/\bmedical results?\b/gi, 'wellness reference')
+    .replace(/\bdetect disease\b/gi, 'notice patterns')
+    .replace(/\breplace doctor\b/gi, 'support your notes')
+    .replace(/\b(?:cure|treat(?:ment|ing)?|heal(?:ed|ing)?)\b/gi, 'track')
+    .replace(/chẩn đoán/gi, 'tham khảo')
+    .replace(/điều trị/gi, 'theo dõi')
+    .replace(/chữa(?: khỏi)?/gi, 'theo dõi')
+    .replace(/phát hiện bệnh/gi, 'nhận ra xu hướng')
+    .replace(/thay thế bác sĩ/gi, 'hỗ trợ ghi chú sức khỏe')
+    .replace(/kết quả y tế chính xác/gi, 'chỉ số tham khảo');
+}
+
+function sanitizeMedicalClaimsInValue(value: unknown): unknown {
+  if (typeof value === 'string') return sanitizeMedicalClaimText(value);
+  if (Array.isArray(value)) return value.map(sanitizeMedicalClaimsInValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+        key,
+        sanitizeMedicalClaimsInValue(child),
+      ])
+    );
+  }
+  return value;
+}
+
+function sanitizeMedicalClaimsInIdea(item: Record<string, unknown>): Record<string, unknown> {
+  return asRecord(sanitizeMedicalClaimsInValue(item));
 }
 
 function normalizeFrameworkVisualFormat(value: string): string {
@@ -312,7 +377,7 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
     errors.push('contains prohibited medical claim language');
   }
 
-  if (BEFORE_AFTER_PATTERN.test(complianceText) && HEALTH_CONTEXT_PATTERN.test(complianceText)) {
+  if (hasUnsafeHealthBeforeAfter(complianceText)) {
     errors.push('contains prohibited before/after health framing');
   }
 
@@ -435,6 +500,31 @@ function validateInteriorDecorClarityOutput(
   return errors;
 }
 
+function inferHookDurationFromTimelineText(text: string): number | null {
+  const ranges = Array.from(text.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*(\d+(?:[.,]\d+)?)\s*s?/gi))
+    .map(match => Number(match[2].replace(',', '.')))
+    .filter(value => Number.isFinite(value));
+  if (ranges.length === 0) return null;
+  const duration = Math.max(...ranges);
+  return duration >= 3 && duration <= 30 ? Math.round(duration * 10) / 10 : null;
+}
+
+function syncHookDurationFromTimeline(item: Record<string, unknown>): Record<string, unknown> {
+  const hook = asRecord(item.hook);
+  const visual = [asText(hook.visual), asText(hook.script)].filter(Boolean).join('\n');
+  const duration = inferHookDurationFromTimelineText(visual);
+  if (!duration) return item;
+
+  return {
+    ...item,
+    hook: {
+      ...hook,
+      durationSeconds: duration,
+      duration_seconds: duration,
+    },
+  };
+}
+
 function normalizeAndValidateIdeas(
   items: unknown[],
   context: {
@@ -453,14 +543,14 @@ function normalizeAndValidateIdeas(
   const invalidReasons: string[] = [];
 
   items.forEach((item, ideaIndex) => {
-    const normalized = repairIdeaTrackingFields(
+    const normalized = syncHookDurationFromTimeline(repairIdeaTrackingFields(
       normalizeIdeaOutput(item, {
         duration: context.duration,
         appName: context.appName,
         pillar: context.pillar,
       }),
       { angleIndex: context.angleIndex, ideaIndex: (context.ideaStartIndex || 0) + ideaIndex, pillar: context.pillar }
-    );
+    ));
     const errors = [
       ...validateIdeaOutput(normalized),
       ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
@@ -531,7 +621,58 @@ function resolveModel(selected?: string): string {
   return map[selected || ''] || 'openai/gpt-4.1';
 }
 
+function getDirectGeminiClient() {
+  if (!DIRECT_GEMINI_API_KEY) return null;
+  if (!directGeminiClient) {
+    directGeminiClient = new GoogleGenAI({ apiKey: DIRECT_GEMINI_API_KEY.trim() });
+  }
+  return directGeminiClient;
+}
+
+function toDirectGeminiModel(model: string) {
+  return model.replace(/^gemini\//, '');
+}
+
+async function callDirectGemini(
+  model: string,
+  prompt: string,
+  options: { systemInstruction: string; temperature: number; maxOutputTokens: number; timeoutMs: number }
+): Promise<string | null> {
+  const client = getDirectGeminiClient();
+  if (!client || !model.startsWith('gemini/')) return null;
+
+  try {
+    const response = await Promise.race([
+      client.models.generateContent({
+        model: toDirectGeminiModel(model),
+        contents: prompt,
+        config: {
+          systemInstruction: options.systemInstruction,
+          temperature: options.temperature,
+          maxOutputTokens: options.maxOutputTokens,
+        },
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`Direct Gemini request timed out after ${Math.round(options.timeoutMs / 1000)} seconds`)), options.timeoutMs);
+      }),
+    ]);
+
+    return response.text || null;
+  } catch (error) {
+    console.warn('[generate-ideas] Direct Gemini failed; falling back to gateway:', error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 function resolveIdeaModels(selected?: string): string[] {
+  if (selected === 'gemini-3-pro') {
+    return [
+      'gemini/gemini-3-pro-preview',
+      'openai/gpt-5.4-mini',
+      'gemini/gemini-2.5-pro',
+    ];
+  }
+
   const primary = resolveModel(selected);
   const fallbackModels = primary.startsWith('gemini/')
     ? [
@@ -1002,7 +1143,7 @@ function getIdeaBatchTimeoutMs(model: string, batchQuantity: number) {
 }
 
 function getIdeaResponseTokenBudget(batchQuantity: number) {
-  return Math.max(3200, batchQuantity * 1800);
+  return Math.max(5500, batchQuantity * 2200);
 }
 
 function trimPromptText(text: string, maxLength = 160) {
@@ -1330,7 +1471,7 @@ function buildFallbackIdeasForFilters(options: {
       duration: options.duration,
       creativeType: selectedVisualFormat,
       meta: {
-        builderVersion: 'creative_idea_engine_v2_1_fallback',
+        builderVersion: 'creative_idea_engine_v2_1_local_backup',
         pillar: painpoint,
         pillarIndex: 0,
         angleName,
@@ -1396,6 +1537,497 @@ function buildFallbackIdeasForFilters(options: {
       { angleIndex: normalizedAngleIndex, ideaIndex: displayIndex, pillar: painpoint }
     );
   });
+}
+
+function hasVietnameseCopyCue(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text)
+    || /\b(?:nguoi|khong|phong|nha|thiet|ke|noi|that|can|muon|nhung|dang|nhin|thay|choang|huyet|tim|nhip|suc|khoe|dien|thoai|anh|video|mien|phi|thu|ngay)\b/.test(normalized);
+}
+
+function inferGenerationCopyLanguage(input: {
+  coreUserValues: string[];
+  painPointValues: string[];
+  emotionValues: string[];
+  angleValues: string[];
+  ideaDescription?: string;
+  targetLang: string;
+}) {
+  const targetLanguage = normalizeOutputLanguageLabel(input.targetLang);
+  if (targetLanguage) return targetLanguage;
+
+  const briefText = [
+    ...input.coreUserValues,
+    ...input.painPointValues,
+    ...input.emotionValues,
+    ...input.angleValues,
+    input.ideaDescription || '',
+  ].join(' ');
+
+  const audienceLanguage = normalizeOutputLanguageLabel(briefText);
+  if (audienceLanguage) return audienceLanguage;
+  if (hasVietnameseCopyCue(briefText)) return 'Vietnamese';
+  return 'Vietnamese';
+}
+
+function normalizeOutputLanguageLabel(value: string): string {
+  const normalized = normalizeCompareText(value);
+  if (!normalized) return '';
+  if (/\b(?:english|en|us|usa|united states|america|american|my|nguoi my|uk|canada|australia)\b/.test(normalized)) return 'English';
+  if (/\b(?:vietnamese|vi|viet|vietnam|viet nam|nguoi viet)\b/.test(normalized)) return 'Vietnamese';
+  if (/\b(?:japanese|jp|japan|nhat|nguoi nhat)\b/.test(normalized)) return 'Japanese';
+  if (/\b(?:korean|ko|korea|han|nguoi han)\b/.test(normalized)) return 'Korean';
+  if (/\b(?:spanish|es|spain|latam|latin|tay ban nha)\b/.test(normalized)) return 'Spanish';
+  if (/\b(?:portuguese|pt|brazil|brasil|bo dao nha)\b/.test(normalized)) return 'Portuguese';
+  if (/\b(?:german|de|germany|deutsch|duc|nguoi duc)\b/.test(normalized)) return 'German';
+  if (/\b(?:french|fr|france|phap|nguoi phap)\b/.test(normalized)) return 'French';
+  if (/\b(?:thai|thailand|thai lan)\b/.test(normalized)) return 'Thai';
+  if (/\b(?:indonesian|indonesia)\b/.test(normalized)) return 'Indonesian';
+  if (/\b(?:malay|malaysia)\b/.test(normalized)) return 'Malay';
+  return '';
+}
+
+function formatTimelineSecond(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(value).replace('.', ',').replace(',', '.');
+}
+
+function inferRequestedHookDurationSeconds(text?: string, fallback = 5): number {
+  const raw = text || '';
+  const normalized = normalizeCompareText(raw);
+  const hasHookCue = /\b(?:hook|opening|mo dau|mở đầu|dau video|first seconds?|giay dau|giây đầu)\b/i.test(raw)
+    || /\b(?:hook|opening|mo dau|dau video|first seconds?|giay dau)\b/.test(normalized);
+  if (!hasHookCue) return fallback;
+
+  const patterns = [
+    /(?:hook|opening|mở đầu|mo dau|đầu video|dau video|first seconds?)\D{0,24}(\d+(?:[.,]\d+)?)\s*(?:s|sec|second|seconds|giây|giay)/i,
+    /(\d+(?:[.,]\d+)?)\s*(?:s|sec|second|seconds|giây|giay)\D{0,24}(?:hook|opening|mở đầu|mo dau|đầu video|dau video|first seconds?)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
+    const parsed = Number(match[1].replace(',', '.'));
+    if (Number.isFinite(parsed) && parsed >= 3 && parsed <= 15) {
+      return Math.round(parsed * 10) / 10;
+    }
+  }
+
+  return fallback;
+}
+
+function buildHookTimelineRows(durationSeconds: number) {
+  if (durationSeconds <= 5) {
+    return {
+      phase1End: 1.5,
+      phase2End: 3.5,
+      finalEnd: 5,
+      row1: '0-1.5s: [visual shock / first frame]',
+      row2: '1.5-3.5s: Text hiện: "[hook_text_overlay]" | Voiceover: "[hook_vo]"',
+      row3: '3.5-5s: [curiosity gap / bridge to body]',
+      example: '0-1.5s: Vietnamese visual shock.\\n1.5-3.5s: Text hiện: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\"\\n3.5-5s: Vietnamese curiosity gap.',
+    };
+  }
+
+  const phase1End = durationSeconds <= 8 ? 2 : 3;
+  const phase2End = durationSeconds <= 8 ? 5 : Math.min(durationSeconds - 3, Math.max(6, Math.round(durationSeconds * 0.6)));
+  const p1 = formatTimelineSecond(phase1End);
+  const p2 = formatTimelineSecond(phase2End);
+  const end = formatTimelineSecond(durationSeconds);
+  return {
+    phase1End,
+    phase2End,
+    finalEnd: durationSeconds,
+    row1: `0-${p1}s: [visual shock / first frame]`,
+    row2: `${p1}-${p2}s: Text hiện: "[hook_text_overlay]" | Voiceover: "[hook_vo]"`,
+    row3: `${p2}-${end}s: [curiosity gap / bridge to body]`,
+    example: `0-${p1}s: Vietnamese visual shock.\\n${p1}-${p2}s: Text hiện: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\"\\n${p2}-${end}s: Vietnamese curiosity gap.`,
+  };
+}
+
+function trimWordsLocal(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length > maxWords ? words.slice(0, maxWords).join(' ') : text.trim();
+}
+
+function readLooseText(record: Record<string, unknown>, keys: string[], fallback = ''): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return fallback;
+}
+
+function readLooseArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.map(asRecord).filter(item => Object.keys(item).length > 0)
+    : [];
+}
+
+function collectLeanIdeaRecords(input: unknown): Array<{
+  pillarRecord: Record<string, unknown>;
+  angleRecord: Record<string, unknown>;
+  ideaRecord: Record<string, unknown>;
+  pillarIndex: number;
+  angleIndex: number;
+  ideaIndex: number;
+}> {
+  const output: Array<{
+    pillarRecord: Record<string, unknown>;
+    angleRecord: Record<string, unknown>;
+    ideaRecord: Record<string, unknown>;
+    pillarIndex: number;
+    angleIndex: number;
+    ideaIndex: number;
+  }> = [];
+
+  const inputRecord = asRecord(input);
+  const wrappedRoots = !Array.isArray(input)
+    ? readLooseArray(inputRecord.data ?? inputRecord.output ?? inputRecord.items ?? inputRecord.result)
+    : [];
+  const roots = Array.isArray(input) ? input : wrappedRoots.length > 0 ? wrappedRoots : [input];
+  roots.forEach((root, rootIndex) => {
+    const rootRecord = asRecord(root);
+    if (Object.keys(rootRecord).length === 0) return;
+
+    const angleRecords = readLooseArray(rootRecord.angles);
+    if (angleRecords.length > 0) {
+      angleRecords.forEach((angleRecord, angleFallbackIndex) => {
+        const ideas = readLooseArray(angleRecord.ideas);
+        ideas.forEach((ideaRecord, ideaFallbackIndex) => {
+          output.push({
+            pillarRecord: rootRecord,
+            angleRecord,
+            ideaRecord,
+            pillarIndex: Number(rootRecord.pillar_index ?? rootRecord.pillarIndex ?? rootIndex) || 0,
+            angleIndex: Number(angleRecord.angle_index ?? angleRecord.angleIndex ?? angleFallbackIndex) || 0,
+            ideaIndex: ideaFallbackIndex,
+          });
+        });
+      });
+      return;
+    }
+
+    const directIdeas = readLooseArray(rootRecord.ideas);
+    if (directIdeas.length > 0) {
+      directIdeas.forEach((ideaRecord, ideaFallbackIndex) => {
+        output.push({
+          pillarRecord: rootRecord,
+          angleRecord: rootRecord,
+          ideaRecord,
+          pillarIndex: Number(rootRecord.pillar_index ?? rootRecord.pillarIndex ?? rootIndex) || 0,
+          angleIndex: Number(rootRecord.angle_index ?? rootRecord.angleIndex ?? 0) || 0,
+          ideaIndex: ideaFallbackIndex,
+        });
+      });
+      return;
+    }
+
+    output.push({
+      pillarRecord: rootRecord,
+      angleRecord: rootRecord,
+      ideaRecord: rootRecord,
+      pillarIndex: Number(rootRecord.pillar_index ?? rootRecord.pillarIndex ?? 0) || 0,
+      angleIndex: Number(rootRecord.angle_index ?? rootRecord.angleIndex ?? 0) || 0,
+      ideaIndex: rootIndex,
+    });
+  });
+
+  return output;
+}
+
+function overlayTextAt(overlays: string[], pattern: RegExp, fallback = '') {
+  const match = overlays.find(line => pattern.test(line));
+  return match ? match.replace(/^\s*\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?s?\s*:\s*/i, '').trim() : fallback;
+}
+
+function normalizeLeanCreativeOutput(
+  input: unknown,
+  defaults: {
+    duration: string;
+    appName: string;
+    category?: string;
+    pillar: string;
+    coreUser: string;
+    emotion: string;
+    psp: string;
+    angle: string;
+    angleIndex: number;
+    startIndex: number;
+    hookDurationSeconds?: number;
+  }
+): Record<string, unknown>[] {
+  const records = collectLeanIdeaRecords(input);
+
+  return records.map((record, index): Record<string, unknown> | null => {
+    const { pillarRecord, angleRecord, ideaRecord } = record;
+    const ideaIndex = defaults.startIndex + index;
+    const pillar = readLooseText(pillarRecord, ['pillar'], defaults.pillar);
+    const angleName = readLooseText(angleRecord, ['angle_name', 'angleName'], defaults.angle || 'Core angle');
+    const angleType = readLooseText(angleRecord, ['angle_type', 'angleType'], 'Curiosity');
+    const angleDesc = readLooseText(angleRecord, ['angle_desc', 'angleDesc'], `Idea for ${angleName}`);
+    const rawHookText = readLooseText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'hook_primary', 'hookPrimary']);
+    const rawHookVo = readLooseText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover']);
+    const hookCharacterSpeech = readLooseText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'characterSpeech'], '');
+    const visualScene1 = readLooseText(ideaRecord, ['visual_scene_1', 'visualScene1'], readLooseText(asRecord(ideaRecord.hook), ['visual', 'script']));
+    const visualScene2 = readLooseText(ideaRecord, ['visual_scene_2', 'visualScene2'], readLooseText(asRecord(ideaRecord.body), ['visual', 'script']));
+    const visualScene3 = readLooseText(ideaRecord, ['visual_scene_3', 'visualScene3'], readLooseText(asRecord(ideaRecord.cta), ['visual', 'script']));
+    const rawCtaText = readLooseText(
+      ideaRecord,
+      ['cta_text', 'ctaText'],
+      readLooseText(asRecord(ideaRecord.cta), ['textOverlay', 'text', 'voice', 'voiceover'])
+    );
+    if (!rawHookText || !visualScene1 || !visualScene2 || !visualScene3 || !rawCtaText) {
+      return null;
+    }
+
+    const hookText = trimWordsLocal(rawHookText, 8);
+    const hookVo = trimWordsLocal(rawHookVo, 12);
+    const ctaText = trimWordsLocal(rawCtaText, 6);
+    const scriptVo = readLooseText(ideaRecord, ['script_vo', 'scriptVo'], [hookVo, readLooseText(asRecord(ideaRecord.body), ['voice', 'voiceover'], ''), ctaText].filter(Boolean).join(' '));
+    const overlayRecords = readLooseArray(ideaRecord.text_overlays ?? ideaRecord.textOverlays);
+    const overlays = overlayRecords
+      .map(item => {
+        const time = readLooseText(item, ['time']);
+        const text = readLooseText(item, ['text']);
+        return time && text ? `${time}: ${text}` : text;
+      })
+      .filter(Boolean);
+
+    const bodyOverlay = overlayTextAt(overlays, /\b(?:6|9|12|15)\b/, readLooseText(asRecord(ideaRecord.body), ['textOverlay', 'text'], 'See the result'));
+    const ctaOverlay = overlayTextAt(overlays, /\b(?:18|22|25)\b/, readLooseText(asRecord(ideaRecord.cta), ['textOverlay', 'text'], ctaText));
+    const track = readLooseText(ideaRecord, ['track'], 'B').toUpperCase();
+    const safeTrack = ['A', 'B', 'C'].includes(track) ? track : 'B';
+
+    return normalizeIdeaOutput({
+      id: `P0-A${defaults.angleIndex}-I${ideaIndex}`,
+      title: readLooseText(ideaRecord, ['title'], hookText || angleName || `Idea ${ideaIndex + 1}`),
+      duration: defaults.duration,
+      creativeType: safeTrack === 'A' ? 'Screen Recording' : safeTrack === 'C' ? 'Motion Graphic' : 'UGC',
+      meta: {
+        builderVersion: 'creative_idea_engine_v2_1_lean',
+        pillar,
+        pillarIndex: 0,
+        angleName,
+        angleType,
+        angleDesc,
+        hookPrimary: hookText,
+        hookAlt1: readLooseText(ideaRecord, ['hook_alt_1_text', 'hookAlt1Text', 'hook_alt_1', 'hookAlt1']),
+        hookAlt2: readLooseText(ideaRecord, ['hook_alt_2_text', 'hookAlt2Text', 'hook_alt_2', 'hookAlt2']),
+        hookArchetype: readLooseText(ideaRecord, ['hook_archetype', 'hookArchetype']),
+        hookAlt1Archetype: readLooseText(ideaRecord, ['hook_alt_1_archetype', 'hookAlt1Archetype']),
+        hookAlt2Archetype: readLooseText(ideaRecord, ['hook_alt_2_archetype', 'hookAlt2Archetype']),
+        emotionJourney: readLooseText(ideaRecord, ['emotion_journey', 'emotionJourney'], defaults.emotion),
+        bodyMotivationPattern: readLooseText(ideaRecord, ['body_motivation_pattern', 'bodyMotivationPattern'], 'Demo-Story'),
+        ctaFrictionReducer: readLooseText(ideaRecord, ['cta_friction_reducer', 'ctaFrictionReducer'], 'Free'),
+        estimatedThumbStop: readLooseText(ideaRecord, ['estimated_thumb_stop', 'estimatedThumbStop'], 'Medium'),
+        ideaReasoning: readLooseText(ideaRecord, ['idea_reasoning', 'ideaReasoning'], angleDesc),
+        visualRefNotes: readLooseText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']),
+        talentProfile: readLooseText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified'),
+        dontDo: readLooseText(ideaRecord, ['dont_do', 'dontDo'], 'Do not make the opening generic or studio-like.'),
+        track: safeTrack,
+        trackReason: readLooseText(ideaRecord, ['track_reason', 'trackReason']),
+        priority: readLooseText(ideaRecord, ['priority'], 'A').toUpperCase(),
+        overlaySequence: overlays,
+      },
+      framework: {
+        coreUser: defaults.coreUser,
+        painpoint: pillar,
+        emotion: defaults.emotion,
+        psp: defaults.psp,
+      },
+      explanation: readLooseText(ideaRecord, ['idea_reasoning', 'explanation'], angleDesc),
+      hook: {
+        durationSeconds: defaults.hookDurationSeconds || 5,
+        visual: visualScene1,
+        characterSpeech: hookCharacterSpeech,
+        voiceover: hookVo,
+        voice: hookVo || hookCharacterSpeech,
+        textOverlay: hookText,
+        text: hookText,
+        script: visualScene1,
+      },
+      body: {
+        visual: visualScene2,
+        voiceover: scriptVo,
+        voice: scriptVo,
+        textOverlay: bodyOverlay,
+        text: bodyOverlay,
+        script: visualScene2,
+      },
+      cta: {
+        visual: visualScene3,
+        voiceover: ctaText,
+        voice: ctaText,
+        textOverlay: ctaOverlay,
+        text: ctaOverlay,
+        script: visualScene3,
+        endCard: `${defaults.appName} - ${ctaText}`,
+      },
+    }, {
+      duration: defaults.duration,
+      appName: defaults.appName,
+      pillar,
+    });
+  }).filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function buildLeanGeneratePrompt(input: {
+  quantity: number;
+  appName: string;
+  appCategory: string;
+  coreUserValues: string[];
+  painPointValues: string[];
+  emotionValues: string[];
+  featureContext: string;
+  visualType: string;
+  targetMarketValues: string[];
+  targetLang: string;
+  outputLanguage: string;
+  angleContext: string;
+  ideaDescription?: string;
+  previousIdeas?: string;
+  appKnowledge?: string;
+  trendingTopics: string[];
+  trendingStructures: string[];
+  seasonalVisualBlock?: string;
+  filterConsistencyBlock?: string;
+}) {
+  const primaryPillar = input.painPointValues[0] || 'General user friction';
+  const coreUser = input.coreUserValues.join('; ') || 'General mobile app user';
+  const emotionJourney = input.emotionValues.join(' -> ') || 'auto';
+  const market = input.targetMarketValues.join(', ') || input.targetLang || 'Global';
+  const trends = input.trendingTopics.length ? input.trendingTopics.join('; ') : 'None';
+  const importedStructures = input.trendingStructures.length ? input.trendingStructures.slice(0, 4).join('\n') : 'None';
+  const recentIdeas = clampPromptContext(input.previousIdeas, 1200) || 'None';
+  const appKnowledge = clampPromptContext(input.appKnowledge, 1200) || 'None';
+  const explicitHookDuration = inferRequestedHookDurationSeconds(input.ideaDescription, 0);
+  const requestedHookDuration = explicitHookDuration || 5;
+  const hookTimeline = buildHookTimelineRows(requestedHookDuration);
+  const hookTextWindow = explicitHookDuration
+    ? 'hook context row'
+    : `${formatTimelineSecond(hookTimeline.phase1End)}-${formatTimelineSecond(hookTimeline.phase2End)}s`;
+  const visualScene1Example = explicitHookDuration
+    ? `0-[AI chosen]s: Vietnamese visual shock.\\n[AI chosen]-[AI chosen]s: Text hiện: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\"\\n[AI chosen]-${formatTimelineSecond(requestedHookDuration)}s: Vietnamese curiosity gap.`
+    : hookTimeline.example;
+  const timelineRule = explicitHookDuration
+    ? `- Operator requested hook length: ${requestedHookDuration}s total.
+- visual_scene_1 MUST be plain Vietnamese production text covering 0-${formatTimelineSecond(requestedHookDuration)}s.
+- Let the AI choose the internal timestamp ranges naturally for each idea. Use 3-4 rows only when it helps pacing; do not force a fixed split like 0-2s / 2-5s / 5-8s unless that split is creatively best.
+- One hook row MUST include: Text hiện: "[hook_text_overlay]" | Voiceover: "[hook_vo]".`
+    : `- Default hook length: 5s.
+- visual_scene_1 MUST be plain Vietnamese production text with exactly these three time rows:
+  ${hookTimeline.row1}
+  ${hookTimeline.row2}
+  ${hookTimeline.row3}`;
+
+  return `You already have the Creative Idea Engine rules. Use them as default; do not restate them.
+
+Generate exactly ${input.quantity} production-ready Meta vertical video ad ideas.
+
+The UI already imported the selected chips/config. Treat the BRIEF below as the source of truth.
+If any chip is abstract (for example a disease, fear, trend, or broad concern), silently sharpen it into a specific filmable situation before writing the idea. Do not reject the brief for being short.
+Do not replace selected product metric or PSP with a nearby feature. If the PSP says blood pressure, keep blood pressure; if it says heart rate, keep heart rate.
+For health/wellness apps, avoid banned medical claims: diagnose, cure, treat, detect disease, replace doctor. Use safe words like track, check, monitor, reference, wellness.
+For health/wellness apps, if the Operator note asks for before/after, adapt it as before checking/logging vs after seeing an app number, reference, chart, or trend screen. Never make before/after about body change, disease outcome, symptom improvement, recovery, or prevention.
+If Angle to test starts with "AUTO ANGLE", choose a genuinely distinct strongest angle for that slot from the brief. Do not output a generic angle name.
+Angle planning rule:
+- Each angle must have exactly one angle_type.
+- If Angle to test contains "REQUIRED angle_type: X" or "ANGLE TYPE X", output angle_type X and make the video visually match that type.
+- Across AUTO ANGLE slots, angle_type must be different. Do not create three videos that only change wording.
+- Health/wellness must include/prefer Fact. Utility must include/prefer Comparison or Demo. AI apps must include/prefer Trend.
+- Test: if removing the angle name makes the videos look similar, rewrite the angle.
+Operator note priority:
+- The Operator note is a high-priority creative direction, not optional context.
+- If it requests a hook length, trend, reference format, structure, pacing, or "only hook ideas", obey it unless it conflicts with compliance.
+- If it mentions a trend or pasted structure, adapt that trend/structure directly into the hook/body/CTA instead of generating a generic app demo.
+User-facing copy language rule:
+- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
+- If the core user or market says US/American/English-speaking, those copy fields MUST be English even when the operator brief is written in Vietnamese.
+- visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
+
+Timeline output rule:
+${timelineRule}
+- visual_scene_2 MUST be one concise Vietnamese body paragraph for "Diễn biến (Body)".
+- script_vo MUST be the main voiceover only, in ${input.outputLanguage}, without production labels.
+- cta_text MUST be the final CTA/slogan only, in ${input.outputLanguage}.
+
+BRIEF
+- App: ${input.appName}
+- Category: ${input.appCategory}
+- Core user: ${coreUser}
+- Pain point pillar: ${primaryPillar}
+- Emotion trigger: ${emotionJourney}
+- PSP / feature benefit: ${input.featureContext}
+- Visual/theme: ${input.visualType}
+- Angle to test: ${input.angleContext || 'choose the strongest angle inside the pain point'}
+- Market: ${market}
+- Copy language: ${input.outputLanguage}
+- Production notes language: Vietnamese
+- Operator note: ${input.ideaDescription || 'N/A'}
+- Trending hooks: ${trends}
+- Imported trend/video structure: ${importedStructures}
+- App brain: ${appKnowledge}
+- Recent ideas to avoid repeating: ${recentIdeas}
+${input.seasonalVisualBlock || ''}
+${input.filterConsistencyBlock || ''}
+
+OUTPUT JSON ONLY. No markdown.
+Use this compact schema:
+[
+  {
+    "pillar_index": 0,
+    "pillar": "${primaryPillar.replace(/"/g, '\\"')}",
+    "angles": [
+      {
+        "angle_index": 0,
+        "angle_name": "short angle name",
+        "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief|Tutorial|Demo|Challenge|Trend",
+        "angle_desc": "one sentence",
+        "ideas": [
+          {
+            "id": "P0-A0-I0",
+            "title": "short script name, 3-7 words",
+            "hook_text_overlay": "max 8 words",
+            "hook_vo": "max 12 words, different from text",
+            "hook_character_speech": "",
+            "hook_archetype": "taxonomy label",
+            "hook_alt_1_text": "short alt hook",
+            "hook_alt_1_vo": "short alt VO",
+            "hook_alt_1_archetype": "different taxonomy label",
+            "hook_alt_2_text": "short alt hook",
+            "hook_alt_2_vo": "short alt VO",
+            "hook_alt_2_archetype": "different taxonomy label",
+            "emotion_journey": "Hook -> Body -> CTA",
+            "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
+            "visual_scene_1": "${visualScene1Example}",
+            "visual_scene_2": "Vietnamese body paragraph with narrative tension and app action.",
+            "visual_scene_3": "Vietnamese CTA/payoff visual with app store or download prompt.",
+            "text_overlays": [
+              {"time":"${hookTextWindow}","text":"hook text"},
+              {"time":"6-9s","text":"body text"},
+              {"time":"12-15s","text":"proof text"},
+              {"time":"18-22s","text":"CTA text"}
+            ],
+            "script_vo": "full VO, max 60 words",
+            "cta_text": "max 6 words",
+            "cta_friction_reducer": "Free|No signup|30 seconds|1 tap",
+            "visual_ref_notes": "camera, lighting, talent direction, pacing",
+            "talent_profile": "specific profile or No talent - screen recording only",
+            "dont_do": "specific QC warning",
+            "track": "A|B|C",
+            "track_reason": "one sentence",
+            "priority": "A|B|C",
+            "estimated_thumb_stop": "Low|Medium|High",
+            "idea_reasoning": "one sentence"
+          }
+        ]
+      }
+    ]
+  }
+]
+
+Important: make all ${input.quantity} ideas visually different. Every idea title must be a usable script name for the output line "Kịch bản X.Y: [title]", not a generic "Idea". Keep the hook short, concrete, and shootable.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -1596,16 +2228,22 @@ Trả JSON array of strings. KHÔNG markdown.`;
       const duration = asText(config.duration) || 'Short social-first runtime';
       const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
       const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
-      const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : 'English';
-      const marketContext = buildMarketContext(targetMarketValues);
+      const ideaDescription = asText(config.ideaDescription) || undefined;
+      const requestedHookDuration = inferRequestedHookDurationSeconds(ideaDescription, 5);
+      const outputLanguage = inferGenerationCopyLanguage({
+        coreUserValues,
+        painPointValues,
+        emotionValues,
+        angleValues,
+        ideaDescription,
+        targetLang,
+      });
       const angleContext = angleValues.length ? angleValues.join(', ') : '';
       const primaryPillar = painPointValues[0] || 'General user friction';
       const angleIndex = Number(config.angleIndex || 1);
-      const totalAngles = Number(config.totalAngles || 1);
       const requestStartIndex = Math.max(0, Number(config.startIndex || 0) || 0);
       const totalVariations = Math.max(requestedQuantity, Number(config.totalVariations || requestedQuantity) || requestedQuantity);
       const modelCandidates = resolveIdeaModels(selectedModel).slice(0, MAX_IDEA_MODEL_CANDIDATES);
-      const ideaDescription = asText(config.ideaDescription) || undefined;
       const batchPlans = buildIdeaBatchPlans(requestedQuantity);
       const aiBudgetStartedAt = Date.now();
       const getRemainingAiBudgetMs = () => GENERATE_IDEAS_REQUEST_AI_BUDGET_MS - (Date.now() - aiBudgetStartedAt);
@@ -1623,27 +2261,8 @@ Trả JSON array of strings. KHÔNG markdown.`;
 
       const truncatedKnowledge = clampPromptContext(appKnowledge, GENERATE_IDEAS_CONTEXT_CHAR_LIMIT);
       const truncatedPreviousIdeas = clampPromptContext(previousIdeas, GENERATE_IDEAS_HISTORY_CHAR_LIMIT);
-      const knowledgeBlock = truncatedKnowledge
-        ? `\n[APP BRAIN - learned context for "${appName}"]\n${truncatedKnowledge}\n`
-        : '';
-      const recentIdeasBlock = truncatedPreviousIdeas
-        ? `\n[RECENT SAVED IDEAS - learn style, do not repeat]\n${truncatedPreviousIdeas}\n`
-        : '';
-      const trendingBlock = trendingTopics.length
-        ? `\n[TRENDING CONTEXT]\n${trendingTopics.join(', ')}\nUse trends only when they naturally fit the selected pain point and emotion.\n`
-        : '';
       const structuredTrendNotes = trendingStructures.slice(0, 4);
-      const importedTrendBlock = structuredTrendNotes.length
-        ? `\n[IMPORTED VIDEO STRUCTURE]\n${structuredTrendNotes.join('\n')}\nLearn pacing and treatment, but do not copy the source structure verbatim.\n`
-        : '';
       const seasonalVisualBlock = buildSeasonalVisualBlock(config.seasonalVisualContext);
-      const winningPatternBlock = buildWinningPatternLibraryBlock({
-        appName,
-        category: appCategory,
-        psp: featureContext,
-        painpoint: primaryPillar,
-        angle: angleContext,
-      });
 
       const refillIdeasOneByOne = async (
         missingCount: number,
@@ -1686,32 +2305,6 @@ Trả JSON array of strings. KHÔNG markdown.`;
         priorGeneratedIdeas: Record<string, unknown>[]
       ) => {
         const inRequestHistory = buildInRequestIdeaHistory(priorGeneratedIdeas);
-        const inRequestHistoryBlock = inRequestHistory
-          ? `\n[IDEAS ALREADY GENERATED IN THIS SAME REQUEST]\n${inRequestHistory}\nAvoid repeating these scene families, hook reveals, and voice openings.\n`
-          : '';
-        const slotStartIndex = requestStartIndex + plan.batchStartIndex;
-        const variationBlock = buildVariationWindowBlock(
-          slotStartIndex,
-          plan.batchQuantity,
-          totalVariations
-        );
-        const diversityBlock = buildBatchDiversityBlock(
-          plan.batchQuantity,
-          angleContext,
-          angleIndex,
-          totalAngles
-        );
-        const singleIdeaSlotBlock = buildSingleIdeaSlotBlock(
-          slotStartIndex + 1,
-          totalVariations,
-          {
-            angle: angleContext,
-            painpoint: primaryPillar,
-            psp: featureContext,
-            visualType,
-          }
-        );
-
         const painpointPrecisionBlock = useCreativeRulesV7
           ? buildV7ExecutionContract({
               appName,
@@ -1754,12 +2347,14 @@ Hard requirements:
 - Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
 - Angle must be one angle_type + one market/framework approach + one visually different execution.
 - If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
-- visual_scene_1 must be Sec 0-5 with Phase 1 (0-1.5s) Visual Shock, Phase 2 (1.5-3.5s) Context, and Phase 3 (3.5-5s) Curiosity Gap.
+- visual_scene_1 must be Sec 0-5 and use exactly 3 rows: "0-1.5s: ...", "1.5-3.5s: Text hiện: \\"...\\" | Voiceover: \\"...\\"", "3.5-5s: ...".
 - Phase 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
 - hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
+- visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
+- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. If the selected core user/market is US/American/English-speaking, these copy fields must be English even when the operator prompt is Vietnamese.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
         const frameworkInjection = buildFrameworkInjection({
@@ -1838,7 +2433,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- visual_scene_1 must be Sec 0-5 with Phase 1/2/3. visual_scene_2 must be Sec 5-18. visual_scene_3 must be Sec 18-25.
+- visual_scene_1 must be Sec 0-5 with exactly 3 rows: 0-1.5s / 1.5-3.5s / 3.5-5s. The 1.5-3.5s row must include Text hiện and Voiceover in the selected copy language.
 - Duration: ${duration}
 - The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
 - Each idea must stay inside the selected pillar and selected angle focus.
@@ -1851,32 +2446,34 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Do not use Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format as visual formats; put those only in reference_pattern or interrupt_mechanism when useful.
 - Production blueprint: each idea must include reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes. reference_pattern can be custom/hybrid. psp_bridge belongs to Hook and must connect the emotion/angle to the PSP. The remaining fields must be concrete enough for a creator to edit the video without asking follow-up questions.`;
 
-        const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
+        void painpointPrecisionBlock;
+        void v21ExecutionOverrideBlock;
+        void frameworkInjection;
+        void outputSpec;
+        void rulesBlock;
+        void taskDirectives;
 
-${frameworkInjection}
-
-## SUPPORTING CONTEXT
-${knowledgeBlock || '- No AI Brain memory yet.'}
-${recentIdeasBlock || '- No recent saved ideas.'}
-${inRequestHistoryBlock || '- No earlier ideas in this request.'}
-${trendingBlock || '- No trending hooks injected.'}
-${importedTrendBlock || ''}
-${winningPatternBlock}
-${marketContext}
-${seasonalVisualBlock || ''}
-${variationBlock || ''}
-${diversityBlock || ''}
-${singleIdeaSlotBlock || ''}
-${painpointPrecisionBlock}
-${v21ExecutionOverrideBlock}
-${filterConsistencyBlock || ''}
-
-## TASK
-${taskDirectives}
-
-${outputSpec}
-
-${rulesBlock}`;
+        const prompt = buildLeanGeneratePrompt({
+          quantity: plan.batchQuantity,
+          appName,
+          appCategory,
+          coreUserValues,
+          painPointValues: painPointValues.length ? painPointValues : [primaryPillar],
+          emotionValues,
+          featureContext,
+          visualType,
+          targetMarketValues,
+          targetLang,
+          outputLanguage,
+          angleContext,
+          ideaDescription,
+          previousIdeas: [truncatedPreviousIdeas, inRequestHistory].filter(Boolean).join('\n\n'),
+          appKnowledge: truncatedKnowledge,
+          trendingTopics,
+          trendingStructures: structuredTrendNotes,
+          seasonalVisualBlock,
+          filterConsistencyBlock,
+        });
 
         console.log(
           '[generate-ideas] Batch prompt:',
@@ -1898,13 +2495,23 @@ ${rulesBlock}`;
           const candidateTimeoutMs = candidateIndex === 0
             ? getIdeaBatchTimeoutMs(model, plan.batchQuantity)
             : GENERATE_IDEAS_RETRY_TIMEOUT_MS;
-          const candidateText = await askAI(prompt, {
+          const generationTemperature = plan.batchQuantity > 1 ? 0.82 : 0.75;
+          const budgetedTimeoutMs = getBudgetedTimeoutMs(candidateTimeoutMs);
+          const candidateText = await callDirectGemini(model, prompt, {
+            systemInstruction: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+            temperature: generationTemperature,
+            maxOutputTokens: responseTokenBudget,
+            timeoutMs: budgetedTimeoutMs,
+          }) || await callAI([
+            { role: 'system', content: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ], {
             model,
-            temperature: plan.batchQuantity > 1 ? 0.82 : 0.75,
+            temperature: generationTemperature,
             max_tokens: responseTokenBudget,
             useCreativePersona: false,
             priority: 'high',
-            timeoutMs: getBudgetedTimeoutMs(candidateTimeoutMs),
+            timeoutMs: budgetedTimeoutMs,
           });
 
           if (!candidateText) {
@@ -1938,6 +2545,7 @@ ${rulesBlock}`;
         let briefOutput = normalizeCreativeBriefOutput(parsed, {
           duration,
           appName,
+          category: appCategory,
           pillar: primaryPillar,
           coreUser: coreUserValues.join('; ') || 'General viewer',
           emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
@@ -1960,8 +2568,46 @@ ${rulesBlock}`;
         });
         validation.invalidReasons.unshift(...briefOutput.invalidReasons);
         let valid = dedupeIdeas(validation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
-        const duplicateDetected = valid.length > 1 && hasNearDuplicateIdeas(valid);
-        const needsValidationRetry = validation.invalidReasons.length > 0 || valid.length < plan.batchQuantity;
+        if (valid.length < plan.batchQuantity) {
+          const lenientRejectedReasons: string[] = [];
+          const lenientCandidates = normalizeLeanCreativeOutput(parsed, {
+            duration,
+            appName,
+            category: appCategory,
+            pillar: primaryPillar,
+            coreUser: coreUserValues.join('; ') || 'General viewer',
+            emotion: emotionValues.join(' -> ') || 'Curiosity -> Amazement -> Excitement',
+            psp: featureContext,
+            angle: angleContext,
+            angleIndex: Math.max(angleIndex - 1, 0),
+            startIndex: requestStartIndex + plan.batchStartIndex,
+            hookDurationSeconds: requestedHookDuration,
+          }).map(item => sanitizeMedicalClaimsInIdea(item)).filter((item, lenientIndex) => {
+            const metricErrors = validateHealthMetricLockOutput(item, metricLock, appName);
+            if (metricErrors.length > 0) {
+              validation.invalidReasons.push(`Soft metric warning P0-A${Math.max(angleIndex - 1, 0)}-I${requestStartIndex + plan.batchStartIndex + lenientIndex}: ${metricErrors.join('; ')}`);
+            }
+            const errors = validateIdeaOutput(item);
+            if (errors.length > 0) {
+              lenientRejectedReasons.push(`Lenient P0-A${Math.max(angleIndex - 1, 0)}-I${requestStartIndex + plan.batchStartIndex + lenientIndex}: ${errors.join('; ')}`);
+            }
+            return errors.length === 0;
+          });
+          validation.invalidReasons.push(...lenientRejectedReasons);
+
+          const merged: Record<string, unknown>[] = [];
+          for (const candidate of [...valid, ...lenientCandidates]) {
+            const signature = ideaSignature(candidate);
+            const isUnique = [...priorGeneratedIdeas, ...merged].every(item => (
+              jaccardSimilarity(signature, ideaSignature(item)) < 0.82
+            )) && ![...priorGeneratedIdeas, ...merged].some(item => hasSameHookFrame(candidate, item));
+            if (isUnique) merged.push(candidate);
+            if (merged.length >= plan.batchQuantity) break;
+          }
+          valid = merged;
+        }
+        const duplicateDetected = false;
+        const needsValidationRetry = false;
 
         if ((needsValidationRetry || duplicateDetected) && hasAiBudget()) {
           if (validation.invalidReasons.length > 0) {
@@ -2000,6 +2646,7 @@ ${retryNotes.join('\n\n')}`, {
             const retryBriefOutput = normalizeCreativeBriefOutput(retryParsed, {
               duration,
               appName,
+              category: appCategory,
               pillar: primaryPillar,
               coreUser: coreUserValues.join('; ') || 'General viewer',
               emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
@@ -2068,6 +2715,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
             const fallbackBriefOutput = normalizeCreativeBriefOutput(fallbackParsed, {
               duration,
               appName,
+              category: appCategory,
               pillar: primaryPillar,
               coreUser: coreUserValues.join('; ') || 'General viewer',
               emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
@@ -2113,6 +2761,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           if (validation.invalidReasons.length > 0) {
             console.error('[generate-ideas] Validation failures:', validation.invalidReasons);
           }
+          const reasonDetail = validation.invalidReasons.slice(0, 3).join(' | ');
+          if (reasonDetail) throw new Error(`AI trả về format sai: ${reasonDetail}`);
           throw new Error('AI trả về format sai. Thử lại.');
         }
 
@@ -2153,7 +2803,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
 
             const stillMissing = plan.batchQuantity - batchIdeas.length;
             let fallbackAdded = 0;
-            if (shouldUseLocalFallback && stillMissing > 0) {
+            const canUseLocalFallback = shouldUseLocalFallback
+              && !batchErrors.some(isNonRecoverableAIGenerationError);
+            if (canUseLocalFallback && stillMissing > 0) {
               const fallbackIdeas = buildFallbackIdeasForFilters({
                 appName,
                 filters,
@@ -2192,7 +2844,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
 
           const stillMissing = plan.batchQuantity - recoveredIdeas.length;
           let fallbackAdded = 0;
-          if (shouldUseLocalFallback && stillMissing > 0) {
+          const canUseLocalFallback = shouldUseLocalFallback
+            && !isNonRecoverableAIGenerationError(batchErrorMessage);
+          if (canUseLocalFallback && stillMissing > 0) {
             const fallbackIdeas = buildFallbackIdeasForFilters({
               appName,
               filters,
@@ -2228,7 +2882,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
 
         const stillMissing = requestedQuantity - aggregatedIdeas.length;
         let fallbackAdded = 0;
-        if (shouldUseLocalFallback && stillMissing > 0) {
+        const canUseLocalFallback = shouldUseLocalFallback
+          && !batchErrors.some(isNonRecoverableAIGenerationError);
+        if (canUseLocalFallback && stillMissing > 0) {
           const finalTopUp = buildFallbackIdeasForFilters({
             appName,
             filters,
@@ -2265,14 +2921,14 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
         }, { status: 502 });
       }
 
-      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity).map((idea, index) => repairIdeaTrackingFields(
+      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity).map((idea, index) => syncHookDurationFromTimeline(repairIdeaTrackingFields(
         idea,
         {
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaIndex: requestStartIndex + index,
           pillar: primaryPillar,
         }
-      ));
+      )));
       return NextResponse.json({
         success: true,
         data: finalIdeas,
@@ -2311,7 +2967,15 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const duration = asText(config.duration) || 'Short social-first runtime';
     const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
     const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
-    const outputLanguage = useCreativeRulesV7 ? 'Vietnamese' : 'English';
+    const ideaDescription = asText(config.ideaDescription) || undefined;
+    const outputLanguage = inferGenerationCopyLanguage({
+      coreUserValues,
+      painPointValues,
+      emotionValues,
+      angleValues,
+      ideaDescription,
+      targetLang,
+    });
     const marketContext = buildMarketContext(targetMarketValues);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
@@ -2347,7 +3011,6 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const totalVariations = Number(config.totalVariations || quantity);
     const angleIndex = Number(config.angleIndex || 1);
     const totalAngles = Number(config.totalAngles || 1);
-    const ideaDescription = asText(config.ideaDescription) || undefined;
     const metricLock = getPrimarySolutionMetric(solutionValues);
     const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
       solutionValues,
@@ -2401,12 +3064,14 @@ Hard requirements:
 - Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
 - Angle must be one angle_type + one market/framework approach + one visually different execution.
 - If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
-- visual_scene_1 must be Sec 0-5 with Phase 1 (0-1.5s) Visual Shock, Phase 2 (1.5-3.5s) Context, and Phase 3 (3.5-5s) Curiosity Gap.
+- visual_scene_1 must be Sec 0-5 and use exactly 3 rows: "0-1.5s: ...", "1.5-3.5s: Text hiện: \\"...\\" | Voiceover: \\"...\\"", "3.5-5s: ...".
 - Phase 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
 - hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
+- visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
+- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. If the selected core user/market is US/American/English-speaking, these copy fields must be English even when the operator prompt is Vietnamese.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
     const outputSpec = buildCreativeBriefOutputSpec({
@@ -2438,7 +3103,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- visual_scene_1 must be Sec 0-5 with Phase 1/2/3. visual_scene_2 must be Sec 5-18. visual_scene_3 must be Sec 18-25.
+- visual_scene_1 must be Sec 0-5 with exactly 3 rows: 0-1.5s / 1.5-3.5s / 3.5-5s. The 1.5-3.5s row must include Text hiện and Voiceover in the selected copy language.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
@@ -2556,6 +3221,7 @@ ${rulesBlock}`;
     let briefOutput = normalizeCreativeBriefOutput(parsed, {
       duration,
       appName,
+      category: appCategory,
       pillar: primaryPillar,
       coreUser: coreUserValues.join('; ') || 'General viewer',
       emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
@@ -2614,6 +3280,7 @@ ${retryNotes.join('\n\n')}`, {
         const retryBriefOutput = normalizeCreativeBriefOutput(retryParsed, {
           duration,
           appName,
+          category: appCategory,
           pillar: primaryPillar,
           coreUser: coreUserValues.join('; ') || 'General viewer',
           emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',

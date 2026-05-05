@@ -9,6 +9,7 @@ import { guardApiRequest } from '@/lib/apiGuards';
 import {
   buildFilterConsistencyPromptBlock,
 } from '@/lib/filterConsistency';
+import { enrichHookWithFramework } from '@/lib/hookFramework';
 
 export const maxDuration = 60;
 
@@ -343,6 +344,15 @@ function buildBetterFallbackHookVariations(
 }
 
 function resolveHookModels(selected?: string): string[] {
+  if (selected === 'gemini-3-pro') {
+    return [
+      'gemini/gemini-2.5-flash',
+      'gemini/gemini-2.5-pro',
+      'gemini/gemini-3-pro-preview',
+      ...FAST_HOOK_MODELS,
+    ].filter((model, index, models) => models.indexOf(model) === index);
+  }
+
   const map: Record<string, string> = {
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
@@ -364,7 +374,8 @@ export async function POST(request: NextRequest) {
     const guard = await guardApiRequest(request, { key: 'generate-hooks', max: 60, windowMs: 5 * 60 * 1000 });
     if (guard instanceof NextResponse) return guard;
 
-    const { hook, instruction, quantity = 3, appName, appCategory, selectedModel, targetMarket } = await request.json();
+    const { hook: rawHook, instruction, quantity = 3, appName, appCategory, selectedModel, targetMarket } = await request.json();
+    const hook = enrichHookWithFramework(rawHook || {}, { appName, appCategory });
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
     const targetLanguage = 'English';
     const targetMarketValues = [

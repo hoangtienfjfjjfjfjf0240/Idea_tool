@@ -94,7 +94,8 @@ export default function Home() {
   };
 
   useEffect(() => {
-    setHasHydrated(true);
+    const timeoutId = window.setTimeout(() => setHasHydrated(true), 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   // Check existing session on mount
@@ -367,6 +368,7 @@ export default function Home() {
         <StrategyMap
           app={selectedApp}
           onBack={() => setCurrentScreen('f2')}
+          onOpenResults={() => setCurrentScreen('f2.1.2')}
           onCreateFromBranch={(filters) => {
             setPrefillFilters(filters);
             setCurrentScreen('f2.1');
