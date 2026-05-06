@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { askAI, callAI, getAIApiKey, getAIChatCompletionsUrl, getLastAIErrorMessage } from '@/lib/aiClient';
 import {
+  BULLETPROOF_VISUAL_ANCHOR_RULES,
   buildCreativeBriefOutputSpec,
   buildFrameworkInjection,
   buildIdeaOutputSpec,
@@ -134,6 +135,12 @@ V. LANGUAGE RULES
 - This includes title, hook lines, character speech, text on screen, voice-over/video voice, script_vo, and CTA text.
 - Visual descriptions and production notes should be Vietnamese so the internal team can read and execute them quickly.
 - Target market controls setting, behavior, props, culture, and vibe; it must not change the user-facing copy language.
+
+V-B. BULLETPROOF VISUAL ANCHORS
+- Every visual_scene_1, visual_scene_2, and visual_scene_3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
+- Position anchor locks people/objects/UI to left/right/foreground/background/top/bottom/screen region. Split-screen ideas must name left pane and right pane.
+- Contact anchor states the exact hand/finger/cursor/tap point/eye line/body part interacting with the prop or UI.
+- Physical action anchor replaces vague verbs with visible actions such as tap, press, swipe, drag, lift, scan, upload, shoot, error icon appears, chart moves, or result renders.
 VI. INPUT VARIABLE HANDLING
 - Use the Painpoint as the Hook attack target.
 - Use the Feature, including exaggerated/fake feature behavior if the brief requires it, as the solution tool in the Pivot.
@@ -250,6 +257,7 @@ Hard V7 requirements:
 - The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
 - Use the selected painpoint as the target of attack. Convert it into a concrete first-3-second situation, but do not soften it into a generic symptom.
 - All Text/Voice must be written in ${input.copyLanguage}. Visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
+- Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - If a visible person speaks, asks, replies, reacts to camera, or is asked a question in the hook, hook_character_speech is required. If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
 - Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
@@ -264,6 +272,7 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
 - If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
 - Write user-facing copy in ${copyLanguage}: title, hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
+- Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
 - Do not use old hook word-count constraints or old 3-5s hook section rules.
 - Do not use rhetorical questions, wordplay, or vague metaphor hooks.
@@ -1996,6 +2005,7 @@ User-facing copy language rule:
 - title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
 - If the core user or market says US/American/English-speaking, those copy fields MUST be English even when the operator brief is written in Vietnamese.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
+- visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 
 Timeline output rule:
 ${timelineRule}
@@ -2022,6 +2032,8 @@ BRIEF
 - Recent ideas to avoid repeating: ${recentIdeas}
 ${input.seasonalVisualBlock || ''}
 ${input.filterConsistencyBlock || ''}
+
+Anchor requirement: every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 
 OUTPUT JSON ONLY. No markdown.
 Use this compact schema:
@@ -2051,9 +2063,9 @@ Use this compact schema:
             "hook_alt_2_archetype": "different taxonomy label",
             "emotion_journey": "Hook -> Body -> CTA",
             "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
-            "visual_scene_1": "${visualScene1Example}",
-            "visual_scene_2": "Vietnamese body paragraph with narrative tension and app action.",
-            "visual_scene_3": "Vietnamese CTA/payoff visual with app store or download prompt.",
+            "visual_scene_1": "${visualScene1Example} Include Position anchor, Contact anchor, and Physical action anchor clauses.",
+            "visual_scene_2": "Vietnamese body paragraph with narrative tension and app action. Include Position anchor, Contact anchor, and Physical action anchor clauses.",
+            "visual_scene_3": "Vietnamese CTA/payoff visual with app store or download prompt. Include Position anchor, Contact anchor, and Physical action anchor clauses.",
             "text_overlays": [
               {"time":"${hookTextWindow}","text":"hook text"},
               {"time":"6-9s","text":"body text"},
@@ -2388,6 +2400,7 @@ Hard requirements:
 - Do not reduce the pain point to a broad symptom. The hook and visual_scene_1 must include at least 2 concrete anchors from the selected pain point/angle, such as trigger moment, body signal, suspected cause, location, object, or user fear.
 - The first 3 seconds must show WHY this user cares now, not just that the symptom exists.
 - visual_scene_2 must show the selected PSP/app action solving or organizing the same problem. Do not jump to a generic app demo.
+- visual_scene_1/2/3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
@@ -2412,6 +2425,7 @@ Hard requirements:
 - hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
+- visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. If the selected core user/market is US/American/English-speaking, these copy fields must be English even when the operator prompt is Vietnamese.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
@@ -2471,6 +2485,8 @@ Hard requirements:
         const rulesBlock = useCreativeRulesV7
           ? `${CREATIVE_ADS_GENERATION_RULES_V7}
 
+${BULLETPROOF_VISUAL_ANCHOR_RULES}
+
 ${buildV7TaskDirectives(plan.batchQuantity, outputLanguage)}`
           : usePromptSystemBuilderHtml
             ? `${PROMPT_SYSTEM_BUILDER_RULES}
@@ -2487,11 +2503,13 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
+- Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
 - visual_scene_1 must be Sec 0-5 with exactly 3 rows: 0-1.5s / 1.5-3.5s / 3.5-5s. The 1.5-3.5s row must include Text hiện and Voiceover in the selected copy language.
+- Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Duration: ${duration}
 - The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
 - Each idea must stay inside the selected pillar and selected angle focus.
@@ -3129,6 +3147,7 @@ Hard requirements:
 - hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
+- visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. If the selected core user/market is US/American/English-speaking, these copy fields must be English even when the operator prompt is Vietnamese.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
@@ -3141,6 +3160,8 @@ Hard requirements:
     });
     const rulesBlock = useCreativeRulesV7
       ? `${CREATIVE_ADS_GENERATION_RULES_V7}
+
+${BULLETPROOF_VISUAL_ANCHOR_RULES}
 
 ${buildV7TaskDirectives(quantity, outputLanguage)}`
       : usePromptSystemBuilderHtml
@@ -3157,11 +3178,13 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
+- Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
 - visual_scene_1 must be Sec 0-5 with exactly 3 rows: 0-1.5s / 1.5-3.5s / 3.5-5s. The 1.5-3.5s row must include Text hiện and Voiceover in the selected copy language.
+- Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.

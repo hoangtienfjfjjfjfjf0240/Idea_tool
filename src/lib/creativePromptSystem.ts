@@ -333,6 +333,13 @@ Before outputting each idea, internally verify:
 8. hook_text_overlay and hook_vo are complementary, not duplicates.
 9. The video feels native to Meta feed.`;
 
+export const BULLETPROOF_VISUAL_ANCHOR_RULES = `## BULLETPROOF VISUAL ANCHORS - REQUIRED
+Every generated visual field must include the 3 anchor clauses below inside the visual text:
+- Position anchor: lock each person, object, prop, or UI element to left/right/foreground/background/top/bottom/screen region. For split screen, name the left pane and right pane separately.
+- Contact anchor: state the exact hand, finger, eye line, cursor, tap point, or body part that holds, presses, taps, swipes, points at, looks at, or touches the object/UI. For no-person screen recordings, anchor the cursor/finger action and the UI control location.
+- Physical action anchor: describe visible actions such as tap, press, swipe, drag, lift, scan, upload, shoot, error icon appears, screen changes, chart moves, or result renders. Do not leave abstract verbs like tries, fails, struggles, or uses the app unless the visible action is spelled out.
+Apply this to visual_scene_1, visual_scene_2, visual_scene_3, hook.visual, body.visual, cta.visual, hook-only visual, and any generated production script visual.`;
+
 export const CREATIVE_PROMPT_RULES = `## CREATIVE IDEA ENGINE V2.1 RULES CHECKLIST
 
 ### Pain Point
@@ -386,6 +393,10 @@ R-PR3. dont_do must be concrete and checkable.
 R-PR4. talent_profile must specify age/gender/look/clothing or "No talent - screen recording only".
 R-PR5. cta_friction_reducer is mandatory.
 R-PR6. visual_ref_notes must include camera style, lighting, talent direction, and pacing.
+R-PR7. visual_scene_1/2/3 and hook/body/cta.visual must include Position anchor, Contact anchor, and Physical action anchor clauses.
+R-PR8. Screen-recording or no-person scenes must anchor UI region plus cursor/finger/tap action.
+
+${BULLETPROOF_VISUAL_ANCHOR_RULES}
 
 ### Compliance
 R-H1. Health ideas must include real app demo and avoid diagnosis/cure/treatment/disease detection/doctor replacement claims.
@@ -415,7 +426,9 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
 - Off-camera narration belongs in hook_vo/script_vo. On-screen copy belongs in hook_text_overlay/text_overlays.
 - Output scenes in the requested timeline: Hook 0-5, Body 5-18, CTA 18-25.
-- User-facing copy follows the requested language. Visual scenes and production notes should be Vietnamese for the internal team.`;
+- User-facing copy follows the requested language. Visual scenes and production notes should be Vietnamese for the internal team.
+
+${BULLETPROOF_VISUAL_ANCHOR_RULES}`;
 
 export const PROMPT_SYSTEM_BUILDER_COMPATIBILITY_GUARDRAILS = TOOL_COMPATIBILITY_GUARDRAILS;
 
@@ -507,6 +520,7 @@ ${extraContext.length ? `\n---\n## EXTRA CONTEXT\n${extraContext.map(line => `- 
 export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
   const compact = options.compact === true;
+  const visualAnchorClause = 'Must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.';
   const selectedFiltersBlock = options.includeSelectedFilters
     ? `  "selectedFilters": {
     "coreUser": ["..."],
@@ -522,19 +536,19 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   const hookBodyCtaBlock = compact
     ? `  "hook": {
     "durationSeconds": 3,
-    "visual": "Detailed opening visual in Vietnamese, 2-3 dense production sentences covering camera, location, exact blocker, and visible painpoint clue",
+    "visual": "Detailed opening visual in Vietnamese, 2-3 dense production sentences covering camera, location, exact blocker, and visible painpoint clue. ${visualAnchorClause}",
     "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
     "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point"
   },
   "body": {
-    "visual": "Detailed body visual in Vietnamese, 2-3 dense production sentences covering the transition from blocker to demo, the exact product action, and the visible proof beat",
+    "visual": "Detailed body visual in Vietnamese, 2-3 dense production sentences covering the transition from blocker to demo, the exact product action, and the visible proof beat. ${visualAnchorClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "textOverlay": "Short body text in ${options.language} that reinforces the same pain-to-solution chain"
   },
   "cta": {
-    "visual": "Detailed CTA visual in Vietnamese, 1-2 concrete production sentences covering the final proof frame, the app/result screen, and the exact CTA beat",
+    "visual": "Detailed CTA visual in Vietnamese, 1-2 concrete production sentences covering the final proof frame, the app/result screen, and the exact CTA beat. ${visualAnchorClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "textOverlay": "Short CTA text in ${options.language}",
@@ -542,7 +556,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   }`
     : `  "hook": {
     "durationSeconds": 3,
-    "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense production sentences covering camera, location, blocker, and visible painpoint clue",
+    "visual": "Detailed opening visual in Vietnamese, pure visual only, 2-4 dense production sentences covering camera, location, blocker, and visible painpoint clue. ${visualAnchorClause}",
     "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
@@ -554,7 +568,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "whyTheyStopScrolling": "1 ${options.language} sentence explaining the stop-scroll reason"
   },
   "body": {
-    "visual": "Detailed body visual in Vietnamese, pure visual only",
+    "visual": "Detailed body visual in Vietnamese, pure visual only. ${visualAnchorClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
@@ -562,7 +576,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "viTranslation": "Optional English recap of body speech/voiceover + text"
   },
   "cta": {
-    "visual": "Detailed CTA visual in Vietnamese, pure visual only",
+    "visual": "Detailed CTA visual in Vietnamese, pure visual only. ${visualAnchorClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
@@ -631,6 +645,7 @@ ${hookBodyCtaBlock}
 - meta.hookAlt1 and meta.hookAlt2 must not be paraphrases of meta.hookPrimary.
 - meta.pspBridge is required. It must connect the hook emotion/angle to framework.psp before Body starts, 10-36 words.
 ${compactOutputRules}
+- Every hook/body/cta.visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
 - Write user-facing copy in ${options.language}: title, hook lines, characterSpeech, voiceover, textOverlay, script_vo, and CTA text. Write visual and production descriptions in Vietnamese.
@@ -639,6 +654,7 @@ ${compactOutputRules}
 
 export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): string {
   const v21QuantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+  const visualAnchorClause = 'Include Position anchor, Contact anchor, and Physical action anchor clauses inside this visual text.';
 
   return `## OUTPUT SPECIFICATION - CREATIVE IDEA ENGINE V2.1
 
@@ -673,9 +689,9 @@ Use the selected market only for culture, setting, behavior, props, and vibe. Do
             "hook_alt_2_archetype": "Must be different from primary and alt_1",
             "emotion_journey": "Hook Emotion -> Body Emotion -> CTA Emotion",
             "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
-            "visual_scene_1": "Sec 0-5 (THE HOOK - 3 phases): Phase 1 (0-1.5s): [VISUAL SHOCK that depicts the pain point situation]. Phase 2 (1.5-3.5s): [CONTEXT, hook_text_overlay appears, hook_vo begins]. Phase 3 (3.5-5s): [CURIOSITY GAP that bridges to body].",
-            "visual_scene_2": "Sec 5-18 (THE BODY): [body_motivation_pattern applied]. Include tension, app action, camera style, pacing, and key proof moments.",
-            "visual_scene_3": "Sec 18-25 (THE CTA): Resolution plus CTA visual. Show proof/payoff and app/download prompt.",
+            "visual_scene_1": "Sec 0-5 (THE HOOK - 3 phases): Phase 1 (0-1.5s): [VISUAL SHOCK that depicts the pain point situation]. Phase 2 (1.5-3.5s): [CONTEXT, hook_text_overlay appears, hook_vo begins]. Phase 3 (3.5-5s): [CURIOSITY GAP that bridges to body]. ${visualAnchorClause}",
+            "visual_scene_2": "Sec 5-18 (THE BODY): [body_motivation_pattern applied]. Include tension, app action, camera style, pacing, and key proof moments. ${visualAnchorClause}",
+            "visual_scene_3": "Sec 18-25 (THE CTA): Resolution plus CTA visual. Show proof/payoff and app/download prompt. ${visualAnchorClause}",
             "text_overlays": [
               {"time": "1.5-3.5s", "text": "Hook text on screen"},
               {"time": "6-9s", "text": "Body support text"},
@@ -720,7 +736,8 @@ Use the selected market only for culture, setting, behavior, props, and vibe. Do
 17. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
 18. All scenes must assume Meta-native vertical 9:16.
 19. Angle must follow the formula: one angle_type + one market/framework approach + one visually different execution.
-20. If the app is Health, include or prefer a Fact angle in the batch. If Utility, include or prefer Comparison/Demo. If AI, include or prefer Trend.`;
+20. If the app is Health, include or prefer a Fact angle in the batch. If Utility, include or prefer Comparison/Demo. If AI, include or prefer Trend.
+21. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.`;
 
   if (options.ruleset === 'builder') {
     const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
@@ -752,9 +769,9 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
             "hook_character_speech": "On-camera character speech in ${options.language}. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Optional voice/video narrator line in ${options.language}. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text in ${options.language}, max 12 words.",
-            "visual_scene_1": "Second 0-3 only: Exact Vietnamese visual description. Who, where, doing what. Never write 0-8s.",
-            "visual_scene_2": "Second 3-15: Core demonstration or storytelling visual in Vietnamese.",
-            "visual_scene_3": "Second 15-25: Reveal or proof visual in Vietnamese.",
+            "visual_scene_1": "Second 0-3 only: Exact Vietnamese visual description. Who, where, doing what. Never write 0-8s. ${visualAnchorClause}",
+            "visual_scene_2": "Second 3-15: Core demonstration or storytelling visual in Vietnamese. ${visualAnchorClause}",
+            "visual_scene_3": "Second 15-25: Reveal or proof visual in Vietnamese. ${visualAnchorClause}",
             "script_vo": "Full voiceover script in ${options.language}, max 60 words.",
             "cta_text": "Exact CTA in ${options.language}, max 6 words.",
             "visual_ref_notes": "Specific Vietnamese visual reference for production team.",
@@ -781,7 +798,8 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
 8. angle_type must be one of the allowed values.
 9. Tracks: A = no real person needed | B = real person/UGC | C = motion/animation.
 10. User-facing copy fields title/hook_primary/hook_alt_1/hook_alt_2/hook_character_speech/hook_voiceover/hook_text_overlay/script_vo/cta_text must be in ${options.language}. Internal visual and production notes must be Vietnamese.
-11. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required and hook_voiceover must not carry that on-camera line.`;
+11. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required and hook_voiceover must not carry that on-camera line.
+12. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.`;
   }
 
   if (options.ruleset === 'v7') {
@@ -822,9 +840,9 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
             "app_demo_action": "Exact feature action: where the finger taps, what changes on screen, how numbers/charts/light/UI change",
             "overlay_sequence": ["0-3s hook overlay in ${options.language}", "3-6s pivot overlay in ${options.language}", "proof/demo overlay in ${options.language}", "CTA overlay in ${options.language}"],
             "edit_notes": "Production/edit notes in Vietnamese: camera angle, cut rhythm, close-up, zoom, crop, caption style, raw UGC level",
-            "visual_scene_1": "Vietnamese direct opening (0-3s): detailed movement, camera angle, body state, expression, local setting, and shocking/curiosity action. Do not write generic setup.",
-            "visual_scene_2": "Vietnamese solution pivot (3-6s): detailed hand action using the feature, where the finger taps, how the screen lights/changes UI, and how numbers/charts change.",
-            "visual_scene_3": "Vietnamese proof/CTA continuation: simple producible visual that confirms the solution and leads to the app action.",
+            "visual_scene_1": "Vietnamese direct opening (0-3s): detailed movement, camera angle, body state, expression, local setting, and shocking/curiosity action. Do not write generic setup. ${visualAnchorClause}",
+            "visual_scene_2": "Vietnamese solution pivot (3-6s): detailed hand action using the feature, where the finger taps, how the screen lights/changes UI, and how numbers/charts change. ${visualAnchorClause}",
+            "visual_scene_3": "Vietnamese proof/CTA continuation: simple producible visual that confirms the solution and leads to the app action. ${visualAnchorClause}",
             "script_vo": "Short speakable voice/video script in ${options.language}. If the idea has 2+ people talking, write simple role-accurate dialogue; otherwise use voice-over.",
             "cta_text": "CTA in ${options.language}.",
             "visual_ref_notes": "MARKET & USER ADAPTATION in Vietnamese: ethnicity, clothing, architecture, behavior, culture, and home/work context specific to the market.",
@@ -852,7 +870,8 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
 9. If the idea has a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. If 2+ people communicate, keep the exchange simple, natural, role-accurate, and include only the necessary dialogue.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
 11. Use the selected feature/PSP as the Pivot solution.
-12. Hyper-localize ethnicity, clothing, architecture, environment, behavior, culture, and social setting to the selected market.`;
+12. Hyper-localize ethnicity, clothing, architecture, environment, behavior, culture, and social setting to the selected market.
+13. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.`;
   }
 
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
@@ -891,9 +910,9 @@ The array must follow this exact structure:
             "app_demo_action": "Exact app action shown on screen: tap, scan, upload, measure, compare, render, clean, save, etc.",
             "overlay_sequence": ["0-3s hook overlay", "3-15s demo overlay", "15-25s proof overlay", "CTA overlay"],
             "edit_notes": "Concrete editing notes: cut rhythm, zoom, caption style, SFX, transition, or b-roll reference",
-            "visual_scene_1": "Second 0-3 only: exact hook beat. Who, where, doing what, what pain object is visible. Never write 0-8s.",
-            "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point.",
-            "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual.",
+            "visual_scene_1": "Second 0-3 only: exact hook beat. Who, where, doing what, what pain object is visible. Never write 0-8s. ${visualAnchorClause}",
+            "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point. ${visualAnchorClause}",
+            "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual. ${visualAnchorClause}",
             "script_vo": "Full speakable voiceover script, max 60 words.",
             "cta_text": "Exact CTA, max 6 words.",
             "visual_ref_notes": "Specific visual reference for production team.",
@@ -929,7 +948,8 @@ The array must follow this exact structure:
 17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
 18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
 19. hook_primary should sound like a human confession, tension line, or pattern interrupt in-feed. Avoid search-query hooks like "Could X explain Y?" unless the user explicitly asks for educational SEO style.
-20. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should make the 0-3s hook clear without using old 0-8s or 8-12s timing labels.`;
+20. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should make the 0-3s hook clear without using old 0-8s or 8-12s timing labels.
+21. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.`;
 }
 
 function readFirstText(record: Record<string, unknown>, keys: string[], fallback = ''): string {
@@ -1946,6 +1966,7 @@ export function normalizeCreativeBriefOutput(
 
 export function buildHookOutputSpec(options: HookOutputSpecOptions): string {
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+  const visualAnchorClause = 'Must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.';
   return `## OUTPUT SPECIFICATION
 
 Return a JSON array ONLY. No markdown fences. No explanation.
@@ -1966,7 +1987,7 @@ Return ${quantityLabel} objects in this exact schema:
   },
   "hook": {
     "durationSeconds": 3,
-    "visual": "Detailed hook-only visual in ${options.language}",
+    "visual": "Detailed hook-only visual in ${options.language}. ${visualAnchorClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line in ${options.language}: same as characterSpeech or voiceover, not a merged script",
@@ -1985,6 +2006,7 @@ Return ${quantityLabel} objects in this exact schema:
 - hook.durationSeconds must estimate the actual hook runtime as an integer second count, normally 3 seconds.
 - For UGC/POV/Reaction/Interview, split on-camera talent speech into characterSpeech and off-camera narrator/video voice into voiceover.
 - visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.
+- visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - The variation must be visually distinct, not just paraphrased text.`;
 }

@@ -234,6 +234,7 @@ function buildFallbackHookVariations(
   const emotion = readText(hook.emotion, 'curiosity');
   const coreUser = readText(hook.core_user, 'target viewer');
   const instructionHint = extractInstructionHint(readText(instruction, concept), concept);
+  const fallbackAnchors = 'Position anchor: lock the main subject/object in a clear left/right or center frame. Contact anchor: show the exact hand/finger/cursor interaction with the object or UI. Physical action anchor: show the visible tap, press, lift, error, reveal, or screen-change action.';
   const overlayBase = compactText(baseTitle, 32) || 'Winning hook';
   const bases = [
     'Change the setting and make the first frame more unexpected',
@@ -261,8 +262,8 @@ function buildFallbackHookVariations(
         dontDo: 'Do not turn this into a full Body or CTA script',
       },
       hook: {
-        script: `${angle}. Start from: ${visualDetail}. Keep the original pain point "${painpoint}" and make "${instructionHint || baseTitle}" visible in the first second.`,
-        visual: `${angle}. Start from: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second.`,
+        script: `${angle}. Start from: ${visualDetail}. Keep the original pain point "${painpoint}" and make "${instructionHint || baseTitle}" visible in the first second. ${fallbackAnchors}`,
+        visual: `${angle}. Start from: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second. ${fallbackAnchors}`,
         text: overlayBase,
         voice: `${overlayBase}: keep the same pain point, but reveal it faster in the first second.`,
         textOverlay: overlayBase,
@@ -292,6 +293,7 @@ function buildBetterFallbackHookVariations(
   const emotion = readText(hook.emotion, 'curiosity');
   const coreUser = readText(hook.core_user, 'target viewer');
   const instructionHint = extractInstructionHint(readText(instruction, concept), concept);
+  const fallbackAnchors = 'Position anchor: lock the main subject/object in a clear left/right or center frame. Contact anchor: show the exact hand/finger/cursor interaction with the object or UI. Physical action anchor: show the visible tap, press, lift, error, reveal, or screen-change action.';
   const patterns = [
     {
       angle: 'Move the hook into a desk setup with a sudden close-up reveal',
@@ -343,8 +345,8 @@ function buildBetterFallbackHookVariations(
         dontDo: 'Do not turn this into a full Body or CTA script',
       },
       hook: {
-        script: `[VISUAL] ${pattern.visualLead} Reference visual DNA: ${visualDetail}. Keep the original pain point "${painpoint}" but push the direction "${instructionHint || baseTitle}" through a clearly different opening action.\n[VOICE] ${pattern.voice}\n[TEXT OVERLAY] ${pattern.overlay}`,
-        visual: `${pattern.visualLead} Reference visual DNA: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second through a different opening action.`,
+        script: `[VISUAL] ${pattern.visualLead} Reference visual DNA: ${visualDetail}. Keep the original pain point "${painpoint}" but push the direction "${instructionHint || baseTitle}" through a clearly different opening action. ${fallbackAnchors}\n[VOICE] ${pattern.voice}\n[TEXT OVERLAY] ${pattern.overlay}`,
+        visual: `${pattern.visualLead} Reference visual DNA: ${visualDetail}. Keep "${instructionHint || baseTitle}" visible in the first second through a different opening action. ${fallbackAnchors}`,
         text: pattern.overlay,
         voice: pattern.voice,
         textOverlay: pattern.overlay,
@@ -433,6 +435,7 @@ Create exactly ${requestedQuantity} hook-only variations.
 - Change the visual execution enough that each variation is distinct.
 - Preserve the interaction pattern and number of people when possible.
 - Each variation should differ from the original on at least 3 of these axes: situation, character, setting, blocker, mood.
+- hook.visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Strategy/explanation fields can be Vietnamese; title, hook voice, character speech, voiceover, and textOverlay must be ${targetLanguage}.
 - Target market controls local behavior, setting, culture, props, and vibe only. Do not switch copy away from ${targetLanguage}.
 - Output compact JSON only. No markdown fences. No full Body or CTA.

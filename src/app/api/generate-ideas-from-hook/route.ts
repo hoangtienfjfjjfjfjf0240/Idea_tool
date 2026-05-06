@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
 import {
+  BULLETPROOF_VISUAL_ANCHOR_RULES,
   buildFrameworkInjection,
   CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
   CREATIVE_PROMPT_RULES,
@@ -465,6 +466,7 @@ Rules:
 - Every idea must have hook, body, CTA. Do not return hook-only objects.
 - Map the global V2.1 scene rules into this flat schema: visual_scene_1 = hook.visual, visual_scene_2 = body.visual, visual_scene_3 = cta.visual.
 - Use readable timing inside hook.visual. If the user asks for an 8-second hook, split naturally as 0-2s / 2-5s / 5-8s or another sensible three-part timing.
+- hook.visual, body.visual, and cta.visual must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - For Health/Fitness: no diagnose, treat, cure, detect disease, replace doctor, medical result claims. Use track, monitor, check, reference, wellness.
 - Do not use before/after body or health outcome framing.
 - Do not output generic placeholders. Make each idea visually different.`;
@@ -512,6 +514,7 @@ Required shape:
 Rules:
 - Every generated text field must be in ${options.language}, including title, visual notes, production notes, hook text, speech, voiceover, CTA, and endCard.
 - Every idea must include non-empty hook.visual, hook voice/text, body.visual, body voice/text, cta.visual, cta voice/text, and cta.endCard.
+- hook.visual, body.visual, and cta.visual must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep it tied to ${options.appName}; no generic placeholders.
 - For Health/Fitness: no diagnose, treat, cure, detect disease, replace doctor, or medical-result promise. Use track, monitor, check, reference, wellness.`;
 }
@@ -1343,6 +1346,7 @@ Hard requirements:
 - The first 3 seconds must show the specific trigger/context that makes this user care now.
 - Hook must include psp_bridge so the winning hook tension connects to the PSP before the Body/demo.
 - visual_scene_2 must show the selected PSP/app action tied to the same problem. No generic app demo.
+- hook.visual/body.visual/cta.visual must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
@@ -1390,6 +1394,7 @@ ${knowledgeBlock || '- No App Brain memory attached.'}
 ${recentIdeasBlock || '- No recent idea history attached.'}
 ${painpointPrecisionBlock}
 ${filterConsistencyBlock || ''}
+${BULLETPROOF_VISUAL_ANCHOR_RULES}
 
 ## WINNING HOOK DNA
 - Title: "${hook.title}"
@@ -1514,7 +1519,7 @@ Regenerate the full JSON array. Follow the HOOK LIBRARY FULL IDEAS flat schema e
 - Do not wrap inside pillar/angles.
 - meta.hookPrimary must create a clear pattern interrupt.
 - meta.hookAlt1 and meta.hookAlt2 must use different rhetorical approaches.
-- hook.visual/body.visual/cta.visual must be concrete and shootable.
+- hook.visual/body.visual/cta.visual must be concrete and shootable, with Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep voiceover concise enough for the selected runtime.
 ${retryNotes}`, {
           model: modelUsed,
