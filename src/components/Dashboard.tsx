@@ -16,6 +16,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modal state
   const [isEditing, setIsEditing] = useState(false);
@@ -38,10 +39,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
 
   const loadData = async () => {
     setLoading(true);
-    const [appsData, logsData] = await Promise.all([getApps(), getSyncLogs(undefined, 10)]);
-    setApps(appsData);
-    setSyncLogs(logsData);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [appsData, logsData] = await Promise.all([getApps(), getSyncLogs(undefined, 10)]);
+      setApps(appsData);
+      setSyncLogs(logsData);
+    } catch (error) {
+      console.error('Dashboard load failed:', error);
+      setApps([]);
+      setSyncLogs([]);
+      setLoadError(error instanceof Error ? error.message : 'Khong the tai du lieu tu Supabase.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -178,7 +188,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectApp }) => {
         </button>
       </div>
 
-      {apps.length === 0 ? (
+      {loadError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-900">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-none" />
+            <div>
+              <p className="font-semibold">Khong the tai du lieu tu Supabase</p>
+              <p className="mt-1 text-sm text-red-700">{loadError}</p>
+              <p className="mt-2 text-sm text-red-700">
+                Neu Supabase hien &quot;Services restricted&quot; hoac &quot;EXCEEDING USAGE LIMITS&quot;, can xu ly Billing/Usage truoc khi app co the doc lai database.
+              </p>
+              <button
+                onClick={loadData}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              >
+                <RefreshCw size={16} /> Thu lai
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : apps.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <Smartphone className="w-16 h-16 mx-auto mb-4 opacity-30" />
           <p className="text-lg font-medium">Chưa có ứng dụng nào</p>

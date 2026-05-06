@@ -183,7 +183,10 @@ export async function getApps(): Promise<AppProject[]> {
     .from('apps')
     .select('*')
     .order('created_at', { ascending: false });
-  if (error) { console.error('getApps error:', error); return []; }
+  if (error) {
+    console.error('getApps error:', error);
+    throw new Error(error.message || 'Supabase request failed while loading apps.');
+  }
   return data || [];
 }
 
