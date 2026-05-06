@@ -78,7 +78,7 @@ function countWords(value: string) {
 function jaccardSimilarity(a: string, b: string) {
   const tokensA = new Set(normalizeCompareText(a).split(' ').filter(Boolean));
   const tokensB = new Set(normalizeCompareText(b).split(' ').filter(Boolean));
-  if (tokensA.size === 0 && tokensB.size === 0) return 1;
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
   let intersection = 0;
   for (const token of tokensA) {
     if (tokensB.has(token)) intersection += 1;
@@ -95,6 +95,10 @@ function extractInstructionHint(instruction: string, fallback: string) {
     .filter(line => !/^ket hop hook\b/i.test(normalizeCompareText(line)));
 
   return compactText(lines[0] || fallback, 88);
+}
+
+function hasCjkText(value: string) {
+  return /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(value);
 }
 
 function isUsableHookVariation(
@@ -157,8 +161,13 @@ function isDistinctHookVariation(
   const candidateOverlay = readText(candidateHook.textOverlay, readText(candidateHook.text));
   const candidateVisual = readText(candidateHook.visual, readText(candidateHook.script));
   const candidateFingerprint = buildHookVariationFingerprint(candidate);
+  const cjkCopy = hasCjkText(`${candidateVoice} ${candidateOverlay}`);
 
-  if (countWords(candidateVoice) < 4 && countWords(candidateOverlay) < 2) {
+  if (!cjkCopy && countWords(candidateVoice) < 4 && countWords(candidateOverlay) < 2) {
+    return false;
+  }
+
+  if (cjkCopy && `${candidateVoice}${candidateOverlay}`.replace(/\s+/g, '').length < 6) {
     return false;
   }
 
@@ -169,11 +178,15 @@ function isDistinctHookVariation(
     const visual = readText(hook.visual, readText(hook.script));
     const fingerprint = buildHookVariationFingerprint(item);
 
-    if (normalizeCompareText(candidateOverlay) === normalizeCompareText(overlay)) {
+    const normalizedCandidateOverlay = normalizeCompareText(candidateOverlay);
+    const normalizedOverlay = normalizeCompareText(overlay);
+    if (normalizedCandidateOverlay && normalizedOverlay && normalizedCandidateOverlay === normalizedOverlay) {
       return false;
     }
 
-    if (normalizeCompareText(candidateVoice) === normalizeCompareText(voice)) {
+    const normalizedCandidateVoice = normalizeCompareText(candidateVoice);
+    const normalizedVoice = normalizeCompareText(voice);
+    if (normalizedCandidateVoice && normalizedVoice && normalizedCandidateVoice === normalizedVoice) {
       return false;
     }
 
@@ -455,6 +468,10 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       const validItems = dedupeHookVariations(arr.map((item: unknown, i: number) => {
         const normalized = normalizeHookOutput(item);
         const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
+        const characterSpeech = readText(normalizedHook.characterSpeech);
+        const voiceover = readText(normalizedHook.voiceover);
+        const textOverlay = readText(normalizedHook.textOverlay, readText(normalizedHook.text));
+        const voice = readText(normalizedHook.voice, voiceover || characterSpeech || textOverlay);
         return {
           id: `hook-${Date.now()}-${i}`,
           title: normalized.title || `Bien the ${i + 1}`,
@@ -462,10 +479,12 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
           meta: normalized.meta || {},
           hook: {
             script: normalizedHook.script || '',
-            textOverlay: normalizedHook.textOverlay || '',
+            textOverlay,
             visual: normalizedHook.visual || normalizedHook.script || '',
-            text: normalizedHook.text || normalizedHook.textOverlay || '',
-            voice: normalizedHook.voice || '',
+            text: readText(normalizedHook.text, textOverlay),
+            characterSpeech,
+            voiceover,
+            voice,
             viTranslation: normalizedHook.viTranslation || '',
             viewerEmotion: normalizedHook.viewerEmotion || '',
             painpointImpact: normalizedHook.painpointImpact || '',
@@ -485,7 +504,8 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       lastError = `Model ${model} chỉ tạo được ${data.length}/${requestedQuantity} hook hợp lệ.`;
     }
 
-    const refillCount = Math.max(0, requestedQuantity - bestValidItems.length);
+    const allowLocalRefill = targetLanguage === 'English';
+    const refillCount = allowLocalRefill ? Math.max(0, requestedQuantity - bestValidItems.length) : 0;
     const refillItems = refillCount > 0
       ? buildBetterFallbackHookVariations(hook, readText(instruction), refillCount, bestValidItems.length)
         .filter(item => isUsableHookVariation(item, readText(instruction), hook))
@@ -501,6 +521,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
         meta: {
           aiCount: bestValidItems.length,
           refillCount: Math.max(0, data.length - bestValidItems.length),
+          localRefillSkippedForLanguage: !allowLocalRefill && bestValidItems.length < requestedQuantity,
           requestedQuantity,
         },
       });

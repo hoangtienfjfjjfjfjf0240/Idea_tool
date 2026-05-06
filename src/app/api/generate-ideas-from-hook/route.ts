@@ -134,7 +134,7 @@ function normalizeCompareText(text: string): string {
 function jaccardSimilarity(a: string, b: string) {
   const tokensA = new Set(normalizeCompareText(a).split(' ').filter(Boolean));
   const tokensB = new Set(normalizeCompareText(b).split(' ').filter(Boolean));
-  if (tokensA.size === 0 && tokensB.size === 0) return 1;
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
   let intersection = 0;
   for (const token of tokensA) {
     if (tokensB.has(token)) intersection += 1;
@@ -461,7 +461,7 @@ Each object must use this exact flat schema:
 Rules:
 - Use plain English title prefixes: "Script 1.1:", "Script 1.2:", "Script 1.3:" and so on. Do not copy schema example text.
 - User-facing copy fields must be in ${options.language}: title, hook text, speech, voiceover, CTA.
-- Visual descriptions and production notes should be Vietnamese for the production team.
+- Visual descriptions and production notes must also be in ${options.language}.
 - Every idea must have hook, body, CTA. Do not return hook-only objects.
 - Map the global V2.1 scene rules into this flat schema: visual_scene_1 = hook.visual, visual_scene_2 = body.visual, visual_scene_3 = cta.visual.
 - Use readable timing inside hook.visual. If the user asks for an 8-second hook, split naturally as 0-2s / 2-5s / 5-8s or another sensible three-part timing.
@@ -510,7 +510,7 @@ Required shape:
 ]
 
 Rules:
-- User-facing copy fields must be in ${options.language}; visual/production notes can be Vietnamese.
+- Every generated text field must be in ${options.language}, including title, visual notes, production notes, hook text, speech, voiceover, CTA, and endCard.
 - Every idea must include non-empty hook.visual, hook voice/text, body.visual, body voice/text, cta.visual, cta voice/text, and cta.endCard.
 - Keep it tied to ${options.appName}; no generic placeholders.
 - For Health/Fitness: no diagnose, treat, cure, detect disease, replace doctor, or medical-result promise. Use track, monitor, check, reference, wellness.`;
@@ -552,7 +552,9 @@ function hasSameHookFrame(a: Record<string, unknown>, b: Record<string, unknown>
   const left = ideaHookLine(a);
   const right = ideaHookLine(b);
   if (!left || !right) return false;
-  return normalizeCompareText(left) === normalizeCompareText(right) || jaccardSimilarity(left, right) >= 0.72;
+  const normalizedLeft = normalizeCompareText(left);
+  const normalizedRight = normalizeCompareText(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight) || jaccardSimilarity(left, right) >= 0.72;
 }
 
 function dedupeIdeas(
@@ -974,11 +976,12 @@ function parseGeminiJsonLikeFullIdeasText(text: string): Record<string, unknown>
       const fallbackTitle = `Script 1.${index + 1}`;
       const title = readSafeString(chunk, 'title') || fallbackTitle;
       const hookPrimary = readSafeString(meta, 'hookPrimary') || readSafeString(hook, 'textOverlay') || title;
-      const ctaText = readSafeString(cta, 'textOverlay') || readSafeString(cta, 'voiceover') || readSafeString(cta, 'endCard') || 'Try it now';
-      const fallbackHookVisual = `Open on a concrete first-frame problem tied to "${hookPrimary || title}".`;
-      const fallbackBodyVisual = `Continue the same tension and show the next app/demo action clearly.`;
-      const fallbackBodyVoice = `This is the moment the solution becomes clear.`;
-      const fallbackCtaVisual = `End on the app or result screen with the next action visible.`;
+      const ctaText = readSafeString(cta, 'textOverlay') || readSafeString(cta, 'voiceover') || readSafeString(cta, 'endCard') || hookPrimary || title || 'Try it now';
+      const localizedFallbackSeed = hookPrimary || title;
+      const fallbackHookVisual = localizedFallbackSeed || `Open on a concrete first-frame problem tied to the selected hook.`;
+      const fallbackBodyVisual = localizedFallbackSeed || `Continue the same tension and show the next app/demo action clearly.`;
+      const fallbackBodyVoice = hookPrimary || title || 'See the check-in';
+      const fallbackCtaVisual = ctaText || localizedFallbackSeed || `End on the app or result screen with the next action visible.`;
 
       return {
         title,
@@ -1116,11 +1119,24 @@ function enrichFullIdeaFromHook(
     ctaSection.script,
     `End on ${options.appName} with the action and result visible.`
   );
+  const rawCleanTitle = cleanFullIdeaTitle(rawIdea.title, '');
+  const sourceTitleSignal = normalizeCompareText(hookTitle);
+  const rawTitleSignal = normalizeCompareText(rawCleanTitle);
+  const compactHookPrimary = hookPrimary.replace(/\s+/g, ' ').split(' ').slice(0, 10).join(' ');
+  const localizedHookTitle = cleanFullIdeaTitle(hookPrimary, compactHookPrimary);
+  const shouldUseHookPrimaryTitle = Boolean(
+    rawCleanTitle
+    && sourceTitleSignal
+    && rawTitleSignal.includes(sourceTitleSignal)
+  );
+  const outputTitle = shouldUseHookPrimaryTitle
+    ? (localizedHookTitle || compactHookPrimary || rawCleanTitle)
+    : (rawCleanTitle || localizedHookTitle || `Script 1.${ideaIndex + 1}: ${hookTitle}`);
 
   return normalizeIdeaOutput({
     ...rawIdea,
     id: `P0-A0-I${ideaIndex}`,
-    title: cleanFullIdeaTitle(rawIdea.title, `Script 1.${ideaIndex + 1}: ${hookTitle}`),
+    title: outputTitle,
     duration: readFirstAvailableText(rawIdea.duration, options.duration),
     creativeType: readFirstAvailableText(rawIdea.creativeType, rawIdea.creative_type, hook.creative_type, hook.subtitle, 'UGC'),
     meta: {
@@ -1330,7 +1346,7 @@ Hard requirements:
 - If this is a health/wellness app, position the app as tracking/logging/understanding trends only. Never diagnose, treat, detect disease, promise prevention, or imply before/after health improvement.
 - If the PSP is a health tracker, hook_primary may be human/emotional, but visual_scene_1 or hook_alt must name the actual tracked concern/metric from the selected PSP/pain point. Do not stop at a generic symptom like "dizzy", "tired", or "worried".
 - Avoid search-query hooks like "Huyết áp thấp có làm tôi choáng khi đứng dậy không?" Make hook_primary feel like a lived moment, confession, or tension line.
-- Better lived-moment health hook style examples, translated/adapted into ${targetLanguage}: "Tôi cứ tưởng chỉ là do tuổi tác." / "Cái choáng chưa phải phần đáng sợ nhất." / "Buổi sáng của tôi bắt đầu bằng một nhịp khựng."
+- Better lived-moment health hook style examples to adapt into ${targetLanguage}: "I thought it was just age." / "The dizzy moment was not the scariest part." / "My morning started with one strange pause."
 - If returning multiple ideas, no two hook_primary lines may use the same sentence frame.`;
 
       const frameworkInjection = buildFrameworkInjection({
@@ -1560,7 +1576,7 @@ ${retryNotes}`, {
 [ALTERNATE MODEL RETRY - NEED CLEAN FULL BATCH]
 Return ${plan.batchQuantity} valid, unique ideas in the exact flat JSON schema.
 - Do not wrap inside pillar/angles.
-- English user-facing copy: title, hook text, character speech, voice/video voiceover, text overlay, and CTA.
+- User-facing copy must be ${targetLanguage}: title, hook text, character speech, voice/video voiceover, text overlay, and CTA.
 - No generic template or fallback.
 - No shallow paraphrase of existing ideas.
 - Hook, body, and CTA must stay tied to the winning hook context and selected pain point.`, {

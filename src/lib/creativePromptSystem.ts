@@ -1966,12 +1966,12 @@ Return ${quantityLabel} objects in this exact schema:
   },
   "hook": {
     "durationSeconds": 3,
-    "visual": "Detailed hook-only visual in Vietnamese",
+    "visual": "Detailed hook-only visual in ${options.language}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
+    "voice": "Legacy compatibility line in ${options.language}: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Readable on-screen text in ${options.language}, around 6-16 words, aligned with meta.hookPrimary",
-    "viTranslation": "Optional English recap of hook speech/voiceover + text",
+    "viTranslation": "Optional recap of hook speech/voiceover + text",
     "viewerEmotion": "${options.language} description of what the viewer feels",
     "painpointImpact": "${options.language} description of why this pain lands",
     "whyTheyStopScrolling": "1 ${options.language} sentence explaining the stop-scroll reason"

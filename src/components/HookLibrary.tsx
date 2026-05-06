@@ -1997,7 +1997,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           throw new Error('Backend đang trả fallback ideas thay vì output AI sạch. Cần siết prompt/context rồi chạy lại.');
         }
         const resultData = Array.isArray(result?.data) ? (result.data as FullIdea[]) : [];
-        if (res.ok && result.success && resultData.length >= fullIdeasQty) {
+        if (res.ok && result.success && resultData.length > 0) {
           const generated = resultData.slice(0, fullIdeasQty);
           const saved = await saveFullIdeasToDatabase(generated);
           setFullIdeas(saved);
@@ -2007,8 +2007,9 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             acc[key] = true;
             return acc;
           }, {}));
-        } else if (res.ok && result.success && resultData.length > 0) {
-          alert(`Chỉ tạo được ${resultData.length}/${fullIdeasQty} full ideas hợp lệ. Mình không lưu partial batch này, hãy bấm tạo lại.`);
+          if (resultData.length < fullIdeasQty) {
+            alert(`Chỉ tạo được ${resultData.length}/${fullIdeasQty} full ideas hợp lệ. Mình đã lưu ${saved.length} idea sạch vào DB; bấm tạo lại nếu cần đủ số lượng.`);
+          }
         } else {
           alert(result.error || 'Có lỗi khi tạo ideas.');
         }
