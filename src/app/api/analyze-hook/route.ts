@@ -3,6 +3,7 @@ import { askAIWithImage } from '@/lib/aiClient';
 import { parseJsonLoose } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
 import { buildHookFrameworkFallback } from '@/lib/hookFramework';
+import { GLOBAL_EMOTION_PROMPT_GUIDE } from '@/lib/emotionOptions';
 
 export const maxDuration = 120;
 
@@ -43,6 +44,9 @@ Hãy phân tích và trả về JSON:
 7. "painpoint": Painpoint đang được thể hiện (VD: "Điện thoại đầy bộ nhớ, không thể update")
 8. "emotion": Cảm xúc hook tạo ra cho người xem (VD: "Sợ hãi + Lo lắng", "Tò mò + FOMO")
 9. "creative_type": Phân loại creative type cụ thể hơn. VD: "UGC Expert Apple", "Hỏi Alexa", "Interview đường phố"
+
+Emotion drivers chuẩn để ưu tiên khi đặt tên emotion:
+${GLOBAL_EMOTION_PROMPT_GUIDE}
 
 Bạn phải phân tích đủ 4 trục giống luồng tạo idea mới:
 - Core User = ai sẽ thấy mình trong video này.

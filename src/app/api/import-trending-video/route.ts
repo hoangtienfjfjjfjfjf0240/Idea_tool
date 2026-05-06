@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPartFromUri, createUserContent, GoogleGenAI } from '@google/genai';
 import { parseJsonLoose } from '@/lib/creativePromptSystem';
 import { assertAllowedUrl, guardApiRequest, TREND_VIDEO_URL_HOSTS } from '@/lib/apiGuards';
+import { GLOBAL_EMOTION_PROMPT_GUIDE } from '@/lib/emotionOptions';
 
 export const maxDuration = 300;
 
@@ -286,7 +287,7 @@ Return JSON only, không markdown, theo schema:
   "title": "Tên ngắn của trend/video",
   "summary": "1-2 câu tóm tắt video",
   "creativeType": "UGC|POV|Reaction|ASMR|Split Screen|Demo|Social Proof|Interview|Other",
-  "angleType": "Curiosity|Problem Reveal|Comparison|POV|Social Proof|Relief|Fear|Demo",
+  "angleType": "Curiosity|Problem Reveal|Comparison|POV|Social Proof|Relief|Fear|Aspirational|FOMO|Demo",
   "emotionalDriver": "Cảm xúc chính người xem bị kéo vào",
   "hookPattern": "Mô tả mẫu hook beat 0-3s",
   "bodyPattern": "Mô tả nhịp triển khai phần giữa",
@@ -305,6 +306,8 @@ Return JSON only, không markdown, theo schema:
 Rules:
 - keyMoments: 3-6 mốc, có timestamp ngắn.
 - filterHints chỉ chọn các gợi ý thực sự hữu ích để tái tạo cấu trúc.
+- Ưu tiên map emotionalDriver/filterHints.emotion vào các emotion drivers chuẩn:
+${GLOBAL_EMOTION_PROMPT_GUIDE}
 - Không phân tích sản phẩm sai sự thật. Nếu video không rõ app/product thì tập trung vào format + structure.
 - Nếu video thiên về TikTok trend hơn là ad, vẫn phải trích ra phần nào áp dụng được cho ad creative.`;
 }

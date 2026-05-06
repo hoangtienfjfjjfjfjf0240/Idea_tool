@@ -15,6 +15,7 @@ import {
 import { guardApiRequest } from '@/lib/apiGuards';
 import {
   buildFilterConsistencyPromptBlock,
+  detectTargetLanguageFromMarkets,
 } from '@/lib/filterConsistency';
 import { enrichHookWithFramework } from '@/lib/hookFramework';
 
@@ -1227,12 +1228,21 @@ export async function POST(request: NextRequest) {
     const previousIdeas = asText(requestBody.previousIdeas);
     const selectedModel = asText(requestBody.selectedModel) || undefined;
     const requestedQty = Math.min(toPositiveInt(quantity, 3), MAX_IDEAS_PER_REQUEST);
-    const targetLanguage = 'English';
     const targetMarketValues = [
       ...asStringList(requestBody.targetMarket),
+      ...asStringList(requestBody.targetMarkets),
       ...asStringList(hook.targetMarket),
+      ...asStringList(hook.targetMarkets),
       ...asStringList(hook.target_market),
     ];
+    const coreUserLanguageHints = [
+      ...asStringList(requestBody.coreUser),
+      ...asStringList(requestBody.coreUsers),
+      ...asStringList(hook.coreUser),
+      ...asStringList(hook.coreUsers),
+      asText(hook.core_user),
+    ].filter(Boolean);
+    const targetLanguage = detectTargetLanguageFromMarkets(targetMarketValues, coreUserLanguageHints) || 'English';
     const batchPlans = buildIdeaBatchPlans(requestedQty);
     const aggregatedIdeas: Record<string, unknown>[] = [];
     const warnings: string[] = [];

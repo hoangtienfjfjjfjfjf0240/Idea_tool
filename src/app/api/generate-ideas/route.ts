@@ -16,6 +16,7 @@ import {
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
+import { GLOBAL_EMOTION_PROMPT_GUIDE } from '@/lib/emotionOptions';
 import {
   buildFilterConsistencyPromptBlock,
   detectTargetLanguageFromMarkets,
@@ -119,7 +120,14 @@ IV. CƠ CHẾ THÍCH NGHI CẢM XÚC (Gây ra cho người xem)
 - Fear/Urgency: Ngôn ngữ tàn nhẫn, đánh vào hậu quả mất mát ngay lập tức.
 - Trust: Tập trung vào sự minh bạch, con số và bằng chứng thực tế, hoặc nhân vật/bối cảnh tạo ra được sự tin tưởng như truyền hình, người thật, góc quay thực tế thô, phỏng vấn chuyên gia trong lĩnh vực.
 - Curiosity: Tập trung vào sự kỳ lạ, có thể là hành động, fact hoặc kiến thức gây tò mò.
+- Aspirational: Cho người xem thấy phiên bản tốt hơn của chính họ sau khi giải quyết được painpoint.
+- Social Proof: Cho thấy người giống họ đã dùng, đã hiểu, hoặc đã thành công.
+- Bất ngờ / Nhẹ nhõm: Mở bằng pain kéo dài rồi reveal giải pháp tạo cảm giác "cuối cùng cũng tìm ra".
+- FOMO: Tạo cảm giác mọi người đã biết/đang dùng/đang bàn, chỉ mình người xem chưa kịp.
 - Educational: Khẳng định kiến thức mới một cách quyết đoán, không dạy đời.
+
+Emotion drivers chuẩn dùng cho mọi app:
+${GLOBAL_EMOTION_PROMPT_GUIDE}
 
 V. LANGUAGE RULES
 - User-facing copy must use the requested output language.
@@ -580,7 +588,7 @@ function detectLang(coreUsers: string[]): string {
   if (hasWord('french') || hasWord('pháp') || hasWord('france') || hasWord('français')) return 'FR (Pháp)';
   if (hasWord('thai') || hasWord('thái') || hasWord('malay') || hasWord('indonesia') || hasWord('sea')) return 'SEA (Đa ngôn ngữ ĐNA)';
   if (hasWord('korean') || hasWord('hàn') || hasWord('korea')) return 'KO (Hàn Quốc)';
-  return 'Vietnamese';
+  return 'English';
 }
 
 function detectMarketLang(targetMarkets: string[], coreUsers: string[]): string {
@@ -710,19 +718,62 @@ function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
   const painpoints = Array.isArray(payload.painpoints)
     ? payload.painpoints.map(asText).filter(Boolean)
     : [];
-  const seeds = painpoints.length > 0 ? painpoints : ['pain point hiện tại'];
+  const targetMarkets = [
+    ...(Array.isArray(payload.targetMarkets) ? payload.targetMarkets.map(asText).filter(Boolean) : []),
+    ...(Array.isArray(payload.targetMarket) ? payload.targetMarket.map(asText).filter(Boolean) : []),
+  ];
+  const coreUsers = Array.isArray(payload.coreUsers)
+    ? payload.coreUsers.map(asText).filter(Boolean)
+    : [];
+  const outputLanguage = normalizeOutputLanguageLabel(asText(payload.outputLanguage))
+    || normalizeOutputLanguageLabel(detectMarketLang(targetMarkets, coreUsers))
+    || 'English';
+  return buildLocalizedAngleFallback(painpoints, outputLanguage);
+}
+
+function buildLocalizedAngleFallback(painpoints: string[], outputLanguage = 'English') {
+  const language = normalizeOutputLanguageLabel(outputLanguage) || 'English';
+  const seeds = painpoints.length > 0 ? painpoints : ['the current pain point'];
+
+  if (language === 'Japanese') {
+    return seeds.flatMap((pp: string) => [
+      `${pp}のせいで、大事な瞬間をまた逃しそう`,
+      `${pp}が続いて、何から直せばいいかわからない`,
+      `${pp}を後回しにしていたら、また困ることになった`,
+    ]);
+  }
+
+  if (language === 'Vietnamese') {
+    return seeds.flatMap((pp: string) => [
+      `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
+      `${pp} và mỗi lần thử lại càng rối hơn`,
+      `${pp} dù đã xem nhiều cách khác nhau`,
+    ]);
+  }
+
   return seeds.flatMap((pp: string) => [
-    `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
-    `${pp} và mỗi lần thử lại càng rối hơn`,
-    `${pp} dù đã xem nhiều cách khác nhau`,
+    `I keep running into ${pp} at the worst time`,
+    `${pp} is starting to cost me more than I expected`,
+    `I thought I fixed ${pp}, but it came back again`,
   ]);
 }
 
 // Build culture/market context based on selected target market
 function buildMarketContext(targetMarket: string[]): string {
   const market = (targetMarket || []).join(', ').toLowerCase();
+  const normalizedMarket = normalizeCompareText(market);
+  const hasMarketToken = (tokens: string[]) => tokens.some(token => (
+    new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(normalizedMarket)
+  ));
 
-  if (!market || market.includes('us') || market.includes('mỹ')) {
+  if (!normalizedMarket) {
+    return `TARGET MARKET: Global / no specific country selected
+- Use globally understandable English-language social ad situations.
+- Keep settings, names, props, currency, and cultural references broadly neutral unless the selected filters say otherwise.
+- Do not force US-only, JP-only, VN-only, or local-country details when no country/market is selected.`;
+  }
+
+  if (hasMarketToken(['us', 'usa', 'united states', 'my'])) {
     return `═══════════════════════════════════════
 ⚠️ THỊ TRƯỜNG MỤC TIÊU: US (Mỹ)
 ═══════════════════════════════════════
@@ -1566,8 +1617,8 @@ function inferGenerationCopyLanguage(input: {
 
   const audienceLanguage = normalizeOutputLanguageLabel(briefText);
   if (audienceLanguage) return audienceLanguage;
-  if (hasVietnameseCopyCue(briefText)) return 'Vietnamese';
-  return 'Vietnamese';
+  if (hasVietnameseCopyCue(briefText) && /\b(?:vietnamese|tieng viet|viet nam|vietnam|vn|nguoi viet)\b/.test(normalizeCompareText(briefText))) return 'Vietnamese';
+  return 'English';
 }
 
 function normalizeOutputLanguageLabel(value: string): string {
@@ -2141,24 +2192,35 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       const painpoints = asStringList(body.painpoints);
       const coreUsers = asStringList(body.coreUsers);
       const emotions = asStringList(body.emotions);
+      const targetMarkets = [
+        ...asStringList(body.targetMarkets),
+        ...asStringList(body.targetMarket),
+      ];
+      const outputLanguage = normalizeOutputLanguageLabel(asText(body.outputLanguage))
+        || normalizeOutputLanguageLabel(detectMarketLang(targetMarkets, coreUsers))
+        || 'English';
       const pps = painpoints.join('; ');
-      const anglePrompt = `Tạo angle quảng cáo cho app "${appName}" (${appCategory}).
+      const anglePrompt = `Create advertising angle options for app "${appName}" (${appCategory}).
 Painpoints: ${pps}
 Core Users: ${coreUsers.join('; ')}
 Emotions: ${emotions.join('; ')}
+Target markets / countries: ${targetMarkets.join('; ') || 'Global / no specific country'}
+Output language: ${outputLanguage}
 
-Yêu cầu:
-1. Mỗi angle PHẢI bám trực tiếp vào painpoint đã chọn, không được trượt sang painpoint khác.
-2. Emotion chỉ là cảm xúc cần trigger cho viewer, KHÔNG dùng emotion làm nhãn prefix cho angle.
-3. KHÔNG viết kiểu "Fear:", "FOMO:", "Challenge:", "Social Proof:" ở đầu angle.
-4. Output phải ngắn, thực tế, nghe như một góc mở video UGC đời thường, không quảng cáo hóa sớm.
-5. Không viết CTA, không khoe app, không nói "ai cũng đang dùng", không slogan.
-6. Mỗi angle 8-14 từ, khác nhau về tình huống mở đầu nhưng vẫn cùng painpoint.
+Rules:
+1. Every returned angle string MUST be written in ${outputLanguage} only.
+2. If output language is Japanese, write natural Japanese. If English, write natural English. Do not mix Vietnamese unless output language is Vietnamese.
+3. Each angle MUST stick directly to the selected painpoint and cannot drift to a different painpoint.
+4. Emotion is only the viewer feeling to trigger. Do not use emotion labels as prefixes.
+5. Do not start with labels like "Fear:", "FOMO:", "Challenge:", "Social Proof:", or "Aspirational:".
+6. Keep each angle short, practical, and like a natural UGC opening. No early app pitch, no CTA, no slogan.
+7. Each angle should be 8-14 words when the language allows it, and each one should open with a different lived situation.
 
-Ví dụ đúng:
-["Lưu cả trăm ảnh đẹp mà bathroom nhà mình vẫn bí ý tưởng", "Muốn sửa bathroom nhưng chẳng biết style nào hợp nhà mình"]
+English style examples only:
+["I almost lost photos again because storage filled up overnight", "I thought deleting videos fixed it, but storage came back full"]
+If output language is not English, translate/adapt this lived-moment style naturally into ${outputLanguage}.
 
-Trả JSON array of strings. KHÔNG markdown.`;
+Return a JSON array of strings only. No markdown.`;
 
       try {
         // Use fast model with short timeout (3-7s instead of 20-30s)
@@ -2196,11 +2258,7 @@ Trả JSON array of strings. KHÔNG markdown.`;
         console.error('[generate-angles] AI error:', e);
       }
       // Fallback: generate locally
-      const fallback = painpoints.flatMap((pp) => [
-        `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
-        `${pp} và mỗi lần nhìn vào nhà lại càng rối hơn`,
-        `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
-      ]);
+      const fallback = buildLocalizedAngleFallback(painpoints, outputLanguage);
       return NextResponse.json({ success: true, angles: fallback });
     }
 
@@ -2976,7 +3034,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       ideaDescription,
       targetLang,
     });
-    const marketContext = buildMarketContext(targetMarketValues);
+    const marketContext = buildMarketContext([...targetMarketValues, ...coreUserValues]);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
 

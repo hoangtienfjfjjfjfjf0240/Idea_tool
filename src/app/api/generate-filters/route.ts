@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { askAI } from '@/lib/aiClient';
 import { createServerClient } from '@/lib/supabase';
 import { guardApiRequest } from '@/lib/apiGuards';
+import { GLOBAL_EMOTION_PROMPT_GUIDE, mergeWithGlobalEmotionOptions, uniqueNonEmptyStrings } from '@/lib/emotionOptions';
 
 export const maxDuration = 60;
 
@@ -12,6 +13,12 @@ function parseJson(text: string) {
     if (s2 !== -1 && e2 !== -1) clean = clean.substring(s2, e2 + 1);
     return JSON.parse(clean);
   } catch { return null; }
+}
+
+function normalizeStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? uniqueNonEmptyStrings(value.filter((item): item is string => typeof item === 'string'))
+    : [];
 }
 
 export async function POST(request: NextRequest) {
@@ -45,9 +52,10 @@ NHIỆM VỤ: Tạo 3 danh sách filter CHO APP NÀY (tiếng Việt, cụ thể
    → Phải liên quan trực tiếp đến tính năng app
    → VD: "Điện thoại đầy bộ nhớ không thể update iOS", "Sợ mất dữ liệu quan trọng"
 
-3. emotion (4-6 items): Cảm xúc hook quảng cáo có thể trigger cho app này
-   → Format: "Tên cảm xúc (English)"
-   → VD: "Sợ hãi (Fear)", "Tò mò (Curiosity)", "FOMO", "Thỏa mãn (Satisfaction)"
+3. emotion (6-8 items): Cảm xúc hook quảng cáo có thể trigger cho app này
+   → Luôn bao gồm đủ 6 emotion drivers chuẩn này cho mọi app:
+${GLOBAL_EMOTION_PROMPT_GUIDE}
+   → Có thể thêm tối đa 2 emotion riêng cho app nếu thật sự khác 6 driver trên
 
 OUTPUT JSON ONLY (no markdown):
 {"coreUser":["..."],"painPoint":["..."],"emotion":["..."]}`;
@@ -62,8 +70,16 @@ OUTPUT JSON ONLY (no markdown):
       return NextResponse.json({ error: 'AI không phản hồi' }, { status: 500 });
     }
 
-    const data = parseJson(text);
-    if (!data || !data.coreUser || !data.painPoint || !data.emotion) {
+    const parsed = parseJson(text);
+    if (!parsed || !parsed.coreUser || !parsed.painPoint || !parsed.emotion) {
+      return NextResponse.json({ error: 'Parse failed' }, { status: 500 });
+    }
+    const data = {
+      coreUser: normalizeStringList(parsed.coreUser),
+      painPoint: normalizeStringList(parsed.painPoint),
+      emotion: mergeWithGlobalEmotionOptions(normalizeStringList(parsed.emotion)),
+    };
+    if (data.coreUser.length === 0 || data.painPoint.length === 0 || data.emotion.length === 0) {
       return NextResponse.json({ error: 'Parse failed' }, { status: 500 });
     }
 

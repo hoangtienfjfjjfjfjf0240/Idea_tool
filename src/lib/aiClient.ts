@@ -1,4 +1,5 @@
 // Centralized AI client using OpenAI-compatible API (internal gateway)
+import { GLOBAL_EMOTION_PROMPT_GUIDE } from './emotionOptions';
 
 const AI_BASE_URL = process.env.AI_BASE_URL || '';
 const AI_API_KEY = process.env.AI_API_KEY || process.env.AI_GATEWAY_API_KEY || '';
@@ -61,6 +62,8 @@ Mỗi video ads được xây dựng từ 4 YẾU TỐ NỀN TẢNG:
 3. EMOTION — Cảm xúc tạo cho người xem
    → Sợ hãi, tò mò, FOMO, tự hào, thỏa mãn, shock, đồng cảm...
    → Hook PHẢI trigger emotion trong 0.5 giây đầu
+   → Emotion drivers chuẩn cho mọi app:
+${GLOBAL_EMOTION_PROMPT_GUIDE}
 
 4. PSP (Product Solution Proposition) — Giải pháp từ sản phẩm
    → Tính năng cụ thể giải quyết painpoint

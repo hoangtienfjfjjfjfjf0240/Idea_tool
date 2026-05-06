@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Plus, X, Wand2, Loader2, Check, Target, Copy, Li
 import type { AppProject, FilterState, GeneratedIdea, ScreenType, IdeaContent } from '@/types/database';
 import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
-import { CATEGORY_SEEDS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
+import { CATEGORY_SEEDS, GLOBAL_EMOTION_OPTIONS, GLOBAL_VISUAL_TYPES } from '@/lib/db';
 import { buildIdeaFavoriteFingerprint, buildIdeaFavoriteKeys, hasFavoriteIdeaKey, loadFavoriteKeys, mergeFavoriteKeys, notifyFavoriteKeysChanged, saveFavoriteKeys } from '@/lib/favorites';
 import { authenticatedFetch } from '@/lib/authFetch';
 import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
@@ -72,6 +72,68 @@ const IMPORTED_TREND_GENERIC_MARKERS = [
   'Natural in-feed voice or sound design.',
   'Short, mobile-first text overlay.',
 ];
+const UNSAVED_IDEA_BACKUP_PREFIX = 'idea-tool:unsaved-generated-ideas:';
+
+type UnsavedIdeaBackup = {
+  savedAt: number;
+  ideas: GeneratedIdea[];
+};
+
+function getUnsavedIdeaBackupKey(appId: string) {
+  return `${UNSAVED_IDEA_BACKUP_PREFIX}${appId}`;
+}
+
+function readUnsavedIdeaBackup(appId: string): UnsavedIdeaBackup | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getUnsavedIdeaBackupKey(appId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<UnsavedIdeaBackup> | null;
+    if (!parsed || typeof parsed.savedAt !== 'number' || !Array.isArray(parsed.ideas)) return null;
+    return {
+      savedAt: parsed.savedAt,
+      ideas: parsed.ideas.filter((idea): idea is GeneratedIdea => (
+        !!idea
+        && typeof idea.id === 'string'
+        && idea.id.startsWith('temp-')
+        && typeof idea.app_id === 'string'
+        && !!idea.content
+      )),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeUnsavedIdeaBackup(appId: string, ideas: GeneratedIdea[]) {
+  if (typeof window === 'undefined') return;
+  const unsavedIdeas = ideas.filter(idea => idea.app_id === appId && idea.id.startsWith('temp-'));
+
+  try {
+    if (unsavedIdeas.length === 0) {
+      window.localStorage.removeItem(getUnsavedIdeaBackupKey(appId));
+      return;
+    }
+
+    window.localStorage.setItem(
+      getUnsavedIdeaBackupKey(appId),
+      JSON.stringify({ savedAt: Date.now(), ideas: unsavedIdeas } satisfies UnsavedIdeaBackup)
+    );
+  } catch {
+    // Ignore backup write failures; Supabase save remains the source of truth.
+  }
+}
+
+function clearUnsavedIdeaBackup(appId: string) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(getUnsavedIdeaBackupKey(appId));
+  } catch {
+    // Ignore cleanup failures.
+  }
+}
 
 function normalizeCompareText(value: unknown) {
   return String(value || '')
@@ -81,6 +143,51 @@ function normalizeCompareText(value: unknown) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+function getOutputLanguageFromFilters(filters: Partial<FilterState>) {
+  const normalized = normalizeCompareText([
+    ...(filters.targetMarket || []),
+    ...(filters.coreUser || []),
+  ].join(' '));
+
+  if (/\b(?:jp|japan|japanese|nhat)\b/.test(normalized)) return 'Japanese';
+  if (/\b(?:vn|vietnam|vietnamese|viet|tieng viet|nguoi viet)\b/.test(normalized)) return 'Vietnamese';
+  if (/\b(?:kr|korea|korean|han)\b/.test(normalized)) return 'Korean';
+  if (/\b(?:fr|france|french|phap)\b/.test(normalized)) return 'French';
+  if (/\b(?:de|germany|german|deutsch|duc)\b/.test(normalized)) return 'German';
+  if (/\b(?:es|spain|spanish|latam|latin|tay ban nha)\b/.test(normalized)) return 'Spanish';
+  if (/\b(?:pt|portuguese|brazil|brasil|bo dao nha)\b/.test(normalized)) return 'Portuguese';
+  if (/\b(?:thai|thailand|thai lan)\b/.test(normalized)) return 'Thai';
+  if (/\b(?:indonesia|indonesian)\b/.test(normalized)) return 'Indonesian';
+  if (/\b(?:malay|malaysia)\b/.test(normalized)) return 'Malay';
+  return 'English';
+}
+
+function buildLocalizedFallbackAnglesFromPainpoints(painpoints: string[], outputLanguage: string) {
+  const seeds = painpoints.length > 0 ? painpoints : ['the current pain point'];
+
+  if (outputLanguage === 'Japanese') {
+    return seeds.flatMap(pp => [
+      `${pp}のせいで、大事な瞬間をまた逃しそう`,
+      `${pp}が続いて、何から直せばいいかわからない`,
+      `${pp}を後回しにしていたら、また困ることになった`,
+    ]);
+  }
+
+  if (outputLanguage === 'Vietnamese') {
+    return seeds.flatMap(pp => [
+      `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
+      `${pp} và mỗi lần thử lại càng rối hơn`,
+      `${pp} dù đã xem nhiều cách khác nhau`,
+    ]);
+  }
+
+  return seeds.flatMap(pp => [
+    `I keep running into ${pp} at the worst time`,
+    `${pp} is starting to cost me more than I expected`,
+    `I thought I fixed ${pp}, but it came back again`,
+  ]);
 }
 
 function isGenericImportedTrendAnalysis(analysis?: Partial<ImportedTrendAnalysis> | null) {
@@ -181,6 +288,16 @@ type GenerateIdeasApiResponse = {
     fallbackCount?: number;
   };
 };
+
+type SaveIdeasApiResponse = {
+  success?: boolean;
+  data?: GeneratedIdea[];
+  count?: number;
+  sessionId?: string;
+  error?: string;
+};
+
+type IdeaSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
@@ -854,7 +971,7 @@ function matchesHistoryDateFilter(idea: GeneratedIdea, filterKey: string) {
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed, onAppKnowledgeUpdated }) => {
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
-  const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: GLOBAL_VISUAL_TYPES, targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
+  const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: GLOBAL_EMOTION_OPTIONS, videoStructure: [], visualType: GLOBAL_VISUAL_TYPES, targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
   const [newItem, setNewItem] = useState<{ cat: string | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -898,6 +1015,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [generatingAngles, setGeneratingAngles] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [ideaSaveStatus, setIdeaSaveStatus] = useState<IdeaSaveStatus>('idle');
+  const [ideaSaveMessage, setIdeaSaveMessage] = useState('');
   const usableImportedTrendAnalyses = useMemo(
     () => importedTrendAnalyses.filter(analysis => !isGenericImportedTrendAnalysis(analysis)),
     [importedTrendAnalyses]
@@ -908,7 +1027,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       coreUser: [],
       painPoint: [],
       solution: [],
-      emotion: [],
+      emotion: GLOBAL_EMOTION_OPTIONS,
       videoStructure: [],
       visualType: GLOBAL_VISUAL_TYPES,
       targetMarket: [],
@@ -1002,6 +1121,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setSavedHistory([]);
     setShowHistory(false);
     setHistoryWeekFilter(HISTORY_TODAY);
+    setIdeaSaveStatus('idle');
+    setIdeaSaveMessage('');
     loadOptions();
     loadHistory(true);
   }, [app.id]);
@@ -1077,10 +1198,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       setHistoryLoading(true);
       const ideas = await dbService.getIdeas(app.id, { limit: HISTORY_LOAD_LIMIT });
       const cleanIdeas = ideas.filter(isVisibleStrategyIdea);
-      setSavedHistory(cleanIdeas);
-      setFavoriteIdeas(prev => mergeFavoriteKeys(app.id, prev, cleanIdeas));
+      const backup = readUnsavedIdeaBackup(app.id);
+      const backupIdeas = (backup?.ideas || []).filter(isVisibleStrategyIdea);
+      const cleanIdeaIds = new Set(cleanIdeas.map(idea => idea.id));
+      const mergedIdeas = [
+        ...backupIdeas.filter(idea => !cleanIdeaIds.has(idea.id)),
+        ...cleanIdeas,
+      ];
+      if (backupIdeas.length > 0) {
+        setIdeaSaveStatus('error');
+        setIdeaSaveMessage(`Có ${backupIdeas.length} idea local chưa lưu Supabase`);
+      } else if (ideaSaveStatus === 'error' && ideaSaveMessage.includes('local chưa lưu')) {
+        setIdeaSaveStatus('idle');
+        setIdeaSaveMessage('');
+      }
+      setSavedHistory(mergedIdeas);
+      setFavoriteIdeas(prev => mergeFavoriteKeys(app.id, prev, mergedIdeas));
       cleanupHistoryInBackground();
-      return cleanIdeas;
+      return mergedIdeas;
     })().finally(() => {
       historyLoadPromiseRef.current = null;
       setHistoryLoading(false);
@@ -1113,6 +1248,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   useEffect(() => {
     if (savedHistory.length === 0) return;
     setFavoriteIdeas(prev => mergeFavoriteKeys(app.id, prev, savedHistory));
+  }, [app.id, savedHistory]);
+
+  useEffect(() => {
+    writeUnsavedIdeaBackup(app.id, savedHistory);
   }, [app.id, savedHistory]);
 
   useEffect(() => {
@@ -1200,6 +1339,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const handleDeleteOption = async (category: string, item: string) => {
+    if (category === 'emotion' && GLOBAL_EMOTION_OPTIONS.includes(item)) return;
+
     // Immediately update UI
     setOptions(prev => ({ ...prev, [category]: (prev[category] || []).filter(i => i !== item) }));
     if ((filters[category] || []).includes(item)) {
@@ -1211,6 +1352,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const handleUpdateOption = async (category: string, oldItem: string, newItemText: string) => {
+    if (category === 'emotion' && GLOBAL_EMOTION_OPTIONS.includes(oldItem)) {
+      setEditingItemText(null);
+      return;
+    }
+
     const normalizedText = newItemText.trim();
     if (!normalizedText || normalizedText === oldItem) { setEditingItemText(null); return; }
 
@@ -1308,6 +1454,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setValidationError(null);
     setIsGenerating(true);
     setGenerationNotice(null);
+    setIdeaSaveStatus('idle');
+    setIdeaSaveMessage('');
     const controller = new AbortController();
     abortRef.current = controller;
     startProgress();
@@ -1653,45 +1801,72 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       setHistoryWeekFilter(HISTORY_TODAY);
       setResults(tempResults);
       setSavedHistory(prev => [...tempResults, ...prev]);
+      writeUnsavedIdeaBackup(app.id, tempResults);
       setGenerationNotice(partialNotice);
+      setIdeaSaveStatus('saving');
+      setIdeaSaveMessage(`Đang lưu ${ideas.length} idea vào Supabase...`);
       stopProgress();
       setIsGenerating(false);
       if (currentScreen !== 'f2.1.2') setScreen('f2.1.2');
 
       const sessionId = crypto.randomUUID();
-      dbService.saveIdeas(app.id, ideas, sessionId, generationBaseFilters).then(async saved => {
-        if (saved.length === 0) {
-          alert('Tạo idea xong nhưng lưu database thất bại. Kết quả tạm vẫn đang hiển thị, hãy thử tạo/lưu lại trước khi refresh.');
-          return;
+      let saved: GeneratedIdea[] = [];
+      try {
+        const saveResponse = await authenticatedFetch('/api/save-ideas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appId: app.id,
+            ideas,
+            sessionId,
+            filtersSnapshot: generationBaseFilters,
+          }),
+        });
+        const saveResult = await saveResponse.json().catch(() => null) as SaveIdeasApiResponse | null;
+        if (!saveResponse.ok || !saveResult?.success || !Array.isArray(saveResult.data) || saveResult.data.length === 0) {
+          throw new Error(saveResult?.error || 'Không insert được generated_ideas.');
         }
+        saved = saveResult.data;
+      } catch (saveError) {
+        const message = saveError instanceof Error ? saveError.message : 'Unknown save error';
+        setIdeaSaveStatus('error');
+        setIdeaSaveMessage(`Lưu Supabase lỗi: ${message}`);
+        alert(`Tạo idea xong nhưng lưu database thất bại: ${message}. Kết quả tạm vẫn đang hiển thị, hãy copy trước khi refresh.`);
+        return;
+      }
 
-        const liveFavoriteKeys = loadFavoriteKeys(app.id);
-        const savedWithFavoriteMeta = saved.map(idea => {
-          if (!hasFavoriteIdeaKey(app.id, idea, liveFavoriteKeys)) return idea;
-          const keys = buildIdeaFavoriteKeys(app.id, idea);
-          return {
-            ...idea,
-            content: {
-              ...idea.content,
-              meta: {
-                ...(idea.content?.meta || {}),
-                isFavorite: true,
-                favoriteKeys: keys,
-                favoriteMarkedAt: new Date().toISOString(),
-              },
+      setIdeaSaveStatus('saved');
+      setIdeaSaveMessage(`Đã lưu Supabase (${saved.length}/${ideas.length})`);
+
+      const liveFavoriteKeys = loadFavoriteKeys(app.id);
+      const savedWithFavoriteMeta = saved.map(idea => {
+        if (!hasFavoriteIdeaKey(app.id, idea, liveFavoriteKeys)) return idea;
+        const keys = buildIdeaFavoriteKeys(app.id, idea);
+        return {
+          ...idea,
+          content: {
+            ...idea.content,
+            meta: {
+              ...(idea.content?.meta || {}),
+              isFavorite: true,
+              favoriteKeys: keys,
+              favoriteMarkedAt: new Date().toISOString(),
             },
-          };
+          },
+        };
+      });
+
+      const tempIds = new Set(tempResults.map(t => t.id));
+      setResults(prev => [...savedWithFavoriteMeta, ...prev.filter(r => !tempIds.has(r.id))]);
+      setSavedHistory(prev => [...savedWithFavoriteMeta, ...prev.filter(r => !tempIds.has(r.id))]);
+      clearUnsavedIdeaBackup(app.id);
+      savedWithFavoriteMeta
+        .filter(idea => idea.content?.meta?.isFavorite)
+        .forEach(idea => {
+          void dbService.updateIdeaFavorite(app.id, idea, true, buildIdeaFavoriteKeys(app.id, idea));
         });
 
-        const tempIds = new Set(tempResults.map(t => t.id));
-        setResults(prev => [...savedWithFavoriteMeta, ...prev.filter(r => !tempIds.has(r.id))]);
-        setSavedHistory(prev => [...savedWithFavoriteMeta, ...prev.filter(r => !tempIds.has(r.id))]);
-        savedWithFavoriteMeta
-          .filter(idea => idea.content?.meta?.isFavorite)
-          .forEach(idea => {
-            void dbService.updateIdeaFavorite(app.id, idea, true, buildIdeaFavoriteKeys(app.id, idea));
-          });
-
+      void (async () => {
         try {
           const response = await authenticatedFetch('/api/learn-app', {
             method: 'POST',
@@ -1715,9 +1890,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         } catch (learnError) {
           console.warn('Background learning failed:', learnError);
         }
-      }).catch(err => {
-        console.warn('Background DB save failed:', err);
-        alert('Tạo idea xong nhưng lưu database thất bại. Kết quả tạm vẫn đang hiển thị, hãy thử tạo/lưu lại trước khi refresh.');
       });
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
@@ -2141,6 +2313,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     });
 
     patchIdeaFavoriteMeta(idea.id, nextFavorite, keys);
+    if (idea.id.startsWith('temp-')) return;
+
     void dbService.updateIdeaFavorite(app.id, idea, nextFavorite, keys).then(saved => {
       if (!saved) {
         console.warn('Favorite idea DB update failed:', idea.id);
@@ -2234,6 +2408,76 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     if (!showFavoriteIdeas) return source;
     return source.filter(idea => hasFavoriteIdeaKey(app.id, idea, favoriteIdeas));
   }, [app.id, favoriteIdeas, filteredHistory, results, showFavoriteIdeas, showHistory]);
+  const unsavedLocalIdeas = useMemo(
+    () => savedHistory.filter(idea => idea.app_id === app.id && idea.id.startsWith('temp-')),
+    [app.id, savedHistory]
+  );
+
+  const retrySaveUnsavedIdeas = async () => {
+    if (unsavedLocalIdeas.length === 0 || ideaSaveStatus === 'saving') return;
+
+    setIdeaSaveStatus('saving');
+    setIdeaSaveMessage(`Đang lưu lại ${unsavedLocalIdeas.length} idea vào Supabase...`);
+    const sessionId = crypto.randomUUID();
+    const ideasToSave = unsavedLocalIdeas.map(idea => ({
+      title: idea.title || 'Idea',
+      duration: idea.duration || IDEA_RUNTIME_GUIDANCE,
+      content: idea.content,
+      filtersSnapshot: idea.filters_snapshot || {},
+    }));
+
+    try {
+      const saveResponse = await authenticatedFetch('/api/save-ideas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appId: app.id,
+          ideas: ideasToSave,
+          sessionId,
+          filtersSnapshot: {},
+        }),
+      });
+      const saveResult = await saveResponse.json().catch(() => null) as SaveIdeasApiResponse | null;
+      if (!saveResponse.ok || !saveResult?.success || !Array.isArray(saveResult.data) || saveResult.data.length === 0) {
+        throw new Error(saveResult?.error || 'Không insert được generated_ideas.');
+      }
+
+      const liveFavoriteKeys = loadFavoriteKeys(app.id);
+      const savedWithFavoriteMeta = saveResult.data.map(idea => {
+        if (!hasFavoriteIdeaKey(app.id, idea, liveFavoriteKeys)) return idea;
+        const keys = buildIdeaFavoriteKeys(app.id, idea);
+        return {
+          ...idea,
+          content: {
+            ...idea.content,
+            meta: {
+              ...(idea.content?.meta || {}),
+              isFavorite: true,
+              favoriteKeys: keys,
+              favoriteMarkedAt: new Date().toISOString(),
+            },
+          },
+        };
+      });
+      const tempIds = new Set(unsavedLocalIdeas.map(idea => idea.id));
+      setResults(prev => [...savedWithFavoriteMeta, ...prev.filter(idea => !tempIds.has(idea.id))]);
+      setSavedHistory(prev => [...savedWithFavoriteMeta, ...prev.filter(idea => !tempIds.has(idea.id))]);
+      clearUnsavedIdeaBackup(app.id);
+      setIdeaSaveStatus('saved');
+      setIdeaSaveMessage(`Đã lưu Supabase (${savedWithFavoriteMeta.length}/${unsavedLocalIdeas.length})`);
+
+      savedWithFavoriteMeta
+        .filter(idea => idea.content?.meta?.isFavorite)
+        .forEach(idea => {
+          void dbService.updateIdeaFavorite(app.id, idea, true, buildIdeaFavoriteKeys(app.id, idea));
+        });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown save error';
+      setIdeaSaveStatus('error');
+      setIdeaSaveMessage(`Lưu Supabase lỗi: ${message}`);
+      alert(`Lưu lại Supabase thất bại: ${message}`);
+    }
+  };
 
   const seasonalVisualContext = useMemo<SeasonalVisualContext | null>(() => {
     const activeMonth = selectedSeasonMonth ? SEASON_MONTHS.find(month => month.id === selectedSeasonMonth) : null;
@@ -2354,6 +2598,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const selectedPainpoints = filters.painPoint || [];
     if (selectedPainpoints.length === 0) return;
 
+    const outputLanguage = getOutputLanguageFromFilters(filters);
     setGeneratingAngles(true);
     try {
       const res = await authenticatedFetch('/api/generate-ideas', {
@@ -2366,6 +2611,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           painpoints: selectedPainpoints,
           coreUsers: filters.coreUser || [],
           emotions: filters.emotion || [],
+          targetMarkets: filters.targetMarket || [],
+          outputLanguage,
           selectedModel: selectedModel || '',
         }),
       });
@@ -2380,11 +2627,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         });
       } else {
         // Fallback: generate angles locally from painpoints
-        const fallbackAngles = selectedPainpoints.flatMap(pp => [
-          `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
-          `${pp} và mỗi lần nhìn vào nhà lại càng rối hơn`,
-          `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
-        ]);
+        const fallbackAngles = buildLocalizedFallbackAnglesFromPainpoints(selectedPainpoints, outputLanguage);
         setOptions(prev => {
           const existing = prev.angle || [];
           const merged = [...new Set([...existing, ...fallbackAngles])];
@@ -2393,11 +2636,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       }
     } catch {
       // Fallback on error
-      const fallbackAngles = (filters.painPoint || []).flatMap(pp => [
-        `${pp} nhưng bạn vẫn chưa biết bắt đầu từ đâu`,
-        `${pp} và mỗi lần nhìn vào nhà lại càng rối hơn`,
-        `${pp} dù đã xem rất nhiều ý tưởng đẹp trên mạng`,
-      ]);
+      const fallbackAngles = buildLocalizedFallbackAnglesFromPainpoints(filters.painPoint || [], outputLanguage);
       setOptions(prev => {
         const existing = prev.angle || [];
         const merged = [...new Set([...existing, ...fallbackAngles])];
@@ -2564,9 +2803,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         <div className="flex-1 overflow-y-auto p-3 min-h-[200px] max-h-[350px]">
           {isEditMode ? (
             <div className="space-y-1.5">
-              {filterItems.map(item => (
+              {filterItems.map(item => {
+                const isGlobalEmotionItem = cat.id === 'emotion' && GLOBAL_EMOTION_OPTIONS.includes(item);
+                return (
                 <div key={item} className="flex items-center gap-1.5 group">
-                  {editingItemText?.original === item ? (
+                  {editingItemText?.original === item && !isGlobalEmotionItem ? (
                     <div className="flex-1 flex gap-1">
                       <input autoFocus className="flex-1 text-sm py-1.5 px-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200"
                         value={editingItemText.current}
@@ -2577,19 +2818,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   ) : (
                     <>
-                      <div onClick={() => setEditingItemText({ original: item, current: item })}
-                        className="flex-1 px-3 py-2 rounded-lg text-sm bg-gray-50 border border-transparent hover:border-indigo-200 hover:bg-indigo-50/50 transition-all cursor-text text-gray-700 flex justify-between items-center">
+                      <div onClick={() => !isGlobalEmotionItem && setEditingItemText({ original: item, current: item })}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm bg-gray-50 border border-transparent transition-all text-gray-700 flex justify-between items-center ${isGlobalEmotionItem ? 'cursor-default' : 'hover:border-indigo-200 hover:bg-indigo-50/50 cursor-text'}`}>
                         {item}
-                        <Pencil size={11} className="opacity-0 group-hover:opacity-100 text-gray-400" />
+                        {!isGlobalEmotionItem && <Pencil size={11} className="opacity-0 group-hover:opacity-100 text-gray-400" />}
                       </div>
-                      <button onClick={() => handleDeleteOption(cat.id, item)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 size={14} />
-                      </button>
+                      {!isGlobalEmotionItem && (
+                        <button onClick={() => handleDeleteOption(cat.id, item)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
@@ -2623,8 +2867,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 <Plus size={14} /> THÊM
               </button>
               <button onClick={async () => {
-                for (const item of filterItems) { await dbService.deleteFilterOptionByValue(app.id, cat.id, item); }
-                setOptions(prev => ({ ...prev, [cat.id]: [] }));
+                const resetValues = cat.id === 'emotion' ? GLOBAL_EMOTION_OPTIONS : [];
+                for (const item of filterItems) {
+                  if (cat.id === 'emotion' && GLOBAL_EMOTION_OPTIONS.includes(item)) continue;
+                  await dbService.deleteFilterOptionByValue(app.id, cat.id, item);
+                }
+                setOptions(prev => ({ ...prev, [cat.id]: resetValues }));
                 setFilters(prev => ({ ...prev, [cat.id]: [] }));
                 return;
                 const seeds = CATEGORY_SEEDS[app.category] || CATEGORY_SEEDS['Tổng hợp'];
@@ -2997,7 +3245,26 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           <p className="text-gray-400 text-sm mt-1">
             {showHistory ? `Lịch sử ${getHistoryWeekRangeLabel(historyWeekFilter)}` : 'Ý tưởng theo bối cảnh đã chọn'}
             {showFavoriteIdeas ? ' • Đang lọc các idea đã thả tim' : ''}
-            {' • '}<span className="text-emerald-500 font-medium">Đã lưu Supabase ✓</span>
+            {ideaSaveStatus !== 'idle' && (
+              <>
+                {' • '}
+                <span className={`font-medium ${
+                  ideaSaveStatus === 'saved'
+                    ? 'text-emerald-500'
+                    : ideaSaveStatus === 'saving'
+                      ? 'text-amber-500'
+                      : 'text-red-500'
+                }`}>
+                  {ideaSaveMessage || (
+                    ideaSaveStatus === 'saved'
+                      ? 'Đã lưu Supabase ✓'
+                      : ideaSaveStatus === 'saving'
+                        ? 'Đang lưu Supabase...'
+                        : 'Lưu Supabase lỗi'
+                  )}
+                </span>
+              </>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -3043,6 +3310,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             >
               <Heart size={14} fill={showFavoriteIdeas ? 'currentColor' : 'none'} />
               {showFavoriteIdeas ? 'Hiện tất cả' : `Đã thả tim (${favoriteCount})`}
+            </button>
+          )}
+          {unsavedLocalIdeas.length > 0 && (
+            <button
+              onClick={retrySaveUnsavedIdeas}
+              disabled={ideaSaveStatus === 'saving'}
+              className="text-sm flex items-center gap-2 px-4 py-2 border border-amber-200 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:cursor-wait disabled:opacity-60"
+            >
+              {ideaSaveStatus === 'saving' ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+              Lưu lại Supabase ({unsavedLocalIdeas.length})
             </button>
           )}
           <button onClick={() => setScreen('f2.1.1')} className="text-sm flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600"><ArrowLeft size={14} /> Cấu hình</button>

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ArrowLeft, Loader2, Sparkles, Copy, ChevronDown, Calendar, Plus, Link2, X, ZoomIn, ZoomOut, Scan, Minimize2, EyeOff, Search, Eye } from 'lucide-react';
 import type { AppProject, FilterState, GeneratedIdea, StrategyMapState, StrategyMapCustomNodeState, StrategyWorkflowLevel } from '@/types/database';
-import { addFilterOption, getFilterOptions, getIdeaSessions, getIdeasByIds, getStrategyMapState, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
+import { addFilterOption, getFilterOptions, getIdeaSessions, getIdeasByIds, getStrategyMapState, GLOBAL_EMOTION_OPTIONS, isHookLibraryIdea, saveStrategyMapState, updateIdeaResult, type IdeaSession } from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
 import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
 import { isInvalidStrategyIdea } from '@/lib/ideaStructure';
@@ -245,7 +245,7 @@ const FALLBACK_OPTIONS: Record<WorkflowLevel, string[]> = {
   root: [],
   coreUser: ['User 35+ US', 'Caregiver 45+', 'Busy parent'],
   psp: ['Blood Pressure Tracker', 'Track BP by camera', 'Family alerts'],
-  emotion: ['Fear / Urgency', 'Trust gap', 'Relief'],
+  emotion: GLOBAL_EMOTION_OPTIONS,
   visual: ['UGC at home', 'Doctor demo', 'Morning routine'],
   painPoint: ['Có tiền sử BP cao nhưng không có máy ở nhà', 'Không biết số đo khi chóng mặt', 'Quên đo buổi sáng'],
   angle: ['Tủ thuốc trống', 'Vợ hỏi máy đo đâu?', 'Chỉ cần mở app'],
@@ -301,6 +301,35 @@ function mergeUniqueLabels(...groups: Array<Array<string | null | undefined> | u
   );
 }
 
+function normalizeLanguageText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function getOutputLanguageFromFilters(filters: Partial<FilterState>) {
+  const normalized = normalizeLanguageText([
+    ...(filters.targetMarket || []),
+    ...(filters.coreUser || []),
+  ].join(' '));
+
+  if (/\b(?:jp|japan|japanese|nhat)\b/.test(normalized)) return 'Japanese';
+  if (/\b(?:vn|vietnam|vietnamese|viet|tieng viet|nguoi viet)\b/.test(normalized)) return 'Vietnamese';
+  if (/\b(?:kr|korea|korean|han)\b/.test(normalized)) return 'Korean';
+  if (/\b(?:fr|france|french|phap)\b/.test(normalized)) return 'French';
+  if (/\b(?:de|germany|german|deutsch|duc)\b/.test(normalized)) return 'German';
+  if (/\b(?:es|spain|spanish|latam|latin|tay ban nha)\b/.test(normalized)) return 'Spanish';
+  if (/\b(?:pt|portuguese|brazil|brasil|bo dao nha)\b/.test(normalized)) return 'Portuguese';
+  if (/\b(?:thai|thailand|thai lan)\b/.test(normalized)) return 'Thai';
+  if (/\b(?:indonesia|indonesian)\b/.test(normalized)) return 'Indonesian';
+  if (/\b(?:malay|malaysia)\b/.test(normalized)) return 'Malay';
+  return 'English';
+}
+
 function mapFilterOptionsToWorkflowLevels(optionMap: Record<string, string[]>): Record<WorkflowLevel, string[]> {
   return {
     root: [],
@@ -313,12 +342,33 @@ function mapFilterOptionsToWorkflowLevels(optionMap: Record<string, string[]>): 
   };
 }
 
-function buildFallbackAnglesFromPainpoints(painpoints: string[]): string[] {
+function buildFallbackAnglesFromPainpoints(painpoints: string[], outputLanguage = 'English'): string[] {
+  const seeds = painpoints.length > 0 ? painpoints : ['the current pain point'];
+  if (outputLanguage === 'Japanese') {
+    return mergeUniqueLabels(
+      ...seeds.map(painpoint => ([
+        `${painpoint}のせいで、大事な瞬間をまた逃しそう`,
+        `${painpoint}が続いて、何から直せばいいかわからない`,
+        `${painpoint}を後回しにしていたら、また困ることになった`,
+      ]))
+    );
+  }
+
+  if (outputLanguage === 'Vietnamese') {
+    return mergeUniqueLabels(
+      ...seeds.map(painpoint => ([
+        `${painpoint} nhưng vẫn chưa biết bắt đầu từ đâu`,
+        `${painpoint} và mỗi lần nhìn vào lại thấy rối hơn`,
+        `${painpoint} dù đã xem rất nhiều idea trên mạng`,
+      ]))
+    );
+  }
+
   return mergeUniqueLabels(
-    ...painpoints.map(painpoint => ([
-      `${painpoint} nhưng vẫn chưa biết bắt đầu từ đâu`,
-      `${painpoint} và mỗi lần nhìn vào lại thấy rối hơn`,
-      `${painpoint} dù đã xem rất nhiều idea trên mạng`,
+    ...seeds.map(painpoint => ([
+      `I keep running into ${painpoint} at the worst time`,
+      `${painpoint} is starting to cost me more than I expected`,
+      `I thought I fixed ${painpoint}, but it came back again`,
     ]))
   );
 }
@@ -2004,6 +2054,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       return;
     }
 
+    const outputLanguage = getOutputLanguageFromFilters(parentFilters);
     const requestId = ++angleSuggestionSeqRef.current;
     setIsGeneratingAngleOptions(true);
 
@@ -2018,6 +2069,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           painpoints,
           coreUsers: parentFilters.coreUser || [],
           emotions: parentFilters.emotion || [],
+          targetMarkets: parentFilters.targetMarket || [],
+          outputLanguage,
         }),
       });
 
@@ -2029,10 +2082,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         return;
       }
 
-      setGeneratedAngleOptions(buildFallbackAnglesFromPainpoints(painpoints));
+      setGeneratedAngleOptions(buildFallbackAnglesFromPainpoints(painpoints, outputLanguage));
     } catch {
       if (requestId !== angleSuggestionSeqRef.current) return;
-      setGeneratedAngleOptions(buildFallbackAnglesFromPainpoints(painpoints));
+      setGeneratedAngleOptions(buildFallbackAnglesFromPainpoints(painpoints, outputLanguage));
     } finally {
       if (requestId === angleSuggestionSeqRef.current) {
         setIsGeneratingAngleOptions(false);

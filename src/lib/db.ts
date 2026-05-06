@@ -13,6 +13,7 @@ import type {
   StrategyMapLayoutPosition,
   StrategyWorkflowLevel,
 } from '@/types/database';
+import { GLOBAL_EMOTION_OPTIONS, mergeWithGlobalEmotionOptions, uniqueNonEmptyStrings } from './emotionOptions';
 
 // ============================================
 // CATEGORY SPECIFIC SEEDS (Kept from original)
@@ -21,37 +22,37 @@ const CATEGORY_SEEDS: Record<string, Partial<FilterState>> = {
   'Sức khỏe & Thể hình': {
     coreUser: ['Người 35-50 tuổi (Lo sức khỏe)', 'Người có tiền sử tim mạch', 'Người sống độc thân', 'Gymer / Vận động viên', 'Phụ nữ mang thai'],
     painPoint: ['Sợ đột quỵ bất ngờ', 'Lo lắng khi ở nhà một mình', 'Không tin tưởng bác sĩ', 'Chi phí y tế quá cao', 'Cơ thể mệt mỏi không rõ lý do', 'Nhịp tim tăng cao khi hồi hộp'],
-    emotion: ['Sợ hãi (Fear)', 'Lo lắng (Anxiety)', 'An tâm (Relief)', 'Shock / Bất ngờ']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Sợ hãi (Fear)', 'Lo lắng (Anxiety)', 'An tâm (Relief)', 'Shock / Bất ngờ'])
   },
   'Tiện ích': {
     coreUser: ['Nam 35-45 (Cần Update iOS)', 'Nữ 35-45 (Lưu giữ kỷ niệm con cái)', 'Người cao tuổi 55+ (Cần trợ giúp công nghệ)', 'Người dùng 22-55+ (Thích quay chụp/ASMR)', 'Người bận rộn (Nhiều Email/File rác)'],
     painPoint: ['Đầy bộ nhớ không thể Update iOS mới', 'Bỏ lỡ khoảnh khắc con cái vì máy đầy', 'Điện thoại báo đầy dung lượng liên tục', 'Email rác lấp mất hóa đơn quan trọng', 'Xóa ảnh thủ công quá tốn thời gian', 'Máy nóng, chai pin do dữ liệu rác', 'Không thể tải thêm ứng dụng mới'],
-    emotion: ['Thỏa mãn (ASMR)', 'Nhẹ nhõm (Relief)', 'Tò mò (Curiosity)', 'Bực bội → Hài lòng']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Thỏa mãn (ASMR)', 'Nhẹ nhõm (Relief)', 'Tò mò (Curiosity)', 'Bực bội → Hài lòng'])
   },
   'Trò chơi': {
     coreUser: ['Gen Z (Thích thử thách)', 'Nhân viên văn phòng (Giải trí)', 'Hardcore Gamer', 'Người thích giải đố'],
     painPoint: ['Chán nản, không có gì làm', 'Cần xả stress nhanh', 'Muốn khẳng định bản thân', 'Game cũ quá nhàm chán'],
-    emotion: ['Hưng phấn (Excitement)', 'Thỏa mãn (Satisfaction)', 'Tò mò (Curiosity)', 'FOMO']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Hưng phấn (Excitement)', 'Thỏa mãn (Satisfaction)', 'Tò mò (Curiosity)', 'FOMO'])
   },
   'Tài chính': {
     coreUser: ['Người muốn tiết kiệm', 'Nhà đầu tư F0', 'Chủ shop nhỏ', 'Sinh viên mới ra trường'],
     painPoint: ['Không biết tiền đi đâu hết', 'Nợ nần chồng chất', 'Sợ lạm phát mất giá', 'Thủ tục vay vốn phức tạp'],
-    emotion: ['Lo lắng (Anxiety)', 'FOMO', 'Tự hào (Pride)', 'An tâm (Relief)']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Lo lắng (Anxiety)', 'FOMO', 'Tự hào (Pride)', 'An tâm (Relief)'])
   },
   'Giáo dục': {
     coreUser: ['Cha mẹ có con nhỏ', 'Người đi làm bận rộn', 'Học sinh mất gốc', 'Người muốn thăng tiến'],
     painPoint: ['Học mãi không vào', 'Không có thời gian đến lớp', 'Sợ tụt hậu so với bạn bè', 'Chi phí khóa học đắt đỏ'],
-    emotion: ['Tự hào (Pride)', 'Sợ tụt hậu (FOMO)', 'Đồng cảm (Empathy)', 'Hy vọng (Hope)']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Tự hào (Pride)', 'Sợ tụt hậu (FOMO)', 'Đồng cảm (Empathy)', 'Hy vọng (Hope)'])
   },
   'Mạng xã hội': {
     coreUser: ['Người tìm kiếm người yêu', 'Người hướng nội', 'KOLs / Creators', 'Gen Z thích trend'],
     painPoint: ['Cô đơn, khó kết bạn', 'Sợ bị lừa đảo qua mạng', 'Bị bóp tương tác', 'Nội dung kém hấp dẫn'],
-    emotion: ['Tò mò (Curiosity)', 'FOMO', 'Đồng cảm (Empathy)', 'Hưng phấn (Excitement)']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Tò mò (Curiosity)', 'FOMO', 'Đồng cảm (Empathy)', 'Hưng phấn (Excitement)'])
   },
   'Tổng hợp': {
     coreUser: ['Người dùng phổ thông', 'Người thích công nghệ'],
     painPoint: ['Vấn đề nan giải hàng ngày', 'Tốn thời gian làm thủ công', 'Chi phí đắt đỏ'],
-    emotion: ['Tò mò (Curiosity)', 'Thỏa mãn (Satisfaction)', 'Shock / Bất ngờ']
+    emotion: uniqueNonEmptyStrings([...GLOBAL_EMOTION_OPTIONS, 'Tò mò (Curiosity)', 'Thỏa mãn (Satisfaction)', 'Shock / Bất ngờ'])
   }
 };
 
@@ -658,14 +659,14 @@ export async function getFilterOptions(app: AppProject): Promise<Record<string, 
     if (isInternalFilterCategory(row.category)) return;
     const cat = row.category;
     if (!customOptions[cat]) customOptions[cat] = [];
-    customOptions[cat]!.push(row.value);
+    customOptions[cat] = uniqueNonEmptyStrings([...customOptions[cat]!, row.value]);
   });
 
   const manualOnlyResult: Record<string, string[]> = {
     coreUser: customOptions.coreUser || [],
     painPoint: customOptions.painPoint || [],
     solution: customOptions.solution || [],
-    emotion: customOptions.emotion || [],
+    emotion: mergeWithGlobalEmotionOptions(customOptions.emotion || []),
     videoStructure: customOptions.videoStructure || [],
     visualType: GLOBAL_VISUAL_TYPES,
     targetMarket: customOptions.targetMarket || [],
@@ -691,7 +692,9 @@ export async function getFilterOptions(app: AppProject): Promise<Record<string, 
     coreUser: customOptions.coreUser?.length ? customOptions.coreUser : (categorySeeds.coreUser || []),
     painPoint: customOptions.painPoint?.length ? customOptions.painPoint : (categorySeeds.painPoint || []),
     solution: featureNames.length ? featureNames : (customOptions.solution || []),
-    emotion: customOptions.emotion?.length ? customOptions.emotion : (categorySeeds.emotion || []),
+    emotion: customOptions.emotion?.length
+      ? mergeWithGlobalEmotionOptions(customOptions.emotion)
+      : mergeWithGlobalEmotionOptions(categorySeeds.emotion || []),
     videoStructure: GLOBAL_VIDEO_STRUCTURE,
     visualType: customOptions.visualType?.length ? customOptions.visualType : GLOBAL_VISUAL_TYPES,
     targetMarket: customOptions.targetMarket?.length ? customOptions.targetMarket : ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'],
@@ -946,5 +949,5 @@ export async function deleteFilterOptionByValue(appId: string, category: string,
   return true;
 }
 
-export { CATEGORY_SEEDS, GLOBAL_VIDEO_STRUCTURE, GLOBAL_VISUAL_TYPES };
+export { CATEGORY_SEEDS, GLOBAL_EMOTION_OPTIONS, GLOBAL_VIDEO_STRUCTURE, GLOBAL_VISUAL_TYPES };
 

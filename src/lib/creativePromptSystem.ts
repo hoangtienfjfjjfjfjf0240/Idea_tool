@@ -1,3 +1,5 @@
+import { GLOBAL_EMOTION_PROMPT_GUIDE } from './emotionOptions';
+
 type PromptFrameworkInput = {
   appName: string;
   category?: string;
@@ -271,6 +273,8 @@ Use this grammar whenever you interpret, rewrite, or generate framework inputs.
 - Health default: Fear -> Curiosity -> Relief.
 - Utility default: Frustration -> Hope -> Satisfaction.
 - AI default: Curiosity -> Amazement -> Excitement.
+- Standard emotion drivers available for every app:
+${GLOBAL_EMOTION_PROMPT_GUIDE}
 
 4. ANGLES = each angle_type is different and creates a video that looks different.
 - Health must usually include 1 Fact angle.
@@ -440,6 +444,7 @@ ${normalizeList(input.coreUsers, 'General mobile app users')}
 - Body Emotion: auto
 - CTA Emotion: auto
 Options per stage: Fear | Curiosity | Frustration | FOMO | Concern | Amazement | Hope | Relief | Satisfaction | Excitement | Urgency
+Standard app-wide drivers: Fear / Urgency | Curiosity | Aspirational | Social Proof | Bất ngờ / Nhẹ nhõm | FOMO
 Choose 3 different emotions if any stage is auto.
 
 ### VISUAL / THEME
