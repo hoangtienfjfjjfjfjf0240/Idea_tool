@@ -8,6 +8,7 @@ import {
 import { guardApiRequest } from '@/lib/apiGuards';
 import {
   buildFilterConsistencyPromptBlock,
+  detectTargetLanguageFromMarkets,
 } from '@/lib/filterConsistency';
 import { enrichHookWithFramework } from '@/lib/hookFramework';
 
@@ -377,12 +378,16 @@ export async function POST(request: NextRequest) {
     const { hook: rawHook, instruction, quantity = 3, appName, appCategory, selectedModel, targetMarket } = await request.json();
     const hook = enrichHookWithFramework(rawHook || {}, { appName, appCategory });
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
-    const targetLanguage = 'English';
     const targetMarketValues = [
       ...readTextList(targetMarket),
       ...readTextList(hook?.targetMarket),
       ...readTextList(hook?.target_market),
     ];
+    const targetLanguage = detectTargetLanguageFromMarkets(targetMarketValues, [
+      readText(hook.core_user),
+      readText(hook.coreUser),
+      readText(hook.viewerProfile),
+    ].filter(Boolean)) || 'English';
     const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
       solutionValues: [readText(hook.hook_concept, readText(hook.description))].filter(Boolean),
       angleValues: [readText(hook.title), readText(hook.description), readText(instruction)].filter(Boolean),
@@ -423,6 +428,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
 
     const candidateModels = resolveHookModels(selectedModel);
     let lastError = 'AI hook generation timed out or gateway returned an error.';
+    let bestValidItems: Record<string, unknown>[] = [];
 
     for (const [index, model] of candidateModels.entries()) {
       const text = await askAI(prompt, {
@@ -469,6 +475,9 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       }).filter(item => isUsableHookVariation(item, readText(instruction), hook)));
 
       const data = validItems.slice(0, requestedQuantity);
+      if (data.length > bestValidItems.length) {
+        bestValidItems = data;
+      }
       if (data.length >= requestedQuantity) {
         return NextResponse.json({ success: true, data, modelUsed: model });
       }
@@ -476,9 +485,30 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       lastError = `Model ${model} chỉ tạo được ${data.length}/${requestedQuantity} hook hợp lệ.`;
     }
 
+    const refillCount = Math.max(0, requestedQuantity - bestValidItems.length);
+    const refillItems = refillCount > 0
+      ? buildBetterFallbackHookVariations(hook, readText(instruction), refillCount, bestValidItems.length)
+        .filter(item => isUsableHookVariation(item, readText(instruction), hook))
+      : [];
+    const data = dedupeHookVariations([...bestValidItems, ...refillItems]).slice(0, requestedQuantity);
+
+    if (data.length > 0) {
+      return NextResponse.json({
+        success: true,
+        data,
+        modelUsed: bestValidItems.length > 0 ? 'partial-ai-with-local-refill' : 'local-refill',
+        warning: `${lastError} Returned ${bestValidItems.length} clean AI hook(s) and ${Math.max(0, data.length - bestValidItems.length)} local refill hook(s).`,
+        meta: {
+          aiCount: bestValidItems.length,
+          refillCount: Math.max(0, data.length - bestValidItems.length),
+          requestedQuantity,
+        },
+      });
+    }
+
     return NextResponse.json({
       success: false,
-      error: `${lastError} Không lưu kết quả partial/fallback.`,
+      error: `${lastError} No usable hook variations were produced.`,
     }, { status: 502 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });

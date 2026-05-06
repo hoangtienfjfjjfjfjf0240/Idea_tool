@@ -37,6 +37,16 @@ const MEDICAL_CLAIM_PATTERN = /\b(?:diagnos(?:e|is|ing)|cure|treat(?:ment|ing)?|
 const BEFORE_AFTER_PATTERN = /\b(?:before\s*\/\s*after|before and after|trước\s+và\s+sau|trước\s*\/\s*sau)\b/i;
 const HEALTH_CONTEXT_PATTERN = /\b(?:health|doctor|disease|symptom|condition|therapy|medical|bệnh|bác sĩ|triệu chứng|sức khỏe|điều trị)\b/i;
 
+const RAW_FULL_IDEA_PAYLOAD_PATTERNS = [
+  /"?title"?\s*:/i,
+  /"?duration"?\s*:/i,
+  /"?creativeType"?\s*:/i,
+  /"?framework"?\s*:/i,
+  /"?hook"?\s*:\s*\{/i,
+  /"?body"?\s*:\s*\{/i,
+  /"?cta"?\s*:\s*\{/i,
+];
+
 const FULL_IDEA_VARIATION_FOCUS = [
   'mirror/selfie confession with a surprising first-frame reveal',
   'morning routine friction that makes the viewer pause',
@@ -82,6 +92,15 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function looksLikeRawFullIdeaPayload(value: unknown): boolean {
+  const text = asText(value);
+  if (!text) return false;
+  const sample = text.slice(0, 1800);
+  const markerCount = RAW_FULL_IDEA_PAYLOAD_PATTERNS.filter(pattern => pattern.test(sample)).length;
+  const startsLikePayload = /^\s*(?:\d+(?:[.,]\d+)?\s*[-\u2013\u2014\u2212]\s*\d+(?:[.,]\d+)?s?\s*:\s*)?[\[{]/.test(sample);
+  return markerCount >= 3 || (startsLikePayload && markerCount >= 2);
 }
 
 function asStringList(value: unknown): string[] {
@@ -270,6 +289,23 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   if (!ctaVisual) errors.push('cta.visual is required');
   if (!ctaVoice && !ctaTextOverlay) errors.push('cta needs voice or text overlay');
   if (!ctaEndCard) errors.push('cta.endCard is required');
+
+  [
+    ['hook.visual', hookVisual],
+    ['hook.voice', hookVoice],
+    ['hook.textOverlay', hookTextOverlay],
+    ['body.visual', bodyVisual],
+    ['body.voice', bodyVoice],
+    ['body.textOverlay', bodyTextOverlay],
+    ['cta.visual', ctaVisual],
+    ['cta.voice', ctaVoice],
+    ['cta.textOverlay', ctaTextOverlay],
+    ['cta.endCard', ctaEndCard],
+  ].forEach(([field, value]) => {
+    if (looksLikeRawFullIdeaPayload(value)) {
+      errors.push(`${field} contains raw JSON payload instead of production copy`);
+    }
+  });
 
   const complianceText = [
     hookPrimary,
@@ -887,6 +923,10 @@ function parseGeminiJsonLikeFullIdeasText(text: string): Record<string, unknown>
     const match = source.match(pattern);
     return match ? decode(match[1]) : '';
   };
+  const readSafeString = (source: string, key: string) => {
+    const value = readString(source, key);
+    return looksLikeRawFullIdeaPayload(value) ? '' : value;
+  };
   const readSection = (source: string, sectionKey: string) => {
     const startMatch = new RegExp(`"${sectionKey}"\\s*:\\s*\\{`, 'i').exec(source);
     if (!startMatch) return '';
@@ -932,62 +972,63 @@ function parseGeminiJsonLikeFullIdeasText(text: string): Record<string, unknown>
       const framework = readSection(chunk, 'framework');
       const meta = readSection(chunk, 'meta');
       const fallbackTitle = `Script 1.${index + 1}`;
-      const rawGeneratedBrief = decode(chunk)
-        .replace(/\s+/g, ' ')
-        .slice(0, 3000);
-      const title = readString(chunk, 'title') || fallbackTitle;
-      const hookPrimary = readString(meta, 'hookPrimary') || readString(hook, 'textOverlay') || title;
-      const ctaText = readString(cta, 'textOverlay') || readString(cta, 'voiceover') || readString(cta, 'endCard') || 'Try it now';
+      const title = readSafeString(chunk, 'title') || fallbackTitle;
+      const hookPrimary = readSafeString(meta, 'hookPrimary') || readSafeString(hook, 'textOverlay') || title;
+      const ctaText = readSafeString(cta, 'textOverlay') || readSafeString(cta, 'voiceover') || readSafeString(cta, 'endCard') || 'Try it now';
+      const fallbackHookVisual = `Open on a concrete first-frame problem tied to "${hookPrimary || title}".`;
+      const fallbackBodyVisual = `Continue the same tension and show the next app/demo action clearly.`;
+      const fallbackBodyVoice = `This is the moment the solution becomes clear.`;
+      const fallbackCtaVisual = `End on the app or result screen with the next action visible.`;
 
       return {
         title,
-        duration: readString(chunk, 'duration'),
-        creativeType: readString(chunk, 'creativeType') || readString(chunk, 'creative_type'),
+        duration: readSafeString(chunk, 'duration'),
+        creativeType: readSafeString(chunk, 'creativeType') || readSafeString(chunk, 'creative_type'),
         framework: {
-          coreUser: readString(framework, 'coreUser'),
-          painpoint: readString(framework, 'painpoint'),
-          emotion: readString(framework, 'emotion'),
-          psp: readString(framework, 'psp'),
+          coreUser: readSafeString(framework, 'coreUser'),
+          painpoint: readSafeString(framework, 'painpoint'),
+          emotion: readSafeString(framework, 'emotion'),
+          psp: readSafeString(framework, 'psp'),
         },
         meta: {
           hookPrimary,
-          hookAlt1: readString(meta, 'hookAlt1'),
-          hookAlt2: readString(meta, 'hookAlt2'),
-          angleType: readString(meta, 'angleType'),
-          bodyMotivationPattern: readString(meta, 'bodyMotivationPattern'),
-          ctaFrictionReducer: readString(meta, 'ctaFrictionReducer'),
-          visualRefNotes: readString(meta, 'visualRefNotes'),
-          talentProfile: readString(meta, 'talentProfile'),
-          dontDo: readString(meta, 'dontDo'),
-          track: readString(meta, 'track'),
-          priority: readString(meta, 'priority'),
+          hookAlt1: readSafeString(meta, 'hookAlt1'),
+          hookAlt2: readSafeString(meta, 'hookAlt2'),
+          angleType: readSafeString(meta, 'angleType'),
+          bodyMotivationPattern: readSafeString(meta, 'bodyMotivationPattern'),
+          ctaFrictionReducer: readSafeString(meta, 'ctaFrictionReducer'),
+          visualRefNotes: readSafeString(meta, 'visualRefNotes'),
+          talentProfile: readSafeString(meta, 'talentProfile'),
+          dontDo: readSafeString(meta, 'dontDo'),
+          track: readSafeString(meta, 'track'),
+          priority: readSafeString(meta, 'priority'),
         },
         hook: {
-          visual: readString(hook, 'visual') || readString(hook, 'script') || rawGeneratedBrief,
-          textOverlay: readString(hook, 'textOverlay') || hookPrimary,
-          characterSpeech: readString(hook, 'characterSpeech'),
-          voiceover: readString(hook, 'voiceover') || readString(hook, 'voice') || hookPrimary,
-          voice: readString(hook, 'voice') || readString(hook, 'voiceover') || hookPrimary,
-          script: readString(hook, 'script') || readString(hook, 'visual') || rawGeneratedBrief,
+          visual: readSafeString(hook, 'visual') || readSafeString(hook, 'script') || fallbackHookVisual,
+          textOverlay: readSafeString(hook, 'textOverlay') || hookPrimary,
+          characterSpeech: readSafeString(hook, 'characterSpeech'),
+          voiceover: readSafeString(hook, 'voiceover') || readSafeString(hook, 'voice') || hookPrimary,
+          voice: readSafeString(hook, 'voice') || readSafeString(hook, 'voiceover') || hookPrimary,
+          script: readSafeString(hook, 'script') || readSafeString(hook, 'visual') || fallbackHookVisual,
         },
         body: {
-          visual: readString(body, 'visual') || readString(body, 'script') || rawGeneratedBrief,
-          textOverlay: readString(body, 'textOverlay') || readString(body, 'voiceover') || 'See the check-in',
-          characterSpeech: readString(body, 'characterSpeech'),
-          voiceover: readString(body, 'voiceover') || readString(body, 'voice') || rawGeneratedBrief.slice(0, 500),
-          voice: readString(body, 'voice') || readString(body, 'voiceover') || rawGeneratedBrief.slice(0, 500),
-          script: readString(body, 'script') || readString(body, 'visual') || rawGeneratedBrief,
+          visual: readSafeString(body, 'visual') || readSafeString(body, 'script') || fallbackBodyVisual,
+          textOverlay: readSafeString(body, 'textOverlay') || readSafeString(body, 'voiceover') || 'See the check-in',
+          characterSpeech: readSafeString(body, 'characterSpeech'),
+          voiceover: readSafeString(body, 'voiceover') || readSafeString(body, 'voice') || fallbackBodyVoice,
+          voice: readSafeString(body, 'voice') || readSafeString(body, 'voiceover') || fallbackBodyVoice,
+          script: readSafeString(body, 'script') || readSafeString(body, 'visual') || fallbackBodyVisual,
         },
         cta: {
-          visual: readString(cta, 'visual') || readString(cta, 'script') || rawGeneratedBrief,
+          visual: readSafeString(cta, 'visual') || readSafeString(cta, 'script') || fallbackCtaVisual,
           textOverlay: ctaText,
-          characterSpeech: readString(cta, 'characterSpeech'),
-          voiceover: readString(cta, 'voiceover') || readString(cta, 'voice') || ctaText,
-          voice: readString(cta, 'voice') || readString(cta, 'voiceover') || ctaText,
-          endCard: readString(cta, 'endCard') || ctaText,
-          script: readString(cta, 'script') || readString(cta, 'visual') || rawGeneratedBrief,
+          characterSpeech: readSafeString(cta, 'characterSpeech'),
+          voiceover: readSafeString(cta, 'voiceover') || readSafeString(cta, 'voice') || ctaText,
+          voice: readSafeString(cta, 'voice') || readSafeString(cta, 'voiceover') || ctaText,
+          endCard: readSafeString(cta, 'endCard') || ctaText,
+          script: readSafeString(cta, 'script') || readSafeString(cta, 'visual') || fallbackCtaVisual,
         },
-        explanation: readString(chunk, 'explanation'),
+        explanation: readSafeString(chunk, 'explanation'),
       };
     })
     .filter(record => {

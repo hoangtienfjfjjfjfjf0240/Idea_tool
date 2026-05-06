@@ -318,7 +318,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         signal: controller.signal,
       });
       const result = await res.json();
-      if (result?.fallback) {
+      if (result?.fallback && !result.data?.length) {
         throw new Error('Backend đang trả fallback hook thay vì output AI sạch. Không lưu kết quả fallback.');
       }
       if (res.ok && result.success && result.data?.length > 0) {
@@ -412,6 +412,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   ] as const;
 
   const rawIdeaTextPattern = /hook_text_overlay|hook_vo|visual_scene_1|visual_scene_2|visual_scene_3|script_vo|cta_text|body_motivation_pattern/i;
+  const rawStructuredIdeaPatterns = [
+    /"?title"?\s*:/i,
+    /"?duration"?\s*:/i,
+    /"?creativeType"?\s*:/i,
+    /"?framework"?\s*:/i,
+    /"?hook"?\s*:\s*\{/i,
+    /"?body"?\s*:\s*\{/i,
+    /"?cta"?\s*:\s*\{/i,
+  ];
 
   const unescapeLooseText = (value: string) =>
     value
@@ -503,9 +512,18 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     return fields;
   };
 
+  const looksLikeRawStructuredIdeaText = (value: unknown) => {
+    const text = readText(value);
+    if (!text) return false;
+    const sample = text.slice(0, 1800);
+    const markerCount = rawStructuredIdeaPatterns.filter(pattern => pattern.test(sample)).length;
+    const startsLikePayload = /^\s*(?:\d+(?:[.,]\d+)?\s*[-\u2013\u2014\u2212]\s*\d+(?:[.,]\d+)?s?\s*:\s*)?[\[{]/.test(sample);
+    return markerCount >= 3 || (startsLikePayload && markerCount >= 2);
+  };
+
   const looksLikeRawIdeaText = (value: unknown) => {
     const text = readText(value);
-    return text === '[' || text === '{' || rawIdeaTextPattern.test(text);
+    return text === '[' || text === '{' || rawIdeaTextPattern.test(text) || looksLikeRawStructuredIdeaText(text);
   };
 
   const cleanFullIdeaText = (value: unknown, fallback = '') => {
