@@ -289,6 +289,46 @@ function getGeneratedIdeaDedupKey(item: GeneratedIdeaApiItem) {
   return normalizeCompareText(parts.filter(Boolean).join(' | ')).slice(0, 220);
 }
 
+function getGeneratedIdeaTitleCue(item: GeneratedIdeaApiItem, index: number) {
+  const source = normalizeCompareText([
+    item.meta?.referencePattern,
+    item.meta?.firstFrameAsset,
+    item.meta?.proofObject,
+    item.hook?.visual,
+    item.hook?.script,
+    item.body?.visual,
+    item.body?.script,
+  ].filter(Boolean).join(' '));
+
+  if (/\b(?:podcast|bac si|doctor|patient|benh nhan)\b/.test(source)) return 'Podcast bác sĩ';
+  if (/\b(?:waiting|clinic|phong cho|phong kham)\b/.test(source)) return 'Phòng chờ khám';
+  if (/\b(?:kitchen|breakfast|morning|bep|buoi sang)\b/.test(source)) return 'Bếp buổi sáng';
+  if (/\b(?:living room|sofa|salon|phong khach)\b/.test(source)) return 'Phòng khách';
+  if (/\b(?:bed|bedroom|night|phong ngu|canh giuong|ban dem)\b/.test(source)) return 'Cạnh giường';
+  if (/\b(?:door|entrance|leave|leaving|ra ngoai|truoc khi ra)\b/.test(source)) return 'Trước khi ra ngoài';
+  if (/\b(?:stairs|stair|cau thang)\b/.test(source)) return 'Sau cầu thang';
+  if (/\b(?:iphone|screen|camera|app|man hinh)\b/.test(source)) return 'Màn hình iPhone';
+  return `Cảnh ${index + 1}`;
+}
+
+function getUniqueGeneratedIdeaTitle(
+  item: GeneratedIdeaApiItem,
+  index: number,
+  seenTitles: Map<string, number>
+) {
+  const rawTitle = (item.title || 'Ten kich ban').trim();
+  const key = normalizeCompareText(rawTitle);
+  const nextCount = (seenTitles.get(key) || 0) + 1;
+  seenTitles.set(key, nextCount);
+
+  if (nextCount === 1) return rawTitle;
+  const cue = getGeneratedIdeaTitleCue(item, index);
+  const cueKey = normalizeCompareText(cue);
+  return cueKey && !key.includes(cueKey)
+    ? `${rawTitle} - ${cue}`
+    : `${rawTitle} - Biến thể ${nextCount}`;
+}
+
 function getIdeaBuilderVersion(item: GeneratedIdeaApiItem | GeneratedIdea) {
   return 'content' in item
     ? item.content?.meta?.builderVersion
@@ -1365,6 +1405,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       ...prev,
       [category]: category === 'visualType'
         ? ((prev[category] || []).includes(normalizedItem) ? [] : [normalizedItem])
+        : (category === 'coreUser' && getCoreUserDimension(normalizedItem) === 'language')
+          ? ((prev[category] || []).includes(normalizedItem)
+            ? (prev[category] || []).filter(i => i !== normalizedItem)
+            : [...(prev[category] || []).filter(i => getCoreUserDimension(i) !== 'language'), normalizedItem])
         : ((prev[category] || []).includes(normalizedItem) ? (prev[category] || []).filter(i => i !== normalizedItem) : [...(prev[category] || []), normalizedItem])
     }));
   };
@@ -1487,12 +1531,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const getGenerationValidationMessage = (filtersToCheck: FilterState, plannedAngles: string[]): string => {
-    if ((filtersToCheck.coreUser || []).length === 0) return 'Chua chon Core User.';
-    if ((filtersToCheck.solution || []).length === 0) return 'Chua chon Tinh nang / Giai phap.';
-    if ((filtersToCheck.emotion || []).length === 0) return 'Chua chon Emotion Trigger.';
-    if (sanitizeVisualTypes(filtersToCheck.visualType || []).length === 0) return 'Chua chon Dang Visual.';
-    if ((filtersToCheck.painPoint || []).length === 0) return 'Chua chon Painpoint.';
-    if (plannedAngles.length === 0) return 'Chua co Angle. Hay chon angle hoac dat so luong angle de AI tu chon.';
+    if ((filtersToCheck.coreUser || []).length === 0) return 'Chưa chọn Core User.';
+    if ((filtersToCheck.solution || []).length === 0) return 'Chưa chọn Tính năng / Giải pháp.';
+    if ((filtersToCheck.emotion || []).length === 0) return 'Chưa chọn Emotion Trigger.';
+    if (sanitizeVisualTypes(filtersToCheck.visualType || []).length === 0) return 'Chưa chọn Dạng Visual.';
+    if ((filtersToCheck.painPoint || []).length === 0) return 'Chưa chọn Painpoint.';
+    if (plannedAngles.length === 0) return 'Chưa có Angle. Hãy chọn angle hoặc đặt số lượng angle để AI tự chọn.';
     return '';
   };
 
@@ -1507,6 +1551,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     if (generationValidationMessage) {
       setValidationError(generationValidationMessage);
       setGenerationNotice(null);
+      if (wizardStep >= 4) alert(generationValidationMessage);
       return;
     }
     const metricConflict = getHealthMetricConflict({
@@ -1516,8 +1561,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     });
 
     if (metricConflict) {
-      setValidationError(formatHealthMetricConflictMessage(metricConflict));
+      const conflictMessage = formatHealthMetricConflictMessage(metricConflict);
+      setValidationError(conflictMessage);
       setGenerationNotice(null);
+      if (wizardStep >= 4) alert(conflictMessage);
       return;
     }
 
@@ -1794,27 +1841,29 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let ideas: { title: string; duration: string; content: IdeaContent; filtersSnapshot: FilterState }[];
 
       if (result.success && result.data?.length > 0) {
-        ideas = result.data.map(({ item, filtersSnapshot }) => {
+        const seenDisplayTitles = new Map<string, number>();
+        ideas = result.data.map(({ item, filtersSnapshot }, index) => {
           const strategyCode = formatStrategyCodeForFilterGroups(filtersSnapshot, strategyCodeLookup);
           const strategyCodeMap = getStrategyGroupCodeMapRows(filtersSnapshot, strategyCodeLookup);
+          const displayTitle = getUniqueGeneratedIdeaTitle(item, index, seenDisplayTitles);
 
           return {
-          title: item.title || `Ý tưởng: ${app.name}`,
-          duration: item.duration || IDEA_RUNTIME_GUIDANCE,
-          filtersSnapshot,
-          content: {
-            creativeType: item.creativeType || '',
-            meta: {
-              ...(item.meta || {}),
-              generatedId: (item as Record<string, unknown>).id || (item.meta as Record<string, unknown> | undefined)?.generatedId,
-              scriptTitle: item.title || (item.meta as Record<string, unknown> | undefined)?.scriptTitle,
-              strategyCode,
-              strategyCodes: strategyCode ? strategyCode.match(/[A-F]\d+/g) || [strategyCode] : [],
-              strategyCodeMap,
-            },
-            framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
-            explanation: item.explanation || '',
-            hook: {
+            title: displayTitle || `Ý tưởng: ${app.name}`,
+            duration: item.duration || IDEA_RUNTIME_GUIDANCE,
+            filtersSnapshot,
+            content: {
+              creativeType: item.creativeType || '',
+              meta: {
+                ...(item.meta || {}),
+                generatedId: (item as Record<string, unknown>).id || (item.meta as Record<string, unknown> | undefined)?.generatedId,
+                scriptTitle: displayTitle || item.title || (item.meta as Record<string, unknown> | undefined)?.scriptTitle,
+                strategyCode,
+                strategyCodes: strategyCode ? strategyCode.match(/[A-F]\d+/g) || [strategyCode] : [],
+                strategyCodeMap,
+              },
+              framework: item.framework || { coreUser: '', painpoint: '', emotion: '', psp: '' },
+              explanation: item.explanation || '',
+              hook: {
               durationSeconds: getHookDurationSeconds(item.hook),
               script: item.hook?.script || item.hook?.visual || '',
               textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
@@ -3215,6 +3264,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               placeholder="VD: Hook 6s tò mò, mở bằng podcast giữa bác sĩ và bệnh nhân; nếu không ghi số giây AI sẽ tự chọn 3-8s theo nội dung."
               className="w-full h-28 resize-none py-3 px-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
           </div>
+
+          {validationError && (
+            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600 animate-in fade-in duration-200">
+              <AlertTriangle size={14} />
+              <span>{validationError}</span>
+            </div>
+          )}
 
           {/* Generate Button */}
           <button onClick={handleGenerate} disabled={isGenerating}

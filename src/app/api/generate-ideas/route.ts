@@ -701,6 +701,43 @@ function detectMarketLang(targetMarkets: string[], coreUsers: string[]): string 
   return detectLang(coreUsers);
 }
 
+function readCoreUserDimensionLabel(value: string): string {
+  const normalized = normalizeCompareText(value);
+  const prefix = 'core user - ';
+  if (!normalized.startsWith(prefix) || !normalized.includes(':')) return '';
+  return normalized.slice(prefix.length, normalized.indexOf(':')).trim();
+}
+
+function readCoreUserDimensionValue(value: string): string {
+  const marker = ':';
+  return value.includes(marker) ? value.slice(value.indexOf(marker) + marker.length).trim() : value.trim();
+}
+
+function isCoreUserLanguageValue(value: string): boolean {
+  const label = readCoreUserDimensionLabel(value);
+  return /\b(?:ngon ngu|language)\b/.test(label);
+}
+
+function isCoreUserMarketValue(value: string): boolean {
+  const label = readCoreUserDimensionLabel(value);
+  if (!label) return false;
+  return /\b(?:quoc gia|market|country)\b/.test(label);
+}
+
+function getCoreUserLanguageValues(coreUsers: string[]): string[] {
+  return coreUsers
+    .filter(isCoreUserLanguageValue)
+    .map(readCoreUserDimensionValue)
+    .filter(Boolean);
+}
+
+function getCoreUserMarketValues(coreUsers: string[]): string[] {
+  return coreUsers
+    .filter(value => isCoreUserMarketValue(value) || (!readCoreUserDimensionLabel(value) && !isCoreUserLanguageValue(value)))
+    .map(readCoreUserDimensionValue)
+    .filter(Boolean);
+}
+
 // Map frontend model names to gateway model identifiers
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
@@ -1762,12 +1799,18 @@ function hasVietnameseAngleCue(text: string): boolean {
 
 function inferGenerationCopyLanguage(input: {
   coreUserValues: string[];
+  explicitLanguageValues?: string[];
   painPointValues: string[];
   emotionValues: string[];
   angleValues: string[];
   ideaDescription?: string;
   targetLang: string;
 }) {
+  for (const languageValue of input.explicitLanguageValues || []) {
+    const explicitLanguage = normalizeOutputLanguageLabel(languageValue);
+    if (explicitLanguage) return explicitLanguage;
+  }
+
   const targetLanguage = normalizeOutputLanguageLabel(input.targetLang);
   if (targetLanguage) return targetLanguage;
 
@@ -2222,7 +2265,10 @@ function buildLeanGeneratePrompt(input: {
   const coreUser = input.coreUserValues.join('; ') || 'General mobile app user';
   const emotionJourney = input.emotionValues.join(' -> ') || 'auto';
   const market = input.targetMarketValues.join(', ') || input.targetLang || 'Global';
-  const marketVisualProfile = buildMarketVisualProfile([...input.targetMarketValues, ...input.coreUserValues]);
+  const marketVisualProfile = buildMarketVisualProfile([
+    ...input.targetMarketValues,
+    ...getCoreUserMarketValues(input.coreUserValues),
+  ]);
   const trends = input.trendingTopics.length ? input.trendingTopics.join('; ') : 'None';
   const importedStructures = input.trendingStructures.length ? input.trendingStructures.slice(0, 4).join('\n') : 'None';
   const recentIdeas = clampPromptContext(input.previousIdeas, 1200) || 'None';
@@ -2567,15 +2613,18 @@ Chỉ trả về JSON array string. Không markdown.`;
       const trendingStructures = asStringList(body.trendingStructures);
       const solutionValues = asStringList(filters.solution);
       const coreUserValues = asStringList(filters.coreUser);
+      const coreUserLanguageValues = getCoreUserLanguageValues(coreUserValues);
+      const coreUserMarketValues = getCoreUserMarketValues(coreUserValues);
       const emotionValues = asStringList(filters.emotion);
       const targetMarketValues = asStringList(filters.targetMarket);
+      const marketContextValues = Array.from(new Set([...targetMarketValues, ...coreUserMarketValues]));
       const angleValues = asStringList(filters.angle);
       const painPointValues = asStringList(filters.painPoint);
       const featureContext = solutionValues.length ? solutionValues.join(', ') : 'General App Features';
       const requestedQuantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
       const duration = asText(config.duration) || 'Short social-first runtime';
       const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
-      const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
+      const targetLang = detectMarketLang(marketContextValues, coreUserMarketValues);
       const ideaDescription = asText(config.ideaDescription) || undefined;
       const hookDurationPlan = resolveHookDurationPlan({
         ideaDescription,
@@ -2590,6 +2639,7 @@ Chỉ trả về JSON array string. Không markdown.`;
       const requestedHookDuration = hookDurationPlan.seconds;
       const outputLanguage = inferGenerationCopyLanguage({
         coreUserValues,
+        explicitLanguageValues: coreUserLanguageValues,
         painPointValues,
         emotionValues,
         angleValues,
@@ -2670,7 +2720,7 @@ Chỉ trả về JSON array string. Không markdown.`;
               primaryPillar,
               angleContext,
               featureContext,
-              targetMarketValues,
+              targetMarketValues: marketContextValues,
               targetLang,
               copyLanguage: outputLanguage,
               visualType,
@@ -2724,7 +2774,7 @@ Hard requirements:
           category: appCategory,
           coreUsers: coreUserValues,
           primaryEmotion: emotionValues[0] || 'Curiosity',
-          visualTheme: `${visualType}. Keep the scenes native to ${targetMarketValues.join(', ') || 'the selected market'}.`,
+          visualTheme: `${visualType}. Keep the scenes native to ${marketContextValues.join(', ') || 'the selected market'}.`,
           psp: featureContext,
           pillars: painPointValues.length ? painPointValues : ['General user friction'],
           trendingHooks: trendingTopics,
@@ -2760,7 +2810,7 @@ Hard requirements:
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
             `Idea description: ${ideaDescription || 'Creative freedom'}`,
-            `Target market: ${targetMarketValues.join(', ') || 'Default market'}`,
+            `Target market: ${marketContextValues.join(', ') || 'Default market'}`,
             `Batch window: ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}/${totalVariations}`,
           ],
         });
@@ -2829,7 +2879,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           emotionValues,
           featureContext,
           visualType,
-          targetMarketValues,
+          targetMarketValues: marketContextValues,
           targetLang,
           outputLanguage,
           angleContext,
@@ -3331,26 +3381,30 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const trendingStructures = asStringList(body.trendingStructures);
     const solutionValues = asStringList(filters.solution);
     const coreUserValues = asStringList(filters.coreUser);
+    const coreUserLanguageValues = getCoreUserLanguageValues(coreUserValues);
+    const coreUserMarketValues = getCoreUserMarketValues(coreUserValues);
     const emotionValues = asStringList(filters.emotion);
     const targetMarketValues = asStringList(filters.targetMarket);
+    const marketContextValues = Array.from(new Set([...targetMarketValues, ...coreUserMarketValues]));
     const angleValues = asStringList(filters.angle);
     const painPointValues = asStringList(filters.painPoint);
     const featureContext = solutionValues.length ? solutionValues.join(', ') : "General App Features";
     const quantity = Math.min(toPositiveInt(config.quantity, 3), 5); // Cap at 5 to avoid gateway timeout
     const duration = asText(config.duration) || 'Short social-first runtime';
     const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
-    const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
+    const targetLang = detectMarketLang(marketContextValues, coreUserMarketValues);
     const ideaDescription = asText(config.ideaDescription) || undefined;
     const outputLanguage = inferGenerationCopyLanguage({
       coreUserValues,
+      explicitLanguageValues: coreUserLanguageValues,
       painPointValues,
       emotionValues,
       angleValues,
       ideaDescription,
       targetLang,
     });
-    const marketContext = buildMarketContext([...targetMarketValues, ...coreUserValues]);
-    const marketVisualProfile = buildMarketVisualProfile([...targetMarketValues, ...coreUserValues]);
+    const marketContext = buildMarketContext(marketContextValues);
+    const marketVisualProfile = buildMarketVisualProfile(marketContextValues);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
 
@@ -3421,7 +3475,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           primaryPillar,
           angleContext,
           featureContext,
-          targetMarketValues,
+          targetMarketValues: marketContextValues,
           targetLang,
           copyLanguage: outputLanguage,
           visualType,
@@ -3517,7 +3571,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       category: appCategory,
       coreUsers: coreUserValues,
       primaryEmotion: emotionValues[0] || 'Curiosity',
-      visualTheme: `${visualType}. Keep the scenes native to ${targetMarketValues.join(', ') || 'the selected market'}.`,
+      visualTheme: `${visualType}. Keep the scenes native to ${marketContextValues.join(', ') || 'the selected market'}.`,
       psp: featureContext,
       pillars: painPointValues.length ? painPointValues : ['General user friction'],
       trendingHooks: trendingTopics,
@@ -3549,7 +3603,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,
         `Idea description: ${ideaDescription || 'Creative freedom'}`,
-        `Target market: ${targetMarketValues.join(', ') || 'Default market'}`,
+        `Target market: ${marketContextValues.join(', ') || 'Default market'}`,
       ],
     });
 
