@@ -623,9 +623,16 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
     const phases = extractHookPhases(visual);
     if (phases.length >= 2) {
-      const fallbackRanges = durationSeconds === 8
-        ? ['0-2s', '2-5s', '5-8s']
-        : ['0-1.5s', '1.5-3.5s', `3.5-${durationSeconds}s`];
+      if (durationSeconds < 8) {
+        const splitPoint = Math.max(2.5, durationSeconds - 2.5);
+        const contextLine = [phases[1]?.text, phases[2]?.text].filter(Boolean).join(' ');
+        return [
+          `0-${splitPoint}s: ${phases[0]?.text || visual || 'Open with the proven pain point in a concrete first frame.'}`,
+          `${splitPoint}-${durationSeconds}s: ${appendHookCopyToContextLine(contextLine, textOverlay, voiceover) || 'Add context with text overlay and conversational voiceover.'}`,
+        ].join('\n');
+      }
+
+      const fallbackRanges = ['0-2.5s', '2.5-5.5s', `5.5-${durationSeconds}s`];
       return phases.slice(0, 3).map((phase, index) => {
         const line = phase.phase === 2
           ? appendHookCopyToContextLine(phase.text, textOverlay, voiceover)
@@ -634,9 +641,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       }).join('\n');
     }
 
-    const ranges = durationSeconds === 8
-      ? ['0-2s', '2-5s', '5-8s']
-      : ['0-1.5s', '1.5-3.5s', `3.5-${durationSeconds}s`];
+    if (durationSeconds < 8) {
+      const splitPoint = Math.max(2.5, durationSeconds - 2.5);
+      return [
+        `0-${splitPoint}s: ${visual || 'Open with the proven pain point in a concrete first frame.'}`,
+        `${splitPoint}-${durationSeconds}s: ${appendHookCopyToContextLine('', textOverlay, voiceover) || 'Add context with text overlay and conversational voiceover.'}`,
+      ].join('\n');
+    }
+
+    const ranges = ['0-2.5s', '2.5-5.5s', `5.5-${durationSeconds}s`];
     return [
       `${ranges[0]}: ${visual || 'Open with the proven pain point in a concrete first frame.'}`,
       `${ranges[1]}: ${appendHookCopyToContextLine('', textOverlay, voiceover) || 'Add context with text overlay and conversational voiceover.'}`,

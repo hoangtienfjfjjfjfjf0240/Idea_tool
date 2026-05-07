@@ -145,25 +145,6 @@ function normalizeCompareText(value: unknown) {
     .trim();
 }
 
-function getOutputLanguageFromFilters(filters: Partial<FilterState>) {
-  const normalized = normalizeCompareText([
-    ...(filters.targetMarket || []),
-    ...(filters.coreUser || []),
-  ].join(' '));
-
-  if (/\b(?:jp|japan|japanese|nhat)\b/.test(normalized)) return 'Japanese';
-  if (/\b(?:vn|vietnam|vietnamese|viet|tieng viet|nguoi viet)\b/.test(normalized)) return 'Vietnamese';
-  if (/\b(?:kr|korea|korean|han)\b/.test(normalized)) return 'Korean';
-  if (/\b(?:fr|france|french|phap)\b/.test(normalized)) return 'French';
-  if (/\b(?:de|germany|german|deutsch|duc)\b/.test(normalized)) return 'German';
-  if (/\b(?:es|spain|spanish|latam|latin|tay ban nha)\b/.test(normalized)) return 'Spanish';
-  if (/\b(?:pt|portuguese|brazil|brasil|bo dao nha)\b/.test(normalized)) return 'Portuguese';
-  if (/\b(?:thai|thailand|thai lan)\b/.test(normalized)) return 'Thai';
-  if (/\b(?:indonesia|indonesian)\b/.test(normalized)) return 'Indonesian';
-  if (/\b(?:malay|malaysia)\b/.test(normalized)) return 'Malay';
-  return 'English';
-}
-
 function buildLocalizedFallbackAnglesFromPainpoints(painpoints: string[], outputLanguage: string) {
   const seeds = painpoints.length > 0 ? painpoints : ['the current pain point'];
 
@@ -2598,7 +2579,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const selectedPainpoints = filters.painPoint || [];
     if (selectedPainpoints.length === 0) return;
 
-    const outputLanguage = getOutputLanguageFromFilters(filters);
+    const outputLanguage = 'Vietnamese';
     setGeneratingAngles(true);
     try {
       const res = await authenticatedFetch('/api/generate-ideas', {

@@ -431,7 +431,7 @@ Each object must use this exact flat schema:
     },
     "hook": {
       "durationSeconds": 5,
-      "visual": "Hook timing format. Example: 0-1.5s: ...\\n1.5-3.5s: Text hiện: ... | Voiceover: ...\\n3.5-5s: ...",
+      "visual": "Hook timing format. Example: 0-2.5s: ...\\n2.5-5s: Text hien: ... | Voiceover: ... | curiosity gap. Max 2 scenes/camera angles for 5s.",
       "textOverlay": "short on-screen hook",
       "characterSpeech": "on-camera speech if visible talent talks, otherwise empty",
       "voiceover": "off-camera voice/video voice",
@@ -465,7 +465,9 @@ Rules:
 - Visual descriptions and production notes must also be in ${options.language}.
 - Every idea must have hook, body, CTA. Do not return hook-only objects.
 - Map the global V2.1 scene rules into this flat schema: visual_scene_1 = hook.visual, visual_scene_2 = body.visual, visual_scene_3 = cta.visual.
-- Use readable timing inside hook.visual. If the user asks for an 8-second hook, split naturally as 0-2s / 2-5s / 5-8s or another sensible three-part timing.
+- Apply Rule 4 pacing strictly: 1 scene/camera angle must last at least 2.5 seconds.
+- For 5-second hooks/videos, hook.visual uses max 2 timing rows/camera angles, normally 0-2.5s and 2.5-5s. Never use 3+ rows or 3+ actions/cuts in 5s.
+- For 8-10 second hooks/videos, use max 3-4 scenes/camera angles, each around 2.5-3s. Use split-screen or complex transitions only when each pane/beat has about 3 seconds.
 - hook.visual, body.visual, and cta.visual must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - For Health/Fitness: no diagnose, treat, cure, detect disease, replace doctor, medical result claims. Use track, monitor, check, reference, wellness.
 - Do not use before/after body or health outcome framing.
@@ -498,7 +500,7 @@ Required shape:
     },
     "hook": {
       "durationSeconds": 5,
-      "visual": "0-1.5s: ...\\n1.5-3.5s: Text appears: ... | Voiceover: ...\\n3.5-5s: ...",
+      "visual": "0-2.5s: ...\\n2.5-5s: Text appears: ... | Voiceover: ... | curiosity gap",
       "textOverlay": "",
       "characterSpeech": "",
       "voiceover": "",
@@ -514,6 +516,7 @@ Required shape:
 Rules:
 - Every generated text field must be in ${options.language}, including title, visual notes, production notes, hook text, speech, voiceover, CTA, and endCard.
 - Every idea must include non-empty hook.visual, hook voice/text, body.visual, body voice/text, cta.visual, cta voice/text, and cta.endCard.
+- Apply Rule 4 pacing strictly: 5s hooks/videos max 2 scenes/camera angles; 8-10s hooks/videos max 3-4 scenes/camera angles; each scene/camera angle must last at least 2.5 seconds.
 - hook.visual, body.visual, and cta.visual must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep it tied to ${options.appName}; no generic placeholders.
 - For Health/Fitness: no diagnose, treat, cure, detect disease, replace doctor, or medical-result promise. Use track, monitor, check, reference, wellness.`;
