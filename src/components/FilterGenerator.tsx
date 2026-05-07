@@ -556,10 +556,10 @@ function buildStrategicAutoAngles(brief: CompactCreativeBrief | null, app: AppPr
 function normalizeVisualTypeValue(value: string): string | null {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return null;
+  if (normalized.includes('motion') || normalized.includes('graphic') || normalized.includes('data visual')) return 'Motion Graphic';
   if (normalized.includes('2d')) return '2D Animation';
   if (normalized.includes('3d')) return '3D Animation';
   if (normalized.includes('pov') || normalized.includes('screen recording') || normalized.includes('demo app')) return 'POV';
-  if (normalized.includes('motion') || normalized.includes('graphic') || normalized.includes('data visual')) return 'Motion Graphic';
   if (normalized.includes('ugc') || normalized.includes('người thật') || normalized.includes('nguoi that')) return 'UGC';
   return GLOBAL_VISUAL_TYPES.includes(value) ? value : null;
 }

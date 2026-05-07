@@ -441,6 +441,7 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - Notes grammar: max 3-5 bullets; DO, DON'T, Data, Constraint only.
 - PSP must become Feature -> Benefit -> Transformation so the app action feels earned.
 - Use only these Visual/Theme formats as production format labels: 2D Animation, 3D Animation, UGC, POV, Motion Graphic.
+- Motion Graphic means 2D motion graphics: animated typography, flat vector shapes, icons, charts, app UI panels, arrows, labels, data callouts, and infographic transitions. It is not live-action, not 3D render, and not full 2D character/cartoon scene animation.
 - Social patterns such as Trend, Challenge, Interview, Split Screen, or Social Proof are hook/story patterns, not Visual/Theme formats.
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
 - If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines. hook_vo stays empty unless there is a true off-camera narrator.
@@ -483,7 +484,7 @@ Choose 3 different emotions if any stage is auto.
 
 ### VISUAL / THEME
 ${input.visualTheme || 'UGC, mobile-first, handheld, social-feed native'}
-[Must keep Meta-native feel: vertical 9:16, clear first frame, fast social pacing, and the selected production format. Do not force handheld/selfie/UGC treatment when the selected Visual/Theme is animation or motion.]
+[Must keep Meta-native feel: vertical 9:16, clear first frame, fast social pacing, and the selected production format. Motion Graphic is 2D motion graphics, so do not force handheld/selfie/UGC, 3D render, or character-cartoon treatment when selected.]
 
 ### PRODUCT SELLING POINT (PSP)
 Feature -> Benefit mapping:
@@ -690,7 +691,7 @@ Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and
 Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
-${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.` : ''}
+${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.${options.visualType === 'Motion Graphic' ? ' Motion Graphic must be 2D motion graphics: animated typography, flat shapes/icons/charts/UI panels/data callouts, not live-action, 3D, or full character animation.' : ''}` : ''}
 
 [
   {
@@ -1457,10 +1458,10 @@ function normalizeFrameworkVisualFormat(value?: string): string {
   const raw = readText(value);
   const normalized = normalizeCompareText(raw);
   if (!normalized) return '';
+  if (/\bmotion\b/.test(normalized) || /\bgraphic\b/.test(normalized) || /\bdata visual\b/.test(normalized)) return 'Motion Graphic';
   if (/\b2d\b/.test(normalized)) return '2D Animation';
   if (/\b3d\b/.test(normalized)) return '3D Animation';
   if (/\bpov\b/.test(normalized) || /\bscreen recording\b/.test(normalized) || /\bdemo app\b/.test(normalized)) return 'POV';
-  if (/\bmotion\b/.test(normalized) || /\bgraphic\b/.test(normalized) || /\bdata visual\b/.test(normalized)) return 'Motion Graphic';
   if (/\bugc\b/.test(normalized) || /\bnguoi that\b/.test(normalized)) return 'UGC';
   return FRAMEWORK_VISUAL_FORMATS.includes(raw as typeof FRAMEWORK_VISUAL_FORMATS[number]) ? raw : '';
 }
@@ -1481,8 +1482,8 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
   if (lockedVisualType === '3D Animation' && !/\b(?:3d|cgi|render|animated|animation)\b/.test(normalizedScene)) {
     return `Trong khung 3D animation/render, ${scene}`;
   }
-  if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|infographic|animated ui|typography|data visual|bieu do)\b/.test(normalizedScene)) {
-    return `Theo phong cach Motion Graphic/animated UI, ${scene}`;
+  if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|2d motion|kinetic typography|animated ui|ui motion|shape animation|icon animation|infographic|typography|data visual|animated chart|bieu do)\b/.test(normalizedScene)) {
+    return `Theo phong cach Motion Graphic 2D: typography/shape/icon/UI chuyen dong, ${scene}`;
   }
   if (lockedVisualType === 'POV' && !/\b(?:pov|goc nhin|screen recording|man hinh|over the shoulder)\b/.test(normalizedScene)) {
     return `Theo goc POV/screen-perspective, ${scene}`;

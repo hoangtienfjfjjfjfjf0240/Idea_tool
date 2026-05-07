@@ -211,10 +211,10 @@ function sanitizeMedicalClaimsInIdea(item: Record<string, unknown>): Record<stri
 
 function normalizeFrameworkVisualFormat(value: string): string {
   const normalized = value.trim().toLowerCase();
+  if (normalized.includes('motion') || normalized.includes('graphic') || normalized.includes('data visual')) return 'Motion Graphic';
   if (normalized.includes('2d')) return '2D Animation';
   if (normalized.includes('3d')) return '3D Animation';
   if (normalized.includes('pov') || normalized.includes('screen recording') || normalized.includes('demo app')) return 'POV';
-  if (normalized.includes('motion') || normalized.includes('graphic') || normalized.includes('data visual')) return 'Motion Graphic';
   if (normalized.includes('ugc') || normalized.includes('người thật') || normalized.includes('nguoi that')) return 'UGC';
   return FRAMEWORK_VISUAL_FORMATS.includes(value as typeof FRAMEWORK_VISUAL_FORMATS[number]) ? value : 'UGC';
 }
@@ -232,8 +232,8 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
   if (lockedVisualType === '3D Animation' && !/\b(?:3d|cgi|render|animated|animation)\b/.test(normalizedScene)) {
     return `Trong khung 3D animation/render, ${scene}`;
   }
-  if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|infographic|animated ui|typography|data visual|bieu do)\b/.test(normalizedScene)) {
-    return `Theo phong cach Motion Graphic/animated UI, ${scene}`;
+  if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|2d motion|kinetic typography|animated ui|ui motion|shape animation|icon animation|infographic|typography|data visual|animated chart|bieu do)\b/.test(normalizedScene)) {
+    return `Theo phong cach Motion Graphic 2D: typography/shape/icon/UI chuyen dong, ${scene}`;
   }
   if (lockedVisualType === 'POV' && !/\b(?:pov|goc nhin|screen recording|man hinh|over the shoulder)\b/.test(normalizedScene)) {
     return `Theo goc POV/screen-perspective, ${scene}`;
@@ -2079,7 +2079,7 @@ function buildSelectedStrategyLockBlock(input: {
     : normalizedVisual.includes('3d')
       ? '- 3D Animation execution: every visual_scene must be 3D-rendered/CGI. Do not switch to live-action UGC, flat 2D, or pure screen recording.'
       : normalizedVisual.includes('motion')
-        ? '- Motion Graphic execution: every visual_scene must be animated UI/data/shape typography. Do not switch to live-action UGC or 2D character animation unless it is a minor supporting graphic.'
+        ? '- Motion Graphic execution means 2D motion graphics: animated typography, flat vector shapes, icons, charts, app UI panels, data callouts, arrows, labels, and simple infographic transitions. Do not switch to live-action UGC, handheld footage, 3D render/CGI, or full 2D character/cartoon scene animation as the main format.'
         : normalizedVisual.includes('pov')
           ? '- POV execution: every visual_scene must be POV/screen-perspective. Do not label it UGC just because a person is implied.'
           : '- UGC execution: every visual_scene should feel like real social footage. Do not switch to animation or motion graphic as the main format.';
@@ -2961,7 +2961,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Hook, body, and CTA must follow one continuous problem-solution chain.
 - Body is a suggested demo/proof continuation; do not rely on Body alone to explain why the PSP matters.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.
-- Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Do not use Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format as visual formats; put those only in reference_pattern or interrupt_mechanism when useful.
+- Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Motion Graphic means 2D motion graphics: typography, flat shapes/icons/charts/UI panels/data callouts moving on screen; it is not live-action, 3D render, or full 2D character/cartoon animation. Do not use Reaction, Split Screen, Challenge, Social Proof, ASMR, Interview, or Trend Format as visual formats; put those only in reference_pattern or interrupt_mechanism when useful.
 - Production blueprint: each idea must include reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes. reference_pattern can be custom/hybrid. psp_bridge belongs to Hook and must connect the emotion/angle to the PSP. The remaining fields must be concrete enough for a creator to edit the video without asking follow-up questions.`;
 
         void painpointPrecisionBlock;
@@ -3682,7 +3682,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Treat the selected angle as one narrow manifestation of the selected pain point, not a replacement for it.
 - If an angle is selected, the hook must make that angle visible immediately through the first action, first spoken line, or first contrast.
 - Hook, body, and CTA must follow one continuous problem-solution chain.
-- Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Use social hook patterns separately from visual format.
+- Visual / Theme format must be exactly one of the framework formats: 2D Animation, 3D Animation, UGC, POV, or Motion Graphic. Motion Graphic means 2D motion graphics: typography, flat shapes/icons/charts/UI panels/data callouts moving on screen; it is not live-action, 3D render, or full 2D character/cartoon animation. Use social hook patterns separately from visual format.
 - If multiple ideas are requested, diversify them aggressively while keeping the same strategic inputs.`;
 
     const frameworkInjection = buildFrameworkInjection({
