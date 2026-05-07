@@ -3500,6 +3500,13 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
             const scriptDisplayLabel = getReadableScriptLabel(idea, idx);
             const strategyCode = String(c?.meta?.strategyCode || '');
+            const funnelTag = String(
+              c?.meta?.webFunnel
+              || c?.meta?.funnelName
+              || c?.meta?.referencePattern
+              || c?.meta?.angleName
+              || ''
+            ).trim();
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -3514,6 +3521,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <div className="flex gap-2 flex-wrap">
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                         {strategyCode && <span className="text-[11px] px-2 py-0.5 bg-slate-900 text-white rounded-md font-bold">{strategyCode}</span>}
+                        {funnelTag && <span className="text-[11px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md">Funnel: {truncatePreviewText(funnelTag, 34)}</span>}
                         <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
                         {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
                         {angleTag && <span className="text-[11px] px-2 py-0.5 bg-teal-50 text-teal-600 rounded-md">{truncatePreviewText(angleTag, 32)}</span>}
