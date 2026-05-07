@@ -742,42 +742,42 @@ function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
 function vietnamesePainpointCue(value: string) {
   const normalized = normalizeCompareText(value);
   if (/\b(?:chest|nguc|symptom|trieu chung|scare|panic|hoang)\b/.test(normalized)) {
-    return 'lo lang khi dau hieu o nguc xuat hien bat ngo';
+    return 'lo lắng khi dấu hiệu ở ngực xuất hiện bất ngờ';
   }
   if (/\b(?:warning|sign|alert|understood|understand|canh bao|hieu)\b/.test(normalized)) {
-    return 'khong hieu ro cac dau hieu canh bao suc khoe tim';
+    return 'không hiểu rõ các dấu hiệu cảnh báo sức khỏe tim';
   }
   if (/\b(?:pulse|heartbeat|heart rate|nhip tim|felt off|different)\b/.test(normalized)) {
-    return 'nhip tim thay doi nhung khong biet y nghia la gi';
+    return 'nhịp tim thay đổi nhưng không biết ý nghĩa là gì';
   }
   if (/\b(?:night|late|search|learn|fact|knowledge|dem|tra cuu|kien thuc)\b/.test(normalized)) {
-    return 'phai tra cuu kien thuc tim mach trong luc dang lo';
+    return 'phải tra cứu kiến thức tim mạch trong lúc đang lo';
   }
   if (/\b(?:family|talk|question|answer|conversation|gia dinh|cau hoi)\b/.test(normalized)) {
-    return 'khong tra loi duoc nhung cau hoi don gian ve suc khoe tim';
+    return 'không trả lời được những câu hỏi đơn giản về sức khỏe tim';
   }
   if (/\b(?:dizzy|dizziness|chong mat|regret|learning)\b/.test(normalized)) {
-    return 'chong mat roi moi nhan ra minh biet qua it ve suc khoe tim';
+    return 'chóng mặt rồi mới nhận ra mình biết quá ít về sức khỏe tim';
   }
   if (/\b(?:blood|pressure|huyet ap)\b/.test(normalized)) {
-    return 'muon kiem tra huyet ap nhung cach cu qua bat tien';
+    return 'muốn kiểm tra huyết áp nhưng cách cũ quá bất tiện';
   }
   if (/\b(?:bulky|device|monitor|old|traditional|messgerat|gerat|may do)\b/.test(normalized)) {
-    return 'thiet bi theo doi cu cong kenh lam moi lan kiem tra deu ngai';
+    return 'thiết bị theo dõi cũ cồng kềnh làm mỗi lần kiểm tra đều ngại';
   }
-  return 'noi dau da chon van chua co cach xu ly ro rang';
+  return 'nỗi đau đã chọn vẫn chưa có cách xử lý rõ ràng';
 }
 
 function buildLocalizedAngleFallback(painpoints: string[], outputLanguage = 'English') {
   const language = normalizeOutputLanguageLabel(outputLanguage) || 'English';
   if (language === 'Vietnamese') {
-    const seeds = painpoints.length > 0 ? painpoints : ['noi dau da chon'];
+    const seeds = painpoints.length > 0 ? painpoints : ['nỗi đau đã chọn'];
     return seeds.flatMap((pp: string) => {
       const cue = vietnamesePainpointCue(pp);
       return [
-        `Nguoi xem ${cue} trong mot khoanh khac doi thuong`,
-        `Tinh huong ${cue} khien cach cu tro nen qua cham`,
-        `Goc nhin ${cue} va can mot cach theo doi ro rang hon`,
+        `Người xem ${cue} trong một khoảnh khắc đời thường`,
+        `Tình huống ${cue} khiến cách cũ trở nên quá chậm`,
+        `Góc nhìn ${cue} và cần một cách theo dõi rõ ràng hơn`,
       ];
     });
   }
@@ -2266,27 +2266,31 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         ...asStringList(body.targetMarket),
       ];
       const outputLanguage = 'Vietnamese';
-      const pps = painpoints.join('; ');
-      const anglePrompt = `Create advertising angle options for app "${appName}" (${appCategory}).
-Painpoints: ${pps}
-Core Users: ${coreUsers.join('; ')}
-Emotions: ${emotions.join('; ')}
-Target markets / countries: ${targetMarkets.join('; ') || 'Global / no specific country'}
-Output language: ${outputLanguage}
+      const vietnamesePainpoints = (painpoints.length ? painpoints : ['nỗi đau đã chọn'])
+        .map(vietnamesePainpointCue);
+      const anglePrompt = `Bạn là nhân sự Idea người Việt. Hãy tạo các Angle quảng cáo bằng TIẾNG VIỆT cho app "${appName}" (${appCategory}).
 
-Rules:
-1. Every returned angle string MUST be written in Vietnamese only, using natural Vietnamese phrasing for the internal Idea team.
-2. Target markets / countries affect cultural context only. They must NOT change the angle language.
-3. Each angle MUST stick directly to the selected painpoint and cannot drift to a different painpoint.
-4. Emotion is only the viewer feeling to trigger. Do not use emotion labels as prefixes.
-5. Do not start with labels like "Fear:", "FOMO:", "Challenge:", "Social Proof:", or "Aspirational:".
-6. Keep each angle short, practical, and like a natural UGC opening. No early app pitch, no CTA, no slogan.
-7. Each angle should be 8-14 words when the language allows it, and each one should open with a different lived situation.
+Painpoint đã diễn đạt lại bằng tiếng Việt:
+${vietnamesePainpoints.map((pp, index) => `${index + 1}. ${pp}`).join('\n')}
 
-Vietnamese style examples only:
+Core User: ${coreUsers.join('; ') || 'người dùng đã chọn'}
+Emotion: ${emotions.join('; ') || 'cảm xúc đã chọn'}
+Thị trường mục tiêu: ${targetMarkets.join('; ') || 'Global / không khóa thị trường'}
+Ngôn ngữ output bắt buộc: ${outputLanguage}
+
+Luật bắt buộc:
+1. Chỉ trả về tiếng Việt tự nhiên, có dấu. Không viết tiếng Anh, không dịch ngược sang tiếng Anh.
+2. Nếu painpoint gốc từng là tiếng Anh, chỉ dùng phần painpoint tiếng Việt ở trên để viết Angle.
+3. Thị trường mục tiêu chỉ ảnh hưởng bối cảnh văn hóa, tuyệt đối không đổi ngôn ngữ Angle.
+4. Mỗi Angle phải bám trực tiếp vào painpoint đã chọn, không trôi sang nỗi đau khác.
+5. Không mở đầu bằng nhãn như "Fear:", "FOMO:", "Challenge:", "Social Proof:", "Aspirational:".
+6. Viết như một tình huống UGC đời thường, ngắn, dễ quay, chưa pitch app sớm.
+7. Mỗi Angle khoảng 8-16 từ và nên mở bằng một tình huống khác nhau.
+
+Ví dụ style:
 ["Tôi tưởng đo sau khi đi bộ là đủ, nhưng máy cũ quá rườm rà", "Trong phòng chờ tôi mới nhận ra mình không còn muốn ghi tay nữa"]
 
-Return a JSON array of strings only. No markdown.`;
+Chỉ trả về JSON array string. Không markdown.`;
 
       try {
         // Use fast model with short timeout (3-7s instead of 20-30s)
