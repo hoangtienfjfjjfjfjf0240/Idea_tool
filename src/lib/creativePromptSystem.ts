@@ -673,8 +673,9 @@ export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): st
 Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${v21QuantityLabel} idea objects inside that angle.
 User-facing copy must be in ${options.language}: hook_text_overlay, hook_vo, hook alternatives, hook_character_speech, script_vo, and cta_text.
-Visual scenes, visual_ref_notes, talent_profile, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
-Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch user-facing copy away from ${options.language}.
+Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
+Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
+Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 
 [
   {
@@ -761,7 +762,8 @@ Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
 User-facing copy must be in ${options.language}: title/hook lines, on-camera character speech, voice/video voiceover, text overlay, script_vo, and CTA.
 Visual shooting descriptions and production notes must be Vietnamese for the internal team.
-The selected market controls setting, culture, behavior, and vibe only. Do not switch user-facing copy away from ${options.language}.
+Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
+The selected market controls setting, culture, behavior, and vibe only. Do not switch production prose away from Vietnamese.
 
 [
   {
@@ -879,7 +881,7 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
 5. visual_scene_1 must be specific enough for a creator or AI video tool to execute exactly.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
-7. User-facing copy must be in ${options.language}: title/concept, character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes must be Vietnamese.
+7. User-facing copy must be in ${options.language}: title/concept, character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
 8. Speech, behavior, setting, props, social relationship, and vibe must feel native to the selected market. Describe the visual execution in Vietnamese.
 9. If the idea has a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. If 2+ people communicate, keep the exchange simple, natural, role-accurate, and include only the necessary dialogue.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
@@ -958,7 +960,7 @@ The array must follow this exact structure:
 12. angle_type must be one of the allowed values and should be different from other angles in the same pillar.
 13. track: A = no real person needed, B = real person / UGC, C = motion / animation.
 14. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
-15. User-facing copy fields title, hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, script_vo, and cta_text must be in ${options.language}. Visual_scene_1/2/3 and production notes must be Vietnamese.
+15. User-facing copy fields title, hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, script_vo, and cta_text must be in ${options.language}. Visual_scene_1/2/3 production prose and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
 16. Do not make prohibited claims or before/after health outcome framing.
 17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
 18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
@@ -1256,6 +1258,21 @@ function looksVietnamese(text: string): boolean {
   return vietnameseCueTokens.length >= 6 && vietnameseCueTokens.length > englishTokens.length;
 }
 
+function stripAudienceCopyFromVisualScene(text: string): string {
+  return text
+    .replace(/"[^"]*"/g, ' ')
+    .replace(/\[[^\]]*(?:CHARACTER SPEECH|VOICEOVER|VOICE|TEXT OVERLAY)[^\]]*\][^.;\n]*/gi, ' ')
+    .replace(/\b(?:Position anchor|Contact anchor|Physical action anchor|Text hien|Text hiện|Voiceover|CHARACTER SPEECH|VOICEOVER|Patient|Speaker|VO)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function visualProductionLooksVietnamese(text: string): boolean {
+  const productionText = stripAudienceCopyFromVisualScene(text);
+  if (!productionText) return false;
+  return looksVietnamese(productionText) && !looksEnglish(productionText);
+}
+
 function isSearchQueryHook(text: string): boolean {
   return /^(?:could|is|are|can|does|do|did|why|how|what)\b.{12,}\?$/i.test(text.trim());
 }
@@ -1505,9 +1522,6 @@ function createBriefValidationErrors(input: {
       input.hookVoiceover || '',
       input.hookTextOverlay || '',
       input.pspBridge || '',
-      input.visualScene1,
-      input.visualScene2,
-      input.visualScene3,
       input.scriptVo,
       input.ctaText,
     ].join(' ');
@@ -1528,6 +1542,10 @@ function createBriefValidationErrors(input: {
     if (looksVietnamese(languageText)) {
       errors.push('copy fields must be English; Vietnamese is only allowed in visual/production fields');
     }
+  }
+  const visualScenes = [input.visualScene1, input.visualScene2, input.visualScene3].filter(Boolean);
+  if (visualScenes.some(scene => !visualProductionLooksVietnamese(scene))) {
+    errors.push('visual_scene prose must be Vietnamese; only quoted Text/Voiceover/CHARACTER SPEECH can use the market copy language');
   }
   const hookTextOverlayForCount = input.hookTextOverlay || input.hookPrimary;
   if (hookTextOverlayForCount && countWords(hookTextOverlayForCount) > 8) {

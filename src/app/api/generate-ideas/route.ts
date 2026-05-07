@@ -280,6 +280,7 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
 - If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
 - Write user-facing copy in ${copyLanguage}: title, hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
+- For visual_scene rows, write the scene/action/camera prose in Vietnamese. Only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside the scene are in ${copyLanguage}.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Obey Rule 4 pacing: 5s outputs max 2 scenes/camera angles; 8-10s outputs max 3-4 scenes/camera angles; fewer scenes are allowed.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
@@ -930,6 +931,31 @@ function asStringList(value: unknown): string[] {
 function formatStringList(value: unknown): string {
   const items = asStringList(value);
   return items.length ? items.join(', ') : 'Không có';
+}
+
+function buildMarketVisualProfile(values: string[]): string {
+  const normalized = normalizeCompareText((values || []).join(' '));
+  const hasAny = (tokens: string[]) => tokens.some(token => new RegExp(`\\b${token}\\b`).test(normalized));
+
+  if (hasAny(['latam', 'latin', 'mexico', 'brazil', 'brasil', 'argentina', 'colombia', 'spanish', 'tay ban nha'])) {
+    return 'Market Visual Profile LATAM: mô tả bằng tiếng Việt một nhân vật Latin/Hispanic phù hợp bối cảnh, thường da nâu sáng/olive đến nâu trung bình, tóc đen hoặc nâu đậm, trang phục đời thường. Bối cảnh nên là căn hộ/casa, bếp gia đình, phòng khách, farmacia/tienda hoặc không gian đô thị Mỹ Latin. Tránh biến toàn bộ visual_scene sang tiếng Tây Ban Nha; chỉ câu Text/Voice/Speech mới dùng Spanish nếu copy language là Spanish.';
+  }
+  if (hasAny(['us', 'usa', 'united states', 'america', 'american', 'my', 'english'])) {
+    return 'Market Visual Profile US: mô tả bằng tiếng Việt một người Mỹ đa sắc tộc phù hợp core user, có thể là White/Black/Latino/Asian American tùy ý tưởng; tóc, da, trang phục casual và bối cảnh apartment/suburban house/clinic/waiting room kiểu Mỹ. Chỉ Text/Voice/Speech dùng English; visual_scene prose vẫn tiếng Việt.';
+  }
+  if (hasAny(['jp', 'japan', 'japanese', 'nhat'])) {
+    return 'Market Visual Profile JP: mô tả bằng tiếng Việt một người Nhật/Đông Á, tóc đen hoặc nâu đậm, trang phục gọn tối giản; bối cảnh mansion/apartment nhỏ, phòng khám, ga tàu, konbini hoặc phòng khách Nhật. Chỉ Text/Voice/Speech dùng Japanese; visual_scene prose vẫn tiếng Việt.';
+  }
+  if (hasAny(['kr', 'korea', 'korean', 'han'])) {
+    return 'Market Visual Profile KR: mô tả bằng tiếng Việt một người Hàn/Đông Á, tóc đen hoặc nâu đậm, style gọn hiện đại; bối cảnh apartment/officetel, cafe, phòng khám, subway hoặc phòng khách Hàn. Chỉ Text/Voice/Speech dùng Korean; visual_scene prose vẫn tiếng Việt.';
+  }
+  if (hasAny(['de', 'germany', 'german', 'duc', 'eu', 'france', 'french', 'phap', 'spain', 'italy', 'europe'])) {
+    return 'Market Visual Profile EU: mô tả bằng tiếng Việt nhân vật và bối cảnh châu Âu phù hợp quốc gia đã chọn, ưu tiên flat/apartment, phòng khám, phương tiện công cộng, phố nội đô; ngoại hình, tóc, trang phục đời thường phải hợp thị trường nhưng không rập khuôn. Chỉ Text/Voice/Speech dùng ngôn ngữ quốc gia; visual_scene prose vẫn tiếng Việt.';
+  }
+  if (hasAny(['vn', 'vietnam', 'viet', 'sea', 'thai', 'thailand', 'indonesia', 'malaysia', 'philippines'])) {
+    return 'Market Visual Profile SEA/VN: mô tả bằng tiếng Việt nhân vật Đông Nam Á phù hợp quốc gia, tóc đen/nâu đậm, trang phục đời thường; bối cảnh chung cư, nhà phố, phòng khám, quán cà phê, xe máy hoặc trung tâm thương mại. Text/Voice/Speech dùng ngôn ngữ thị trường nếu có; visual_scene prose vẫn tiếng Việt.';
+  }
+  return 'Market Visual Profile Global: mô tả bằng tiếng Việt ngoại hình nhân vật, màu da/tóc, trang phục và bối cảnh phổ biến theo core user đã chọn. Không rập khuôn; dùng chi tiết vừa đủ để creator/AI video dựng đúng thị trường. Chỉ Text/Voice/Speech dùng copy language; visual_scene prose vẫn tiếng Việt.';
 }
 
 function buildSeasonalVisualBlock(context: unknown): string {
@@ -2008,6 +2034,7 @@ function buildLeanGeneratePrompt(input: {
   const coreUser = input.coreUserValues.join('; ') || 'General mobile app user';
   const emotionJourney = input.emotionValues.join(' -> ') || 'auto';
   const market = input.targetMarketValues.join(', ') || input.targetLang || 'Global';
+  const marketVisualProfile = buildMarketVisualProfile([...input.targetMarketValues, ...input.coreUserValues]);
   const trends = input.trendingTopics.length ? input.trendingTopics.join('; ') : 'None';
   const importedStructures = input.trendingStructures.length ? input.trendingStructures.slice(0, 4).join('\n') : 'None';
   const recentIdeas = clampPromptContext(input.previousIdeas, 1200) || 'None';
@@ -2058,8 +2085,10 @@ Operator note priority:
 - If it mentions a trend or pasted structure, adapt that trend/structure directly into the hook/body/CTA instead of generating a generic app demo.
 User-facing copy language rule:
 - title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
-- If the core user or market says US/American/English-speaking, those copy fields MUST be English even when the operator brief is written in Vietnamese.
+- The selected market/core user decides this copy language. Example: US -> English, LATAM/Mexico/Spain -> Spanish, Brazil -> Portuguese, Germany -> German.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
+- Inside visual_scene_1, keep the production prose Vietnamese, but any quoted Text hien / Voiceover / CHARACTER SPEECH lines MUST be translated into ${input.outputLanguage}.
+- Do NOT write the whole visual_scene in ${input.outputLanguage}. Only the audience-facing quoted copy is ${input.outputLanguage}.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
 
@@ -2079,6 +2108,7 @@ BRIEF
 - Visual/theme: ${input.visualType}
 - Angle to test: ${input.angleContext || 'choose the strongest angle inside the pain point'}
 - Market: ${market}
+- Market visual profile: ${marketVisualProfile}
 - Copy language: ${input.outputLanguage}
 - Production notes language: Vietnamese
 - Operator note: ${input.ideaDescription || 'N/A'}
@@ -2490,7 +2520,7 @@ Hard requirements:
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
-- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. If the selected core user/market is US/American/English-speaking, these copy fields must be English even when the operator prompt is Vietnamese.
+- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
         const frameworkInjection = buildFrameworkInjection({
@@ -2567,7 +2597,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
+- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. In visual_scene rows, only quoted Text hien / Voiceover / CHARACTER SPEECH uses ${outputLanguage}. Target market affects local setting and vibe only.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
@@ -3118,6 +3148,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       targetLang,
     });
     const marketContext = buildMarketContext([...targetMarketValues, ...coreUserValues]);
+    const marketVisualProfile = buildMarketVisualProfile([...targetMarketValues, ...coreUserValues]);
     const angleContext = angleValues.length ? angleValues.join(', ') : '';
     const primaryPillar = painPointValues[0] || 'General user friction';
 
@@ -3215,7 +3246,7 @@ Hard requirements:
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. If the selected core user/market is US/American/English-speaking, these copy fields must be English even when the operator prompt is Vietnamese.
+- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
     const outputSpec = buildCreativeBriefOutputSpec({
@@ -3245,7 +3276,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. Target market affects local setting and vibe only.
+- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. In visual_scene rows, only quoted Text hien / Voiceover / CHARACTER SPEECH uses ${outputLanguage}. Target market affects local setting and vibe only.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
@@ -3313,6 +3344,7 @@ ${trendingBlock || '- No trending hooks injected.'}
 ${importedTrendBlock || ''}
 ${winningPatternBlock}
 ${marketContext}
+${marketVisualProfile}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
