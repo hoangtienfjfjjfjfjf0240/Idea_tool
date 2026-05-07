@@ -739,8 +739,48 @@ function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
   return buildLocalizedAngleFallback(painpoints, 'Vietnamese');
 }
 
+function vietnamesePainpointCue(value: string) {
+  const normalized = normalizeCompareText(value);
+  if (/\b(?:chest|nguc|symptom|trieu chung|scare|panic|hoang)\b/.test(normalized)) {
+    return 'lo lang khi dau hieu o nguc xuat hien bat ngo';
+  }
+  if (/\b(?:warning|sign|alert|understood|understand|canh bao|hieu)\b/.test(normalized)) {
+    return 'khong hieu ro cac dau hieu canh bao suc khoe tim';
+  }
+  if (/\b(?:pulse|heartbeat|heart rate|nhip tim|felt off|different)\b/.test(normalized)) {
+    return 'nhip tim thay doi nhung khong biet y nghia la gi';
+  }
+  if (/\b(?:night|late|search|learn|fact|knowledge|dem|tra cuu|kien thuc)\b/.test(normalized)) {
+    return 'phai tra cuu kien thuc tim mach trong luc dang lo';
+  }
+  if (/\b(?:family|talk|question|answer|conversation|gia dinh|cau hoi)\b/.test(normalized)) {
+    return 'khong tra loi duoc nhung cau hoi don gian ve suc khoe tim';
+  }
+  if (/\b(?:dizzy|dizziness|chong mat|regret|learning)\b/.test(normalized)) {
+    return 'chong mat roi moi nhan ra minh biet qua it ve suc khoe tim';
+  }
+  if (/\b(?:blood|pressure|huyet ap)\b/.test(normalized)) {
+    return 'muon kiem tra huyet ap nhung cach cu qua bat tien';
+  }
+  if (/\b(?:bulky|device|monitor|old|traditional|messgerat|gerat|may do)\b/.test(normalized)) {
+    return 'thiet bi theo doi cu cong kenh lam moi lan kiem tra deu ngai';
+  }
+  return 'noi dau da chon van chua co cach xu ly ro rang';
+}
+
 function buildLocalizedAngleFallback(painpoints: string[], outputLanguage = 'English') {
   const language = normalizeOutputLanguageLabel(outputLanguage) || 'English';
+  if (language === 'Vietnamese') {
+    const seeds = painpoints.length > 0 ? painpoints : ['noi dau da chon'];
+    return seeds.flatMap((pp: string) => {
+      const cue = vietnamesePainpointCue(pp);
+      return [
+        `Nguoi xem ${cue} trong mot khoanh khac doi thuong`,
+        `Tinh huong ${cue} khien cach cu tro nen qua cham`,
+        `Goc nhin ${cue} va can mot cach theo doi ro rang hon`,
+      ];
+    });
+  }
   const seeds = painpoints.length > 0 ? painpoints : ['nỗi đau đã chọn'];
 
   if (language === 'Japanese') {
