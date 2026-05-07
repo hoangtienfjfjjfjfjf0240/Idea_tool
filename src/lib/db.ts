@@ -14,6 +14,7 @@ import type {
   StrategyWorkflowLevel,
 } from '@/types/database';
 import { GLOBAL_EMOTION_OPTIONS, mergeWithGlobalEmotionOptions, uniqueNonEmptyStrings } from './emotionOptions';
+import { withWebFunnelAppName } from './appDisplay';
 
 // ============================================
 // CATEGORY SPECIFIC SEEDS (Kept from original)
@@ -188,7 +189,7 @@ export async function getApps(): Promise<AppProject[]> {
     console.error('getApps error:', error);
     throw new Error(error.message || 'Supabase request failed while loading apps.');
   }
-  return data || [];
+  return (data || []).map(app => withWebFunnelAppName(app));
 }
 
 export async function getApp(id: string): Promise<AppProject | null> {
@@ -198,7 +199,7 @@ export async function getApp(id: string): Promise<AppProject | null> {
     .eq('id', id)
     .single();
   if (error) { console.error('getApp error:', error); return null; }
-  return data;
+  return withWebFunnelAppName(data);
 }
 
 export async function addApp(app: { name: string; category: string; icon_url: string; store_link?: string }): Promise<AppProject | null> {
