@@ -248,7 +248,7 @@ function buildV7ExecutionContract(input: {
 - App: ${input.appName}
 - Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
 - Market language/culture reference: ${input.targetLang}
-- Copy language: ${input.copyLanguage} for title, dialogue, on-screen text, voice-over, hook lines, script_vo, and CTA.
+- Copy language: ${input.copyLanguage} for dialogue, on-screen text, voice-over, hook lines, script_vo, and CTA. Script title/name stays Vietnamese.
 - Visual descriptions and production notes must be Vietnamese for the internal team.
 - Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
 - Painpoint to attack: ${input.primaryPillar}
@@ -382,6 +382,7 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   if (!hookPrimary) errors.push('meta.hookPrimary is required');
   if (!hookVisual) errors.push('hook.visual is required');
   if (!hookVoice && !hookTextOverlay) errors.push('hook needs voice or text overlay');
+  if (hookVisual) errors.push(...validateHookPacingOutput(hookVisual));
 
   const complianceText = [
     hookPrimary,
@@ -536,11 +537,77 @@ function inferHookDurationFromTimelineText(text: string): number | null {
   return duration >= 3 && duration <= 30 ? Math.round(duration * 10) / 10 : null;
 }
 
-function syncHookDurationFromTimeline(item: Record<string, unknown>): Record<string, unknown> {
+function extractHookTimeRanges(text: string): Array<{ start: number; end: number }> {
+  return Array.from(text.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:-|\u2010|\u2011|\u2012|\u2013|\u2014|\u2212)\s*(\d+(?:[.,]\d+)?)\s*s?/gi))
+    .map(match => {
+      const start = Number(match[1].replace(',', '.'));
+      const end = Number(match[2].replace(',', '.'));
+      return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
+    })
+    .filter((range): range is { start: number; end: number } => Boolean(range));
+}
+
+function getRule4MaxSceneCount(durationSeconds: number): number {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 1;
+  return Math.max(1, Math.min(4, Math.floor(durationSeconds / 2.5)));
+}
+
+function validateHookPacingOutput(text: string): string[] {
+  const errors: string[] = [];
+  const ranges = extractHookTimeRanges(text);
+  if (ranges.length === 0) {
+    errors.push('hook visual must include explicit timing rows such as 0-2.5s and obey Rule 4 pacing');
+    return errors;
+  }
+
+  const hookRanges = ranges.filter(range => range.start < 10.5);
+  if (hookRanges.length === 0) {
+    errors.push('hook visual must include timing rows inside the first 10 seconds');
+    return errors;
+  }
+
+  const hookDuration = Math.max(...hookRanges.map(range => range.end));
+  if (hookDuration > 10.25) {
+    errors.push('hook duration must stay at or under 10s unless the user explicitly asks for a longer full video');
+  }
+
+  const maxScenes = getRule4MaxSceneCount(hookDuration);
+  if (hookRanges.length > maxScenes) {
+    errors.push(`Rule 4 pacing violation: ${hookDuration}s hook allows max ${maxScenes} scene/camera rows, got ${hookRanges.length}`);
+  }
+
+  const tooShortRange = hookRanges.find(range => hookRanges.length > 1 && range.end - range.start < 2.35);
+  if (tooShortRange) {
+    errors.push('Rule 4 pacing violation: every hook scene/camera row must last at least 2.5s');
+  }
+
+  const splitScreenCue = /\b(?:split[-\s]?screen|chia\s+doi\s+man\s+hinh|chia\s+doi|side[-\s]?by[-\s]?side)\b/i.test(text);
+  if (splitScreenCue && hookDuration < 6) {
+    errors.push('split-screen hook needs at least 6s so each side can stay visible for about 3s');
+  }
+
+  return errors;
+}
+
+function readHookDurationNumber(hook: Record<string, unknown>): number | null {
+  const value = Number(hook.durationSeconds ?? hook.duration_seconds);
+  return Number.isFinite(value) && value >= 3 && value <= 10 ? Math.round(value * 10) / 10 : null;
+}
+
+function syncHookDurationFromTimeline(item: Record<string, unknown>, fallbackDurationSeconds?: number): Record<string, unknown> {
   const hook = asRecord(item.hook);
   const visual = [asText(hook.visual), asText(hook.script)].filter(Boolean).join('\n');
-  const duration = inferHookDurationFromTimelineText(visual);
-  if (!duration) return item;
+  const duration = inferHookDurationFromTimelineText(visual)
+    || readHookDurationNumber(hook)
+    || (Number.isFinite(fallbackDurationSeconds) ? Math.round(Number(fallbackDurationSeconds) * 10) / 10 : null)
+    || estimateHookDurationSeconds({
+      characterSpeech: hook.characterSpeech,
+      voiceover: hook.voiceover,
+      voice: hook.voice,
+      textOverlay: hook.textOverlay,
+      text: hook.text,
+      visual,
+    });
 
   return {
     ...item,
@@ -563,6 +630,7 @@ function normalizeAndValidateIdeas(
     pillar: string;
     angleIndex: number;
     ideaStartIndex?: number;
+    hookDurationSeconds?: number;
     metricLock?: HealthMetricKey | null;
   }
 ) {
@@ -577,7 +645,7 @@ function normalizeAndValidateIdeas(
         pillar: context.pillar,
       }),
       { angleIndex: context.angleIndex, ideaIndex: (context.ideaStartIndex || 0) + ideaIndex, pillar: context.pillar }
-    ));
+    ), context.hookDurationSeconds);
     const errors = [
       ...validateIdeaOutput(normalized),
       ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
@@ -1440,6 +1508,7 @@ function buildFallbackIdeasForFilters(options: {
   startIndex?: number;
   angleIndex: number;
   ideaDescription?: unknown;
+  hookDurationSeconds?: number;
 }) {
   const filters = asRecord(options.filters);
   const coreUser = firstFilterValue(filters, 'coreUser', 'Selected viewer');
@@ -1451,6 +1520,8 @@ function buildFallbackIdeasForFilters(options: {
   const selectedVisualFormat = normalizeFrameworkVisualFormat(visualType);
   const targetMarket = asStringList(filters.targetMarket).join(', ') || 'selected market';
   const direction = asText(options.ideaDescription) || angleName || painpoint;
+  const hookDurationSeconds = options.hookDurationSeconds || inferRequestedHookDurationSeconds(asText(options.ideaDescription), 5);
+  const hookTimeline = buildHookTimelineRows(hookDurationSeconds);
   const isInteriorDecorFallback = isInteriorDecorContext({
     appName: options.appName,
     psp,
@@ -1592,6 +1663,13 @@ function buildFallbackIdeasForFilters(options: {
     const ctaVisual = isInteriorDecorFallback
       ? `Kết bằng màn hình ${options.appName} lưu style/render đã chọn, nhân vật nhìn lại căn phòng với một hướng decor rõ hơn.`
       : `Kết bằng màn hình ${options.appName} với hành động chính và kết quả rõ ràng, không chuyển sang feature phụ.`;
+    const fallbackHookRows = hookTimeline.rows.map((row, rowIndex) => {
+      if (rowIndex === 0) return row.replace('[visual shock / first frame]', hookVisual);
+      if (rowIndex === 1) return row.replace('[context or pivot]', `mo ${options.appName} nhung chua reveal ket qua de tao curiosity gap`);
+      return row
+        .replace('[supporting visual beat]', `giu cung boi canh va dua mat ve man hinh ${options.appName}`)
+        .replace('[curiosity gap / bridge to body]', `giu curiosity gap truoc khi sang Body`);
+    }).join(' ');
     const rawIdea = {
       id: `P0-A${normalizedAngleIndex}-I${displayIndex}`,
       title: `Idea ${displayIndex + 1}: ${pattern.hookPrimary}`,
@@ -1630,8 +1708,8 @@ function buildFallbackIdeasForFilters(options: {
       },
       explanation: `Structured fallback because the AI batch returned too few valid ideas. It keeps "${painpoint}" and angle "${angleName}" while changing the opening execution.`,
       hook: {
-        durationSeconds: 5,
-        visual: `Sec 0-5 (THE HOOK - max 2 scenes): 0-2.5s: ${hookVisual} 2.5-5s: Text "${pattern.hookPrimary}" hien lon, VO bat dau, mo ${options.appName} nhung chua reveal ket qua de tao curiosity gap.`,
+        durationSeconds: hookDurationSeconds,
+        visual: `Sec 0-${formatTimelineSecond(hookDurationSeconds)} (THE HOOK - max ${getRule4MaxSceneCount(hookDurationSeconds)} scenes): ${fallbackHookRows}`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
         viTranslation: `Giữ đúng painpoint "${painpoint}" và mở bằng angle "${angleName}".`,
@@ -1728,57 +1806,167 @@ function formatTimelineSecond(value: number): string {
   return Number.isInteger(value) ? String(value) : String(value).replace('.', ',').replace(',', '.');
 }
 
-function inferRequestedHookDurationSeconds(text?: string, fallback = 5): number {
+type HookDurationPlan = {
+  seconds: number;
+  explicit: boolean;
+  reason: string;
+  maxScenes: number;
+};
+
+function clampHookDurationSeconds(value: number, explicit: boolean): number {
+  const upperLimit = explicit ? 10 : 8;
+  return Math.round(Math.min(upperLimit, Math.max(3, value)) * 10) / 10;
+}
+
+function extractExplicitHookDurationSeconds(text?: string): number | null {
   const raw = text || '';
   const normalized = normalizeCompareText(raw);
-  const hasHookCue = /\b(?:hook|opening|mo dau|mở đầu|dau video|first seconds?|giay dau|giây đầu)\b/i.test(raw)
-    || /\b(?:hook|opening|mo dau|dau video|first seconds?|giay dau)\b/.test(normalized);
-  if (!hasHookCue) return fallback;
+  const hasHookCue = /\b(?:hook|opening|video|clip|mo dau|dau video|first seconds?|giay dau)\b/i.test(raw)
+    || /\b(?:hook|opening|video|clip|mo dau|dau video|first seconds?|giay dau)\b/.test(normalized);
+  if (!hasHookCue) return null;
 
   const patterns = [
-    /(?:hook|opening|mở đầu|mo dau|đầu video|dau video|first seconds?)\D{0,24}(\d+(?:[.,]\d+)?)\s*(?:s|sec|second|seconds|giây|giay)/i,
-    /(\d+(?:[.,]\d+)?)\s*(?:s|sec|second|seconds|giây|giay)\D{0,24}(?:hook|opening|mở đầu|mo dau|đầu video|dau video|first seconds?)/i,
+    /(?:hook|opening|video|clip|mo dau|dau video|first seconds?)\D{0,24}(\d+(?:[.,]\d+)?)\s*(?:s|sec|second|seconds|giay)/i,
+    /(\d+(?:[.,]\d+)?)\s*(?:s|sec|second|seconds|giay)\D{0,24}(?:hook|opening|video|clip|mo dau|dau video|first seconds?)/i,
   ];
 
   for (const pattern of patterns) {
-    const match = raw.match(pattern);
+    const match = raw.match(pattern) || normalized.match(pattern);
     if (!match) continue;
     const parsed = Number(match[1].replace(',', '.'));
     if (Number.isFinite(parsed) && parsed >= 3 && parsed <= 15) {
-      return Math.round(parsed * 10) / 10;
+      return clampHookDurationSeconds(parsed, true);
     }
   }
 
-  return fallback;
+  return null;
+}
+
+function inferHookDurationFromBriefText(text?: string, fallback = 5): number {
+  const raw = text || '';
+  const normalized = normalizeCompareText(raw);
+  if (!normalized) return fallback;
+
+  const actionHits = normalized.match(/\b(?:show|open|tap|scan|measure|check|compare|reveal|zoom|switch|cut|turn|ask|reply|hold|touch|look|mo|bam|cham|do|kiem tra|so sanh|lat|quay|cat|chuyen|hoi|tra loi|cam|nhin|dat)\b/g) || [];
+  const sentenceCount = raw.split(/[\n.!?;]+/).map(part => part.trim()).filter(Boolean).length;
+  const hasTwoPersonCue = /\b(?:two people|2 people|dialogue|conversation|interview|podcast|doctor|patient|couple|husband|wife|friend|hai nguoi|2 nguoi|bac si|benh nhan|vo chong|ban be)\b/.test(normalized);
+  const hasDemoCue = /\b(?:demo|proof|screen recording|app|iphone|camera|measure|scan|tap|chart|number|before after|compare|split|voiceover|text|podcast|do bang|kiem tra|man hinh|bieu do|chi so)\b/.test(normalized);
+  const hasComplexCue = /\b(?:split screen|side by side|trend|reference|transition|montage|ugc plus demo|motion graphic|chia doi|chuyen canh|so sanh)\b/.test(normalized);
+  const hasTwoBeatCue = /\b(?:then|after|sau do|roi|->|=>|pivot|chuyen sang|nhung)\b/.test(normalized);
+
+  if (hasComplexCue || actionHits.length >= 4 || sentenceCount >= 4) return 8;
+  if (hasTwoPersonCue || hasDemoCue || actionHits.length >= 3 || sentenceCount >= 3) return 6;
+  if (hasTwoBeatCue || actionHits.length >= 2 || sentenceCount >= 2) return 5;
+  return 3;
+}
+
+function inferRequestedHookDurationSeconds(text?: string, fallback = 5): number {
+  const explicit = extractExplicitHookDurationSeconds(text);
+  if (explicit) return explicit;
+  return clampHookDurationSeconds(inferHookDurationFromBriefText(text, fallback), false);
+}
+
+function resolveHookDurationPlan(input: {
+  ideaDescription?: string;
+  painPointValues?: string[];
+  featureContext?: string;
+  visualType?: string;
+  angleContext?: string;
+  coreUserValues?: string[];
+  trendingStructures?: string[];
+  fallback?: number;
+}): HookDurationPlan {
+  const explicit = extractExplicitHookDurationSeconds(input.ideaDescription);
+  const contextText = [
+    input.ideaDescription,
+    ...(input.painPointValues || []),
+    input.featureContext,
+    input.visualType,
+    input.angleContext,
+    ...(input.coreUserValues || []),
+    ...(input.trendingStructures || []),
+  ].filter(Boolean).join('\n');
+  const rawSeconds = explicit || inferHookDurationFromBriefText(contextText, input.fallback || 5);
+  const seconds = clampHookDurationSeconds(rawSeconds, Boolean(explicit));
+  return {
+    seconds,
+    explicit: Boolean(explicit),
+    reason: explicit ? 'explicit operator hook length' : 'inferred from idea description and selected chips',
+    maxScenes: getRule4MaxSceneCount(seconds),
+  };
 }
 
 function buildHookTimelineRows(durationSeconds: number) {
-  if (durationSeconds <= 5) {
-    return {
-      phase1End: 2.5,
-      phase2End: 5,
-      finalEnd: 5,
-      row1: '0-2.5s: [visual shock / first frame]',
-      row2: '2.5-5s: Text hien: "[hook_text_overlay]" | Voiceover: "[hook_vo]" | [curiosity gap / bridge to body]',
-      row3: '',
-      example: '0-2.5s: Vietnamese visual shock.\\n2.5-5s: Text hien: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\" | Vietnamese curiosity gap.',
-    };
+  const normalizedDuration = clampHookDurationSeconds(durationSeconds, durationSeconds > 8);
+  const maxScenes = getRule4MaxSceneCount(normalizedDuration);
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  if (maxScenes === 1) {
+    ranges.push({ start: 0, end: normalizedDuration });
+  } else if (maxScenes === 2) {
+    const split = Math.round((normalizedDuration / 2) * 2) / 2;
+    ranges.push({ start: 0, end: split }, { start: split, end: normalizedDuration });
+  } else if (maxScenes === 3) {
+    const firstEnd = 2.5;
+    const lastStart = Math.max(firstEnd + 2.5, normalizedDuration - 2.5);
+    ranges.push({ start: 0, end: firstEnd }, { start: firstEnd, end: lastStart }, { start: lastStart, end: normalizedDuration });
+  } else {
+    ranges.push({ start: 0, end: 2.5 }, { start: 2.5, end: 5 }, { start: 5, end: 7.5 }, { start: 7.5, end: normalizedDuration });
   }
 
-  const phase1End = 2.5;
-  const phase2End = Math.min(durationSeconds - 2.5, 5.5);
-  const p1 = formatTimelineSecond(phase1End);
-  const p2 = formatTimelineSecond(phase2End);
-  const end = formatTimelineSecond(durationSeconds);
+  const labels = ranges.map(range => `${formatTimelineSecond(range.start)}-${formatTimelineSecond(range.end)}s`);
+  const rows = labels.map((label, index) => {
+    if (index === 0) return `${label}: [visual shock / first frame]`;
+    if (index === 1) return `${label}: Text hien: "[hook_text_overlay]" | Voiceover: "[hook_vo]" | [context or pivot]`;
+    if (index === labels.length - 1) return `${label}: [curiosity gap / bridge to body]`;
+    return `${label}: [supporting visual beat]`;
+  });
+
   return {
-    phase1End,
-    phase2End,
-    finalEnd: durationSeconds,
-    row1: `0-${p1}s: [visual shock / first frame]`,
-    row2: `${p1}-${p2}s: Text hiện: "[hook_text_overlay]" | Voiceover: "[hook_vo]"`,
-    row3: `${p2}-${end}s: [curiosity gap / bridge to body]`,
-    example: `0-${p1}s: Vietnamese visual shock.\\n${p1}-${p2}s: Text hiện: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\"\\n${p2}-${end}s: Vietnamese curiosity gap.`,
+    phase1End: ranges[0]?.end || normalizedDuration,
+    phase2End: ranges[1]?.end || normalizedDuration,
+    finalEnd: normalizedDuration,
+    row1: rows[0] || '',
+    row2: rows[1] || '',
+    row3: rows[2] || '',
+    rows,
+    textWindow: labels[Math.min(1, labels.length - 1)] || `0-${formatTimelineSecond(normalizedDuration)}s`,
+    example: rows
+      .map((row, index) => (
+        index === 0
+          ? row.replace('[visual shock / first frame]', 'Vietnamese visual shock with Position anchor, Contact anchor, and Physical action anchor')
+          : row
+              .replace('[context or pivot]', 'Vietnamese context/pivot')
+              .replace('[curiosity gap / bridge to body]', 'Vietnamese curiosity gap / bridge to body')
+              .replace('[supporting visual beat]', 'Vietnamese supporting visual beat')
+      ))
+      .join('\\n'),
   };
+}
+
+function buildHookTimingRule(plan: HookDurationPlan, timeline: ReturnType<typeof buildHookTimelineRows>): string {
+  return `- Hook duration decision: ${formatTimelineSecond(plan.seconds)}s (${plan.reason}); keep hooks usually under 8s unless the operator explicitly wrote a longer hook.
+- visual_scene_1 MUST cover 0-${formatTimelineSecond(plan.seconds)}s and render as HOOK (${formatTimelineSecond(plan.seconds)}s).
+- Use at most ${plan.maxScenes} timestamp row(s)/camera angle(s), based on floor(${formatTimelineSecond(plan.seconds)} / 2.5). Each row must last at least 2.5s.
+- Recommended timing rows:
+  ${timeline.rows.join('\n  ')}
+- Text overlay, voiceover, and on-camera speech may happen inside an existing row; they do not create a new camera angle.
+- Split-screen, side-by-side, or complex transition is allowed only when every pane/beat stays visible for about 3s.`;
+}
+
+function buildOperatorIdeaBriefBlock(input: {
+  ideaDescription?: string;
+  hookPlan: HookDurationPlan;
+  outputLanguage: string;
+}): string {
+  const brief = clampPromptContext(input.ideaDescription, 900) || 'N/A';
+  return `## OPERATOR IDEA BRIEF - HIGH PRIORITY
+This field is a creative directive, not optional notes. Use it to decide hook structure, trend/reference adaptation, visual execution, mood, and pacing before writing ideas.
+- Operator idea description: ${brief}
+- Hook duration: ${formatTimelineSecond(input.hookPlan.seconds)}s (${input.hookPlan.explicit ? 'explicitly requested' : 'AI inferred from content'}).
+- If the operator describes a trend/reference/scene structure, adapt that structure directly into the hook/body/CTA instead of generating a generic app demo.
+- If the operator does not specify seconds, infer a natural hook length from the content: 1 simple beat = 3s, 2 clear beats = 5s, demo/proof/two-person interaction = 6-8s.
+- Keep the title Vietnamese. Keep visual production prose Vietnamese. Translate only Text hien / Voiceover / CHARACTER SPEECH / CTA into ${input.outputLanguage}.`;
 }
 
 function trimWordsLocal(text: string, maxWords: number): string {
@@ -2039,29 +2227,25 @@ function buildLeanGeneratePrompt(input: {
   const importedStructures = input.trendingStructures.length ? input.trendingStructures.slice(0, 4).join('\n') : 'None';
   const recentIdeas = clampPromptContext(input.previousIdeas, 1200) || 'None';
   const appKnowledge = clampPromptContext(input.appKnowledge, 1200) || 'None';
-  const explicitHookDuration = inferRequestedHookDurationSeconds(input.ideaDescription, 0);
-  const requestedHookDuration = explicitHookDuration || 5;
-  const hookTimeline = buildHookTimelineRows(requestedHookDuration);
-  const hookTextWindow = explicitHookDuration
-    ? 'hook context row'
-    : `${formatTimelineSecond(hookTimeline.phase1End)}-${formatTimelineSecond(hookTimeline.phase2End)}s`;
-  const visualScene1Example = explicitHookDuration
-    ? `0-[AI chosen]s: Vietnamese visual shock.\\n[AI chosen]-[AI chosen]s: Text hiện: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\"\\n[AI chosen]-${formatTimelineSecond(requestedHookDuration)}s: Vietnamese curiosity gap.`
-    : hookTimeline.example;
-  const pacingSafeVisualScene1Example = explicitHookDuration
-    ? requestedHookDuration <= 5
-      ? `0-2.5s: Vietnamese visual shock.\\n2.5-${formatTimelineSecond(requestedHookDuration)}s: Text hien: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\" | Vietnamese curiosity gap.`
-      : `0-[AI chosen >=2.5s]s: Vietnamese visual shock.\\n[AI chosen]-[AI chosen]s: Text hien: \\"copy in requested language\\" | Voiceover: \\"copy in requested language\\"\\n[AI chosen]-${formatTimelineSecond(requestedHookDuration)}s: Vietnamese curiosity gap.`
-    : visualScene1Example;
-  const timelineRule = explicitHookDuration
-    ? `- Operator requested hook length: ${requestedHookDuration}s total.
-- visual_scene_1 MUST be plain Vietnamese production text covering 0-${formatTimelineSecond(requestedHookDuration)}s.
-- Let the AI choose internal timestamp ranges naturally while obeying Rule 4 pacing: <=5s max 2 rows, 8-10s max 3-4 rows, each scene/camera angle >=2.5s. Fewer rows are allowed.
-- One hook row MUST include: Text hiện: "[hook_text_overlay]" | Voiceover: "[hook_vo]".`
-    : `- Default hook length: 5s.
-- visual_scene_1 MUST be plain Vietnamese production text with at most these two time rows:
-  ${hookTimeline.row1}
-  ${hookTimeline.row2}`;
+  const hookDurationPlan = resolveHookDurationPlan({
+    ideaDescription: input.ideaDescription,
+    painPointValues: input.painPointValues,
+    featureContext: input.featureContext,
+    visualType: input.visualType,
+    angleContext: input.angleContext,
+    coreUserValues: input.coreUserValues,
+    trendingStructures: input.trendingStructures,
+    fallback: 5,
+  });
+  const hookTimeline = buildHookTimelineRows(hookDurationPlan.seconds);
+  const hookTextWindow = hookTimeline.textWindow;
+  const pacingSafeVisualScene1Example = hookTimeline.example;
+  const timelineRule = buildHookTimingRule(hookDurationPlan, hookTimeline);
+  const operatorIdeaBriefBlock = buildOperatorIdeaBriefBlock({
+    ideaDescription: input.ideaDescription,
+    hookPlan: hookDurationPlan,
+    outputLanguage: input.outputLanguage,
+  });
 
   return `You already have the Creative Idea Engine rules. Use them as default; do not restate them.
 
@@ -2079,6 +2263,7 @@ Angle planning rule:
 - Across AUTO ANGLE slots, angle_type must be different. Do not create three videos that only change wording.
 - Health/wellness must include/prefer Fact. Utility must include/prefer Comparison or Demo. AI apps must include/prefer Trend.
 - Test: if removing the angle name makes the videos look similar, rewrite the angle.
+${operatorIdeaBriefBlock}
 Operator note priority:
 - The Operator note is a high-priority creative direction, not optional context.
 - If it requests a hook length, trend, reference format, structure, pacing, or "only hook ideas", obey it unless it conflicts with compliance.
@@ -2392,7 +2577,17 @@ Chỉ trả về JSON array string. Không markdown.`;
       const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
       const targetLang = detectMarketLang(targetMarketValues, coreUserValues);
       const ideaDescription = asText(config.ideaDescription) || undefined;
-      const requestedHookDuration = inferRequestedHookDurationSeconds(ideaDescription, 5);
+      const hookDurationPlan = resolveHookDurationPlan({
+        ideaDescription,
+        painPointValues,
+        featureContext,
+        visualType,
+        angleContext: angleValues.join(', '),
+        coreUserValues,
+        trendingStructures,
+        fallback: 5,
+      });
+      const requestedHookDuration = hookDurationPlan.seconds;
       const outputLanguage = inferGenerationCopyLanguage({
         coreUserValues,
         painPointValues,
@@ -2512,7 +2707,7 @@ Hard requirements:
 - Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
 - Angle must be one angle_type + one market/framework approach + one visually different execution.
 - If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
-- visual_scene_1 must be Sec 0-5 and use max 2 rows/camera angles: "0-2.5s: ...", "2.5-5s: Text hien: \\"...\\" | Voiceover: \\"...\\" | curiosity gap". Fewer rows are allowed.
+- visual_scene_1 must follow the Hook Timing Rule below, not a fixed 5s template.
 - Scene 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
@@ -2604,7 +2799,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- visual_scene_1 must be Sec 0-5 with max 2 rows/camera angles: 0-2.5s / 2.5-5s. The second row should include Text hien and Voiceover in the selected copy language when needed.
+- visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in the selected copy language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Duration: ${duration}
 - The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
@@ -2736,6 +2931,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+          hookDurationSeconds: requestedHookDuration,
           metricLock,
         });
         validation.invalidReasons.unshift(...briefOutput.invalidReasons);
@@ -2837,6 +3033,7 @@ ${retryNotes.join('\n\n')}`, {
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+              hookDurationSeconds: requestedHookDuration,
               metricLock,
             });
             retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
@@ -2906,6 +3103,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
+              hookDurationSeconds: requestedHookDuration,
               metricLock,
             });
             fallbackValidation.invalidReasons.unshift(...fallbackBriefOutput.invalidReasons);
@@ -2986,6 +3184,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
                 startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
                 angleIndex,
                 ideaDescription,
+                hookDurationSeconds: requestedHookDuration,
               });
               batchIdeas.push(...fallbackIdeas);
               fallbackAdded = fallbackIdeas.length;
@@ -3027,6 +3226,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               startIndex: requestStartIndex + plan.batchStartIndex + recoveredIdeas.length,
               angleIndex,
               ideaDescription,
+              hookDurationSeconds: requestedHookDuration,
             });
             aggregatedIdeas.push(...fallbackIdeas);
             fallbackAdded = fallbackIdeas.length;
@@ -3065,6 +3265,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
             startIndex: requestStartIndex + aggregatedIdeas.length,
             angleIndex,
             ideaDescription,
+            hookDurationSeconds: requestedHookDuration,
           });
           aggregatedIdeas.push(...finalTopUp);
           fallbackAdded = finalTopUp.length;
@@ -3100,7 +3301,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           ideaIndex: requestStartIndex + index,
           pillar: primaryPillar,
         }
-      )));
+      ), requestedHookDuration));
       return NextResponse.json({
         success: true,
         data: finalIdeas,
@@ -3169,6 +3370,24 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       ? `\n[TRENDING HIỆN TẠI — KẾT HỢP NẾU PHÙ HỢP]\n${trendingTopics.join(', ')}\n→ Kết hợp trend vào tình huống/hook nếu tự nhiên. KHÔNG ép trend vào nếu không phù hợp với painpoint/emotion đã chọn.\n`
       : '';
     const structuredTrendNotes = trendingStructures.slice(0, 6);
+    const hookDurationPlan = resolveHookDurationPlan({
+      ideaDescription,
+      painPointValues,
+      featureContext,
+      visualType,
+      angleContext,
+      coreUserValues,
+      trendingStructures: structuredTrendNotes,
+      fallback: 5,
+    });
+    const requestedHookDuration = hookDurationPlan.seconds;
+    const hookTimeline = buildHookTimelineRows(requestedHookDuration);
+    const hookTimingRule = buildHookTimingRule(hookDurationPlan, hookTimeline);
+    const operatorIdeaBriefBlock = buildOperatorIdeaBriefBlock({
+      ideaDescription,
+      hookPlan: hookDurationPlan,
+      outputLanguage,
+    });
     const importedTrendBlock = structuredTrendNotes.length
       ? `\n[IMPORTED VIDEO STRUCTURE — ƯU TIÊN HỌC CẤU TRÚC, KHÔNG COPY NGUYÊN XI]\n${structuredTrendNotes.join('\n')}\n→ Học nhịp hook/body/CTA, camera treatment, audio pattern và text overlay style. Vẫn phải bám đúng painpoint/emotion/filter của app.\n`
       : '';
@@ -3239,7 +3458,7 @@ Hard requirements:
 - Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
 - Angle must be one angle_type + one market/framework approach + one visually different execution.
 - If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
-- visual_scene_1 must be Sec 0-5 and use max 2 rows/camera angles: "0-2.5s: ...", "2.5-5s: Text hien: \\"...\\" | Voiceover: \\"...\\" | curiosity gap". Fewer rows are allowed.
+- visual_scene_1 must follow the Hook Timing Rule below, not a fixed 5s template.
 - Scene 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
@@ -3283,7 +3502,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- visual_scene_1 must be Sec 0-5 with max 2 rows/camera angles: 0-2.5s / 2.5-5s. The second row should include Text hien and Voiceover in the selected copy language when needed.
+- visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in the selected copy language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
@@ -3349,6 +3568,9 @@ ${marketVisualProfile}
 ${seasonalVisualBlock || ''}
 ${variationBlock || ''}
 ${diversityBlock || ''}
+${operatorIdeaBriefBlock}
+## HOOK TIMING RULE
+${hookTimingRule}
 ${painpointPrecisionBlock}
 ${v21ExecutionOverrideBlock}
 ${filterConsistencyBlock || ''}
@@ -3421,6 +3643,7 @@ ${rulesBlock}`;
       angle: angleContext,
       pillar: primaryPillar,
       angleIndex: Math.max(angleIndex - 1, 0),
+      hookDurationSeconds: requestedHookDuration,
       metricLock,
     });
     validation.invalidReasons.unshift(...briefOutput.invalidReasons);
@@ -3480,6 +3703,7 @@ ${retryNotes.join('\n\n')}`, {
           angle: angleContext,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
+          hookDurationSeconds: requestedHookDuration,
           metricLock,
         });
         retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);

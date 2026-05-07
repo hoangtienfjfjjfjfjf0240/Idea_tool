@@ -129,9 +129,9 @@ export function estimateHookDurationSeconds(input: {
     .map(word => word.trim())
     .filter(Boolean).length;
 
-  if (words === 0) return 8;
-  const baseSeconds = spokenText ? 2 + words / 2.8 : 4 + words / 5.2;
-  return Math.min(12, Math.max(6, Math.ceil(baseSeconds)));
+  if (words === 0) return 5;
+  const baseSeconds = spokenText ? 2 + words / 3.2 : 3 + words / 7;
+  return Math.min(8, Math.max(3, Math.ceil(baseSeconds)));
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -223,7 +223,15 @@ function normalizeSection(
   };
 
   if (options.includeDurationSeconds) {
-    normalized.durationSeconds = 5;
+    normalized.durationSeconds = inferHookDurationSecondsFromTimingText(rawVisual)
+      || estimateHookDurationSeconds({
+        characterSpeech,
+        voiceover,
+        voice: legacyVoice,
+        textOverlay: normalized.textOverlay,
+        text: normalized.text,
+        visual: rawVisual,
+      });
   }
 
   if (options.includeViewerFields) {
@@ -341,6 +349,8 @@ Apply this to visual_scene_1, visual_scene_2, visual_scene_3, hook.visual, body.
 
 export const PACING_LIMIT_RULES = `## PACING LIMIT - REQUIRED RULE 4
 1 scene/camera angle must last at least 2.5 seconds. This is a maximum-scene limit, not a target; fewer scenes are always allowed when the idea is clearer.
+- Hook/video scene cap formula: max scenes/camera angles = floor(total seconds / 2.5), capped at 4 for 8-10s outputs.
+- If the operator idea description does not specify seconds, infer the hook length from content: 1 simple beat = 3s, 2 clear beats = 5s, demo/proof/two-person interaction = 6-8s. Hooks should usually stay under 8s.
 - For 5-second hooks or 5-second videos: max 2 scenes/camera angles total. Use at most two timing rows such as 0-2.5s and 2.5-5s. Never output 3+ rows like 0-1.5s / 1.5-3.5s / 3.5-5s for a 5s hook.
 - For 3-second hook-only outputs: use 1 scene/camera angle only.
 - For 8-10 second videos/hooks: max 3-4 scenes/camera angles total, with each scene around 2.5-3s. Use split-screen or complex transitions only when every pane/beat stays visible for about 3 seconds.
@@ -918,8 +928,8 @@ The array must follow this exact structure:
             "hook_primary": "Main hook text, 6-16 words, creates pattern interrupt",
             "hook_alt_1": "Alternative hook variation A, different rhetorical approach",
             "hook_alt_2": "Alternative hook variation B, different rhetorical approach",
-            "hook_character_speech": "Concise on-camera line in ${options.language} for the 0-3s hook beat. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
-            "hook_voiceover": "Concise off-camera narrator/video voice in ${options.language} for the 0-3s hook beat. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
+            "hook_character_speech": "Concise on-camera line in ${options.language} for the selected hook duration. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
+            "hook_voiceover": "Concise off-camera narrator/video voice in ${options.language} for the selected hook duration. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text, 6-14 words, punchy and readable. This can match hook_primary, but not hook_voiceover.",
             "reference_pattern": "Named video structure cue. Can be a proven cue, hybrid, or custom pattern, e.g. Siri Bridge, Shock Object, Phone Demo Proof, Transformation Demo, Comment Reply, Split-Screen Choice, Problem-Solution Handheld, or a new pattern name",
             "interrupt_mechanism": "Why the first frame stops scroll: visual oddity, sharp question, contradiction, proof object, social tension, or transformation gap",
@@ -927,9 +937,9 @@ The array must follow this exact structure:
             "psp_bridge": "One concrete transition from the hook pain/emotion to the PSP/app action, 10-36 words. It explains why the viewer now needs this product, before the Body demo starts.",
             "proof_object": "The concrete object or screen that proves the promise later in the video",
             "app_demo_action": "Exact app action shown on screen: tap, scan, upload, measure, compare, render, clean, save, etc.",
-            "overlay_sequence": ["0-3s hook overlay", "3-15s demo overlay", "15-25s proof overlay", "CTA overlay"],
+            "overlay_sequence": ["hook overlay inside visual_scene_1", "demo overlay", "proof overlay", "CTA overlay"],
             "edit_notes": "Concrete editing notes: cut rhythm, zoom, caption style, SFX, transition, or b-roll reference",
-            "visual_scene_1": "Second 0-3 only: exact hook beat. Who, where, doing what, what pain object is visible. Never write 0-8s. ${visualAnchorClause}",
+            "visual_scene_1": "Timed hook scene covering the selected hook duration, usually 3-8s. Use explicit rows such as 0-2.5s / 2.5-5s, with max scenes = floor(seconds / 2.5). Who, where, doing what, what pain object is visible. ${visualAnchorClause}",
             "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point. ${visualAnchorClause}",
             "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual. ${visualAnchorClause}",
             "script_vo": "Full speakable voiceover script, max 60 words.",
@@ -953,7 +963,7 @@ The array must follow this exact structure:
 3. hook_primary must be 6-16 words.
 4. hook_alt_1 and hook_alt_2 must not be paraphrases of hook_primary.
 5. hook_character_speech must be empty unless visual_scene_1 clearly identifies the visible speaker. If visual_scene_1 shows that person speaking/asking/replying/reacting to camera or being asked a question, hook_character_speech is required. Never output "-" or "N/A" for speech.
-6. hook_voiceover must be concise enough for the 0-3s hook beat. It must not be the same sentence as hook_primary or hook_text_overlay.
+6. hook_voiceover must be concise enough for the selected hook duration. It must not be the same sentence as hook_primary or hook_text_overlay.
 7. visual_scene_1, visual_scene_2, and visual_scene_3 must be specific enough that a video creator can shoot without asking questions.
 8. psp_bridge is required and must connect the viewer's emotion/angle to the PSP before the Body starts.
 9. reference_pattern, interrupt_mechanism, first_frame_asset, psp_bridge, proof_object, app_demo_action, overlay_sequence, and edit_notes are required production blueprint fields. reference_pattern is a flexible named structure cue, not a closed whitelist. The other blueprint fields must not be generic.
@@ -967,9 +977,9 @@ The array must follow this exact structure:
 17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
 18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
 19. hook_primary should sound like a human confession, tension line, or pattern interrupt in-feed. Avoid search-query hooks like "Could X explain Y?" unless the user explicitly asks for educational SEO style.
-20. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should make the 0-3s hook clear without using old 0-8s or 8-12s timing labels.
+20. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should make the selected hook duration clear. If no seconds are provided, infer 3-8s from the operator idea description and content complexity.
 21. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-22. Apply Rule 4 pacing: each scene/camera angle is at least 2.5s; 5s hooks max 2 scenes; 8-10s hooks max 3-4 scenes. Fewer scenes are allowed.`;
+22. Apply Rule 4 pacing: max scenes = floor(hook seconds / 2.5), each scene/camera angle is at least 2.5s; 5s hooks max 2 scenes; 8-10s hooks max 3-4 scenes. Fewer scenes are allowed.`;
 }
 
 function readFirstText(record: Record<string, unknown>, keys: string[], fallback = ''): string {
@@ -982,14 +992,9 @@ function readFirstText(record: Record<string, unknown>, keys: string[], fallback
 
 function normalizeHookTimingText(text: string): string {
   if (!text) return text;
-  const upgradedTimingText = text
-    .replace(/\b(?:second|sec)\s*0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s?\b/gi, 'Sec 0-5')
-    .replace(/\b0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s\b/gi, '0-5s')
-    .replace(/\b8\s*[-–]\s*12\s*s\b/gi, '0-5s');
-  return upgradedTimingText
-    .replace(/\b(?:second|sec|giây)\s*0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s?\b/gi, 'Second 0-3')
-    .replace(/\b0\s*[-–]\s*(?:8|10|12)(?:\s*\/\s*12)?\s*s\b/gi, '0-3s')
-    .replace(/\b8\s*[-–]\s*12\s*s\b/gi, '0-3s');
+  return text
+    .replace(/\b8\s*[-–]\s*12\s*s\b/gi, '0-10s')
+    .replace(/\b0\s*[-–]\s*12\s*s\b/gi, '0-10s');
 }
 
 function readArray(value: unknown): Record<string, unknown>[] {
@@ -1367,6 +1372,18 @@ function extractTimeRanges(text: string): Array<{ start: number; end: number }> 
   return ranges;
 }
 
+function inferHookDurationSecondsFromTimingText(text: string): number | null {
+  const ranges = extractTimeRanges(text);
+  if (ranges.length === 0) return null;
+  const duration = Math.max(...ranges.filter(range => range.start < 10.5).map(range => range.end));
+  return Number.isFinite(duration) && duration >= 3 && duration <= 10 ? Math.round(duration * 10) / 10 : null;
+}
+
+function getRule4MaxSceneCount(durationSeconds: number): number {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 1;
+  return Math.max(1, Math.min(4, Math.floor(durationSeconds / 2.5)));
+}
+
 function hasPacingCompliantHook(text: string): boolean {
   const ranges = extractTimeRanges(text);
   if (ranges.length === 0) return false;
@@ -1375,11 +1392,14 @@ function hasPacingCompliantHook(text: string): boolean {
   if (hookRanges.length === 0) return false;
 
   const maxEnd = Math.max(...hookRanges.map(range => range.end));
-  const isFiveSecondHook = maxEnd <= 5.25;
-  const maxScenes = isFiveSecondHook ? 2 : maxEnd <= 10.25 ? 4 : 4;
+  if (maxEnd > 10.25) return false;
+  const maxScenes = getRule4MaxSceneCount(maxEnd);
   const minSceneSeconds = 2.35;
 
   if (hookRanges.length > maxScenes) return false;
+  if (/\b(?:split[-\s]?screen|chia\s+doi\s+man\s+hinh|chia\s+doi|side[-\s]?by[-\s]?side)\b/i.test(text) && maxEnd < 6) {
+    return false;
+  }
   return hookRanges.every(range => {
     const duration = range.end - range.start;
     return hookRanges.length === 1 || duration >= minSceneSeconds;
@@ -1669,7 +1689,7 @@ function createBriefValidationErrors(input: {
     errors.push('visual_scene_1 must be concrete and shootable');
   }
   if (input.visualScene1 && !hasPacingCompliantHook(input.visualScene1)) {
-    errors.push('visual_scene_1 must obey Rule 4 pacing: 5s max 2 scenes/camera angles, each at least 2.5s');
+    errors.push('visual_scene_1 must obey Rule 4 pacing: max scenes = floor(hook seconds / 2.5), each row at least 2.5s');
   }
   if (isBuilder && /\b(?:0\s*[-–]\s*(?:8|10|12)|8\s*[-–]\s*12)(?:\s*\/\s*12)?\s*s?\b/i.test(input.visualScene1)) {
     errors.push('visual_scene_1 must be 0-3s only for prompt_system_builder_html_v1');
@@ -1932,6 +1952,14 @@ export function normalizeCreativeBriefOutput(
           visualScene2 = `${visualScene2} Cắt sang ${defaults.appName}, dùng ${defaults.psp || 'tính năng đã chọn'} như bước xử lý đơn giản cho đúng khoảnh khắc đó.`;
         }
 
+        const hookDurationSeconds = inferHookDurationSecondsFromTimingText(visualScene1)
+          || estimateHookDurationSeconds({
+            characterSpeech: hookCharacterSpeech,
+            voiceover: hookVoiceover,
+            textOverlay: hookTextOverlay || hookPrimary,
+            visual: visualScene1,
+          });
+
         const errors = createBriefValidationErrors({
           id,
           title: scriptTitle,
@@ -2030,7 +2058,7 @@ export function normalizeCreativeBriefOutput(
           },
           explanation: angleDesc,
           hook: {
-            durationSeconds: 5,
+            durationSeconds: hookDurationSeconds,
             visual: visualScene1,
             characterSpeech: hookCharacterSpeech,
             voiceover: hookVoiceover,

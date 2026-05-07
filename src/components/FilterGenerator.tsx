@@ -3209,9 +3209,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
           {/* Description */}
           <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
-            <label className="block text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><FileEdit size={14} /> Mô tả ý tưởng (Tùy chọn)</label>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2"><FileEdit size={14} /> Mô tả ý tưởng - directive chính</label>
+            <p className="text-xs text-gray-400 mb-3">AI dùng phần này để quyết định hook, nhịp cảnh, thời lượng và cấu trúc video.</p>
             <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)}
-              placeholder="VD: Video cảm xúc mạnh, tập trung vào cảnh báo nguy hiểm..."
+              placeholder="VD: Hook 6s tò mò, mở bằng podcast giữa bác sĩ và bệnh nhân; nếu không ghi số giây AI sẽ tự chọn 3-8s theo nội dung."
               className="w-full h-28 resize-none py-3 px-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
           </div>
 
