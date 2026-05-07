@@ -133,7 +133,7 @@ ${GLOBAL_EMOTION_PROMPT_GUIDE}
 
 V. LANGUAGE RULES
 - User-facing copy must use the requested output language.
-- This includes title, hook lines, character speech, text on screen, voice-over/video voice, script_vo, and CTA text.
+- This includes hook lines, character speech, text on screen, voice-over/video voice, script_vo, and CTA text. Script title/name stays Vietnamese for the internal Idea tool UI.
 - Visual descriptions and production notes should be Vietnamese so the internal team can read and execute them quickly.
 - Target market controls setting, behavior, props, culture, and vibe; it must not change the user-facing copy language.
 
@@ -279,7 +279,7 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - The first frame must be a pattern interruption, not setup.
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
 - If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
-- Write user-facing copy in ${copyLanguage}: title, hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
+- Script title/name must be Vietnamese. Write user-facing copy in ${copyLanguage}: hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
 - For visual_scene rows, write the scene/action/camera prose in Vietnamese. Only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside the scene are in ${copyLanguage}.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Obey Rule 4 pacing: 5s outputs max 2 scenes/camera angles; 8-10s outputs max 3-4 scenes/camera angles; fewer scenes are allowed.
@@ -2084,7 +2084,8 @@ Operator note priority:
 - If it requests a hook length, trend, reference format, structure, pacing, or "only hook ideas", obey it unless it conflicts with compliance.
 - If it mentions a trend or pasted structure, adapt that trend/structure directly into the hook/body/CTA instead of generating a generic app demo.
 User-facing copy language rule:
-- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
+- title/script name MUST be written in Vietnamese for the internal Idea tool UI.
+- hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
 - The selected market/core user decides this copy language. Example: US -> English, LATAM/Mexico/Spain -> Spanish, Brazil -> Portuguese, Germany -> German.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
 - Inside visual_scene_1, keep the production prose Vietnamese, but any quoted Text hien / Voiceover / CHARACTER SPEECH lines MUST be translated into ${input.outputLanguage}.
@@ -2137,7 +2138,7 @@ Use this compact schema:
         "ideas": [
           {
             "id": "P0-A0-I0",
-            "title": "short script name, 3-7 words",
+            "title": "tên kịch bản tiếng Việt ngắn, 3-7 từ",
             "hook_text_overlay": "max 8 words",
             "hook_vo": "max 12 words, different from text",
             "hook_character_speech": "",
@@ -2177,7 +2178,7 @@ Use this compact schema:
   }
 ]
 
-Important: make all ${input.quantity} ideas visually different. Every idea title must be a usable script name for the output line "Kịch bản X.Y: [title]", not a generic "Idea". Keep the hook short, concrete, and shootable.`;
+Important: make all ${input.quantity} ideas visually different. Every idea title must be Vietnamese and usable for the output line "Kịch bản X.Y: [title]", not a generic "Idea". Keep the hook short, concrete, and shootable.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -2520,7 +2521,7 @@ Hard requirements:
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
-- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
+- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
         const frameworkInjection = buildFrameworkInjection({
@@ -3246,7 +3247,7 @@ Hard requirements:
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- title, hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
+- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
     const outputSpec = buildCreativeBriefOutputSpec({

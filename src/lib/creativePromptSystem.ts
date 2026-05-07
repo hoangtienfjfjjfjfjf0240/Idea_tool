@@ -618,7 +618,7 @@ Return ${quantityLabel} objects in this exact schema:
 
 [{
   "id": "P0-A0-I0",
-  "title": "Short ${options.language} concept title",
+  "title": "Tên kịch bản tiếng Việt ngắn, 3-7 từ",
   "duration": "${options.duration}",
   "creativeType": "2D Animation|3D Animation|UGC|POV|Motion Graphic",
   "meta": {
@@ -659,7 +659,8 @@ ${compactOutputRules}
 - Every hook/body/cta.visual must obey Rule 4 pacing. A 3s hook-only output uses 1 scene; a 5s hook/video uses max 2 scenes; 8-10s uses max 3-4 scenes. These are maximums, not targets.
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
-- Write user-facing copy in ${options.language}: title, hook lines, characterSpeech, voiceover, textOverlay, script_vo, and CTA text. Write visual and production descriptions in Vietnamese.
+- Title/script name must always be Vietnamese for the internal Idea tool UI.
+- Write user-facing copy in ${options.language}: hook lines, characterSpeech, voiceover, textOverlay, script_vo, and CTA text. Write visual and production descriptions in Vietnamese.
 - Keep the response machine-parseable.`;
 }
 
@@ -760,7 +761,7 @@ Use the selected market only for culture, setting, behavior, props, and vibe. Do
 
 Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
-User-facing copy must be in ${options.language}: title/hook lines, on-camera character speech, voice/video voiceover, text overlay, script_vo, and CTA.
+Title/script name must always be Vietnamese for the internal Idea tool UI. Hook lines, on-camera character speech, voice/video voiceover, text overlay, script_vo, and CTA must be in ${options.language}.
 Visual shooting descriptions and production notes must be Vietnamese for the internal team.
 Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
 The selected market controls setting, culture, behavior, and vibe only. Do not switch production prose away from Vietnamese.
@@ -772,7 +773,7 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
     "angles": [
       {
         "angle_index": 0,
-        "angle_name": "3-5 word ${options.language} internal name for this angle",
+        "angle_name": "3-5 word Vietnamese internal name for this angle",
         "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
         "angle_desc": "1 ${options.language} sentence describing the unique approach of this angle",
         "ideas": [
@@ -827,7 +828,7 @@ Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
 
 Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7.
-User-facing copy must be in ${options.language}: title/concept, hook lines, character speech, voice/video narrator, text overlay, script_vo, and CTA. Visual scenes and production notes must be Vietnamese. The selected market controls behavior, setting, social context, and vibe only.
+Title/script name must always be Vietnamese for the internal Idea tool UI. Hook lines, character speech, voice/video narrator, text overlay, script_vo, and CTA must be in ${options.language}. Visual scenes and production notes must be Vietnamese. The selected market controls behavior, setting, social context, and vibe only.
 
 [
   {
@@ -836,13 +837,14 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
     "angles": [
       {
         "angle_index": 0,
-        "angle_name": "${options.language} direct angle name",
+        "angle_name": "Vietnamese direct angle name",
         "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief",
         "angle_desc": "One ${options.language} sentence describing how this angle attacks the pain point directly",
         "ideas": [
           {
             "id": "P0-A0-I0",
-            "hook_primary": "Concept title + direct hook in ${options.language}. No old word-count limit.",
+            "title": "Tên kịch bản tiếng Việt ngắn, 3-7 từ",
+            "hook_primary": "Direct hook in ${options.language}. No old word-count limit.",
             "hook_alt_1": "Alternative hook direction in ${options.language}, different execution, not a paraphrase",
             "hook_alt_2": "Alternative hook direction in ${options.language}, different execution, not a paraphrase",
             "hook_character_speech": "Concise on-camera character speech in ${options.language}. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
@@ -881,7 +883,7 @@ User-facing copy must be in ${options.language}: title/concept, hook lines, char
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
 5. visual_scene_1 must be specific enough for a creator or AI video tool to execute exactly.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
-7. User-facing copy must be in ${options.language}: title/concept, character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
+7. Title/script name must be Vietnamese. User-facing copy must be in ${options.language}: character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
 8. Speech, behavior, setting, props, social relationship, and vibe must feel native to the selected market. Describe the visual execution in Vietnamese.
 9. If the idea has a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. If 2+ people communicate, keep the exchange simple, natural, role-accurate, and include only the necessary dialogue.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
@@ -960,7 +962,7 @@ The array must follow this exact structure:
 12. angle_type must be one of the allowed values and should be different from other angles in the same pillar.
 13. track: A = no real person needed, B = real person / UGC, C = motion / animation.
 14. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
-15. User-facing copy fields title, hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, script_vo, and cta_text must be in ${options.language}. Visual_scene_1/2/3 production prose and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
+15. title must be Vietnamese. User-facing copy fields hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, script_vo, and cta_text must be in ${options.language}. Visual_scene_1/2/3 production prose and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
 16. Do not make prohibited claims or before/after health outcome framing.
 17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
 18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
@@ -1273,6 +1275,41 @@ function visualProductionLooksVietnamese(text: string): boolean {
   return looksVietnamese(productionText) && !looksEnglish(productionText);
 }
 
+function looksForeignScriptTitle(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  if (!normalized) return false;
+  const foreignTokens = normalized.match(/\b(?:when|why|what|how|before|after|still|only|one|tap|morning|notebook|cuaderno|cuando|sube|baja|solo|toque|antes|salir|manana|hoy|presion|normal)\b/g) || [];
+  const vietnameseTitleTokens = normalized.match(/\b(?:huyet|ap|nhip|tim|pin|sac|mot|cham|truoc|khi|ra|ngoai|buoi|sang|khong|so|tay|phong|cho|kham|chi|so|len|xuong|cu|moi|nong|may|do|kiem|tra|don|gian|bat|ngo|hom|nay)\b/g) || [];
+  return foreignTokens.length > 0 && foreignTokens.length >= vietnameseTitleTokens.length;
+}
+
+function looksVietnameseScriptTitle(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  if (!normalized) return false;
+  if (/[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text)) return !looksForeignScriptTitle(text);
+  const vietnameseTitleTokens = normalized.match(/\b(?:huyet|ap|nhip|tim|pin|sac|mot|cham|truoc|khi|ra|ngoai|buoi|sang|khong|so|tay|phong|cho|kham|chi|so|len|xuong|cu|moi|nong|may|do|kiem|tra|don|gian|bat|ngo|hom|nay)\b/g) || [];
+  return vietnameseTitleTokens.length >= 2 && !looksForeignScriptTitle(text);
+}
+
+function coerceVietnameseScriptTitle(rawTitle: string, context: string, index: number): string {
+  const title = rawTitle.trim();
+  if (looksVietnameseScriptTitle(title)) return title;
+
+  const normalizedTitle = normalizeCompareText(title);
+  const titleIsGeneric = !normalizedTitle || /^(?:idea|y tuong|concept|script|kich ban|hook|untitled|p\d+\s*a\d+\s*i\d+)\b/.test(normalizedTitle);
+  const normalized = titleIsGeneric ? normalizeCompareText([title, context].filter(Boolean).join(' ')) : normalizedTitle;
+  if (/\b(?:solo|one)\b.*\b(?:toque|tap)\b|\bmot\b.*\bcham\b/.test(normalized)) return 'Chỉ một chạm';
+  if (/\b(?:antes|before)\b.*\b(?:salir|leave|leaving)\b|\btruoc\b.*\b(?:ra|di)\b/.test(normalized)) return 'Trước khi ra ngoài';
+  if (/\b(?:manana|morning)\b.*\b(?:cuaderno|notebook)\b|\bbuoi\b.*\bsang\b.*\bso\b.*\btay\b/.test(normalized)) return 'Buổi sáng không sổ tay';
+  if (/\b(?:hoy|today)\b.*\b(?:sube|baja|pressure|presion)\b/.test(normalized)) return 'Huyết áp hôm nay';
+  if (/\b(?:normal|normal)\b/.test(normalized)) return 'Có bình thường không';
+  if (/\b(?:sube|baja|presion|pressure)\b|\bhuyet\b.*\bap\b|\bchi\b.*\bso\b.*\b(?:len|xuong)\b/.test(normalized)) return 'Huyết áp lên xuống';
+  if (/\b(?:waiting|clinic|consulta|doctor|phong|kham)\b/.test(normalized)) return 'Trong phòng chờ';
+  if (/\b(?:iphone|camera|measure|kiem|tra|do)\b/.test(normalized)) return 'Đo nhanh bằng iPhone';
+
+  return `Khoảnh khắc sức khỏe ${index + 1}`;
+}
+
 function isSearchQueryHook(text: string): boolean {
   return /^(?:could|is|are|can|does|do|did|why|how|what)\b.{12,}\?$/i.test(text.trim());
 }
@@ -1475,6 +1512,7 @@ function coerceHookArchetypeForCategory(category: string | undefined, value: str
 
 function createBriefValidationErrors(input: {
   id: string;
+  title: string;
   category?: string;
   angleType: string;
   hookPrimary: string;
@@ -1509,6 +1547,7 @@ function createBriefValidationErrors(input: {
   const allowedAngleTypes = new Set(['fear', 'fact', 'comparison', 'pov', 'social', 'curiosity', 'relief', 'tutorial', 'demo', 'challenge', 'trend']);
 
   if (!trackingPattern.test(input.id)) errors.push('id must follow P{pillar}-A{angle}-I{idea}');
+  if (!looksVietnameseScriptTitle(input.title)) errors.push('title/script name must be Vietnamese');
   if (!allowedAngleTypes.has(normalizeCompareText(input.angleType))) {
     errors.push('angle_type must be Fear, Fact, Comparison, POV, Social, Curiosity, Relief, Tutorial, Demo, Challenge, or Trend');
   }
@@ -1785,6 +1824,11 @@ export function normalizeCreativeBriefOutput(
         let visualScene1 = readFirstText(ideaRecord, ['visual_scene_1', 'visualScene1']);
         let visualScene2 = readFirstText(ideaRecord, ['visual_scene_2', 'visualScene2']);
         let visualScene3 = readFirstText(ideaRecord, ['visual_scene_3', 'visualScene3']);
+        const scriptTitle = coerceVietnameseScriptTitle(
+          readFirstText(ideaRecord, ['title'], hookPrimary || angleName),
+          [hookPrimary, hookTextOverlay, visualScene1, visualScene2, visualScene3, angleName, angleDesc].join(' '),
+          ideaFallbackIndex
+        );
         let scriptVo = readFirstText(ideaRecord, ['script_vo', 'scriptVo']);
         let ctaText = readFirstText(ideaRecord, ['cta_text', 'ctaText']);
         const referencePattern = readFirstText(ideaRecord, ['reference_pattern', 'referencePattern'], 'Custom Painpoint-Led Pattern');
@@ -1890,6 +1934,7 @@ export function normalizeCreativeBriefOutput(
 
         const errors = createBriefValidationErrors({
           id,
+          title: scriptTitle,
           category: defaults.category,
           angleType: normalizedAngleType,
           hookPrimary,
@@ -1939,7 +1984,7 @@ export function normalizeCreativeBriefOutput(
 
         items.push(normalizeIdeaOutput({
           id,
-          title: readFirstText(ideaRecord, ['title'], hookPrimary || angleName),
+          title: scriptTitle,
           duration: defaults.duration,
           creativeType: creativeTypeForTrack(normalizeBriefTrack(track)),
           meta: {
@@ -2038,7 +2083,7 @@ Return ${quantityLabel} objects in this exact schema:
 
 [{
   "id": "P0-A0-I0",
-  "title": "${options.language} variant title",
+  "title": "Tên biến thể tiếng Việt",
   "explanation": "Vietnamese explanation of what changed and why it works",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
@@ -2327,10 +2372,17 @@ export function normalizeIdeaOutput(
 ): Record<string, unknown> {
   const item = readRecord(input);
   const framework = readRecord(item.framework);
+  const rawTitle = readText(item.title, `Y tuong ${defaults.appName}`);
+  const titleContext = [
+    rawTitle,
+    readText(readRecord(item.hook).visual),
+    readText(readRecord(item.hook).textOverlay),
+    readText(readRecord(item.meta).hookPrimary),
+  ].filter(Boolean).join(' ');
 
   return {
     id: item.id ?? 1,
-    title: readText(item.title, `Y tuong ${defaults.appName}`),
+    title: coerceVietnameseScriptTitle(rawTitle, titleContext, 0),
     duration: readText(item.duration, defaults.duration),
     creativeType: readText(item.creativeType, 'UGC'),
     meta: normalizeMeta(item.meta, { pillar: defaults.pillar }),
