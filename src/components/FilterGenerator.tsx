@@ -145,6 +145,13 @@ function normalizeCompareText(value: unknown) {
     .trim();
 }
 
+function shouldHidePspForApp(app: AppProject) {
+  const normalized = normalizeCompareText(app.name);
+  const isCalorieFunnel = /\b(?:ikcal|calori|calorie\s+counter)\b/.test(normalized);
+  const isHeartFunnel = /\b(?:icardiac|heart\s+health\s+monitor|heart\s+rate)\b/.test(normalized);
+  return isCalorieFunnel || isHeartFunnel;
+}
+
 function vietnamesePainpointCue(value: string) {
   const normalized = normalizeCompareText(value);
   if (/\b(?:chest|nguc|symptom|trieu chung|scare|panic|hoang)\b/.test(normalized)) {
@@ -664,9 +671,12 @@ function buildCompactGenerationFilters(
   brief: CompactCreativeBrief | null,
   app: AppProject
 ): FilterState {
+  const hidePsp = shouldHidePspForApp(app);
+
   if (!brief) {
     return {
       ...currentFilters,
+      solution: hidePsp ? [] : currentFilters.solution,
       visualType: sanitizeVisualTypes(currentFilters.visualType || []),
     } as FilterState;
   }
@@ -677,7 +687,7 @@ function buildCompactGenerationFilters(
     painPoint: (currentFilters.painPoint || []).length ? currentFilters.painPoint : [brief.painPoint].filter(Boolean) as string[],
     emotion: (currentFilters.emotion || []).length ? currentFilters.emotion : [brief.emotion].filter(Boolean) as string[],
     targetMarket: (currentFilters.targetMarket || []).length ? currentFilters.targetMarket : [brief.market || 'Global'].filter(Boolean) as string[],
-    solution: (currentFilters.solution || []).length ? currentFilters.solution : [inferCompactSolution(app, brief)],
+    solution: hidePsp ? [] : ((currentFilters.solution || []).length ? currentFilters.solution : [inferCompactSolution(app, brief)]),
     visualType: sanitizeVisualTypes(currentFilters.visualType || []).length ? sanitizeVisualTypes(currentFilters.visualType || []) : ['UGC'],
   } as FilterState;
 
@@ -1070,6 +1080,7 @@ function matchesHistoryDateFilter(idea: GeneratedIdea, filterKey: string) {
 }
 
 export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentScreen, setScreen, selectedModel, prefillFilters, onPrefillConsumed, onAppKnowledgeUpdated }) => {
+  const hidePspForCurrentApp = shouldHidePspForApp(app);
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
   const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: GLOBAL_EMOTION_OPTIONS, videoStructure: [], visualType: GLOBAL_VISUAL_TYPES, targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
@@ -1134,6 +1145,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       targetMarket: [],
     });
   }, [app.id]);
+
+  useEffect(() => {
+    if (!hidePspForCurrentApp) return;
+    setFilters(prev => (prev.solution || []).length > 0 ? { ...prev, solution: [] } : prev);
+  }, [hidePspForCurrentApp, app.id]);
 
   useEffect(() => {
     setImportedTrendAnalyses(prev => {
@@ -1547,7 +1563,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const generatedAngleList = buildCompactAutoAngles(compactBrief, app, selectedAnglesFromFilters, autoAngleCount);
     const anglesToGenerate: Array<string | null> = generatedAngleList.length > 0 ? generatedAngleList : [null];
     const effectiveQuantity = Math.min(10, Math.max(1, compactBrief?.ideasPerAngle || quantity));
-    const generationValidationMessage = getGenerationValidationMessage(generationBaseFilters, generatedAngleList);
+    const validationFilters = hidePspForCurrentApp
+      ? { ...generationBaseFilters, solution: [app.name] }
+      : generationBaseFilters;
+    const generationValidationMessage = getGenerationValidationMessage(validationFilters, generatedAngleList);
     if (generationValidationMessage) {
       setValidationError(generationValidationMessage);
       setGenerationNotice(null);
@@ -2635,7 +2654,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const totalIdeasToGenerate = selectedAngleCount * quantity;
 
   const WIZARD_STEPS = [
-    { label: 'Core User & PSP', icon: Users, categories: ['coreUser', 'solution'], required: ['coreUser', 'solution'] },
+    hidePspForCurrentApp
+      ? { label: 'Core User', icon: Users, categories: ['coreUser'], required: ['coreUser'] }
+      : { label: 'Core User & PSP', icon: Users, categories: ['coreUser', 'solution'], required: ['coreUser', 'solution'] },
     { label: 'Emotion & Visual', icon: Target, categories: ['emotion', 'visualType'], required: ['emotion', 'visualType'] },
     { label: 'Painpoint', icon: Zap, categories: ['painPoint'], required: ['painPoint'] },
     { label: 'Angle', icon: Compass, categories: ['angle'], required: [] },
@@ -2646,7 +2667,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const isStepValid = (stepIndex: number): boolean => {
     const step = WIZARD_STEPS[stepIndex];
     if (stepIndex === 0) {
-      return (filters.coreUser || []).length > 0 && (filters.solution || []).length > 0;
+      return (filters.coreUser || []).length > 0 && (hidePspForCurrentApp || (filters.solution || []).length > 0);
     }
     if (stepIndex === 3) {
       return (filters.angle || []).length > 0 || autoAngleCount > 0;
@@ -2659,6 +2680,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const step = WIZARD_STEPS[stepIndex];
     if (stepIndex === 0) {
       if ((filters.coreUser || []).length === 0) return 'Vui long chon it nhat 1 Core User';
+      if (hidePspForCurrentApp) return '';
       if ((filters.solution || []).length === 0) return 'Vui long chon Tinh nang / Giai phap';
       return '';
     }
@@ -3040,6 +3062,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Filter size={14} /> Bối cảnh đã chọn</h3>
             <div className="flex flex-wrap gap-2">
               {Object.entries(filters).flatMap(([key, items]) =>
+                hidePspForCurrentApp && key === 'solution' ? [] :
                 (items as string[]).map(item => (
                   <button key={`${key}-${item}`} onClick={() => toggleFilter(key, item)}
                     className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors group cursor-pointer">
@@ -3500,13 +3523,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
             const scriptDisplayLabel = getReadableScriptLabel(idea, idx);
             const strategyCode = String(c?.meta?.strategyCode || '');
-            const funnelTag = String(
-              c?.meta?.webFunnel
-              || c?.meta?.funnelName
-              || c?.meta?.referencePattern
-              || c?.meta?.angleName
-              || ''
-            ).trim();
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -3521,7 +3537,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <div className="flex gap-2 flex-wrap">
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                         {strategyCode && <span className="text-[11px] px-2 py-0.5 bg-slate-900 text-white rounded-md font-bold">{strategyCode}</span>}
-                        {funnelTag && <span className="text-[11px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md">Funnel: {truncatePreviewText(funnelTag, 34)}</span>}
                         <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
                         {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
                         {angleTag && <span className="text-[11px] px-2 py-0.5 bg-teal-50 text-teal-600 rounded-md">{truncatePreviewText(angleTag, 32)}</span>}
