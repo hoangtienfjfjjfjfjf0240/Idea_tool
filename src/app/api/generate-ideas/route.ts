@@ -1611,6 +1611,11 @@ function hasGermanCopyCue(text: string): boolean {
   return /\b(?:ich|mich|mir|mein|meine|nach|beim|warum|wollte|dachte|merkte|brauchte|nicht|ohne|aber|alte|geraet|gerat|blutdruck|messen|klassische|arztgespraech|schlafengehen|treppensteigen|wartezimmer|spaziergang)\b/.test(normalized);
 }
 
+function hasVietnameseAngleCue(text: string): boolean {
+  return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text)
+    || /\b(?:toi|ban|nguoi|khong|nhung|van|can|muon|khi|luc|moi|cu|may|do|kiem|tra|theo|doi|nhip|tim|huyet|ap|suc|khoe|lo|lang|roi|ro|rang|tinh|huong|khoanh|khac|cuoc|song|du|da|chon|goc)\b/.test(normalizeCompareText(text));
+}
+
 function inferGenerationCopyLanguage(input: {
   coreUserValues: string[];
   painPointValues: string[];
@@ -2272,7 +2277,7 @@ Return a JSON array of strings only. No markdown.`;
             const parsed = parseJson(text);
             if (Array.isArray(parsed) && parsed.length > 0) {
               const angleStrings = parsed.map(asText).filter(Boolean);
-              const hasWrongLanguage = angleStrings.some(angle => hasGermanCopyCue(angle));
+              const hasWrongLanguage = angleStrings.some(angle => hasGermanCopyCue(angle) || !hasVietnameseAngleCue(angle));
               if (angleStrings.length > 0 && !hasWrongLanguage) {
                 return NextResponse.json({ success: true, angles: angleStrings });
               }

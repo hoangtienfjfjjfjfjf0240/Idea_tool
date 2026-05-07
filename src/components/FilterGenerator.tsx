@@ -146,7 +146,15 @@ function normalizeCompareText(value: unknown) {
 }
 
 function buildLocalizedFallbackAnglesFromPainpoints(painpoints: string[], outputLanguage: string) {
-  const seeds = painpoints.length > 0 ? painpoints : ['the current pain point'];
+  const seeds = painpoints.length > 0 ? painpoints : ['nỗi đau đã chọn'];
+
+  if (outputLanguage === 'Vietnamese') {
+    return seeds.flatMap(pp => [
+      `${pp} nhưng người xem vẫn chưa biết bắt đầu xử lý từ đâu`,
+      `${pp} và mỗi lần thử cách cũ lại càng mất thời gian hơn`,
+      `${pp} khiến người xem cần một cách theo dõi rõ ràng hơn`,
+    ]);
+  }
 
   if (outputLanguage === 'Japanese') {
     return seeds.flatMap(pp => [
@@ -181,8 +189,13 @@ function hasSystemEnglishAngleCue(value: string) {
   return /\b(?:angle type|auto angle|required angle type|this angle must|must look visually different|choose one|operator angle request|app context)\b/.test(normalized);
 }
 
+function hasVietnameseAngleCue(value: string) {
+  return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(value)
+    || /\b(?:toi|ban|nguoi|khong|nhung|van|can|muon|khi|luc|moi|cu|may|do|kiem|tra|theo|doi|nhip|tim|huyet|ap|suc|khoe|lo|lang|roi|ro|rang|tinh|huong|khoanh|khac|cuoc|song|du|da|chon|goc)\b/.test(normalizeCompareText(value));
+}
+
 function isInvalidGeneratedAngle(value: string) {
-  return hasGermanAngleCue(value) || hasSystemEnglishAngleCue(value);
+  return hasGermanAngleCue(value) || hasSystemEnglishAngleCue(value) || !hasVietnameseAngleCue(value);
 }
 
 function cleanAngleOptions(values: string[]) {
