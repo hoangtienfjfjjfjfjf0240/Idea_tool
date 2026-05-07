@@ -1997,19 +1997,31 @@ function buildHookTimingRule(plan: HookDurationPlan, timeline: ReturnType<typeof
 - Split-screen, side-by-side, or complex transition is allowed only when every pane/beat stays visible for about 3s.`;
 }
 
+function buildOperatorInteractionDirective(ideaDescription?: string): string {
+  const normalized = normalizeCompareText(ideaDescription || '');
+  if (!normalized) return '';
+
+  const hasPodcastCue = /\b(?:podcast|talk show|interview|phong van|tro chuyen|doi thoai|hoi dap|toa dam)\b/.test(normalized);
+  const hasTwoPersonCue = /\b(?:two people|2 people|two-person|2-person|2 nguoi|hai nguoi|hai nhan vat|2 nhan vat|bac si|benh nhan|doctor|patient|host|guest|khach moi)\b/.test(normalized);
+  if (!hasPodcastCue && !hasTwoPersonCue) return '';
+
+  return `\n[LOCKED INTERACTION FORMAT - OPERATOR DIRECTIVE]\n- The operator requested a 2-person conversation/podcast/interview structure. Treat this as the primary creative format, not a loose suggestion.\n- Do not replace it with a solo UGC, solo phone demo, silent app demo, or generic screen recording.\n- visual_scene_1 must show two visible people in the requested relationship/roles, e.g. doctor and patient if those words appear, with podcast/interview framing, table/mic/phone prop, eye-line, and body posture.\n- hook_character_speech is required. Use a short on-camera dialogue line in the selected copy language. script_vo may include simple role-labelled dialogue; do not make it only narrator voice.\n- Keep the exchange simple and Rule-4 compliant: one conversational beat can live inside one 2.5-3s scene/camera angle. The app/feature action can enter after that first dialogue beat.\n- For health apps, doctor/patient is allowed as a content format, but never imply diagnosis, treatment, cure, disease detection, or doctor replacement.`;
+}
+
 function buildOperatorIdeaBriefBlock(input: {
   ideaDescription?: string;
   hookPlan: HookDurationPlan;
   outputLanguage: string;
 }): string {
   const brief = clampPromptContext(input.ideaDescription, 900) || 'N/A';
+  const interactionDirective = buildOperatorInteractionDirective(input.ideaDescription);
   return `## OPERATOR IDEA BRIEF - HIGH PRIORITY
 This field is a creative directive, not optional notes. Use it to decide hook structure, trend/reference adaptation, visual execution, mood, and pacing before writing ideas.
 - Operator idea description: ${brief}
 - Hook duration: ${formatTimelineSecond(input.hookPlan.seconds)}s (${input.hookPlan.explicit ? 'explicitly requested' : 'AI inferred from content'}).
 - If the operator describes a trend/reference/scene structure, adapt that structure directly into the hook/body/CTA instead of generating a generic app demo.
 - If the operator does not specify seconds, infer a natural hook length from the content: 1 simple beat = 3s, 2 clear beats = 5s, demo/proof/two-person interaction = 6-8s.
-- Keep the title Vietnamese. Keep visual production prose Vietnamese. Translate only Text hien / Voiceover / CHARACTER SPEECH / CTA into ${input.outputLanguage}.`;
+- Keep the title Vietnamese. Keep visual production prose Vietnamese. Translate only Text hien / Voiceover / CHARACTER SPEECH / CTA into ${input.outputLanguage}.${interactionDirective}`;
 }
 
 function trimWordsLocal(text: string, maxWords: number): string {

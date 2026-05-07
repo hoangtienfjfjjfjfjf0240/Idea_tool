@@ -1335,13 +1335,13 @@ function isSameLine(a: string, b: string): boolean {
 
 function visualMentionsVisibleSpeaker(visual: string): boolean {
   const normalized = normalizeCompareText(visual);
-  return /\b(?:nguoi|phu nu|dan ong|nam|nu|me|bo|vo|chong|con|ban|khach|nhan vat|talent|creator|host|user|woman|man|mom|dad|wife|husband|customer|teen)\b/.test(normalized);
+  return /\b(?:nguoi|phu nu|dan ong|nam|nu|me|bo|vo|chong|con|ban|khach|khach moi|nhan vat|talent|creator|host|mc|podcaster|chuyen gia|bac si|benh nhan|nguoi benh|nguoi dung|doctor|patient|specialist|expert|guest|interviewer|interviewee|user|woman|man|mom|dad|wife|husband|customer|teen)\b/.test(normalized);
 }
 
 function visualImpliesOnCameraSpeech(visual: string): boolean {
   const normalized = normalizeCompareText(visual);
   if (!visualMentionsVisibleSpeaker(visual)) return false;
-  return /\b(?:noi|noi thang|hoi|tra loi|dap lai|keu|bao|thot|doc|phong van|hoi dap|doi thoai|talks?|speaks?|says?|asks?|replies?|answers?|responds?|tells?|confesses?|comments?|interviews?|talking to camera|speaking to camera|talking head)\b/.test(normalized);
+  return /\b(?:noi|noi thang|hoi|tra loi|dap lai|keu|bao|thot|doc|phong van|hoi dap|doi thoai|tro chuyen|trao doi|thao luan|toa dam|podcast|micro|mic|talks?|speaks?|says?|asks?|replies?|answers?|responds?|tells?|confesses?|comments?|interviews?|conversation|dialogue|talking to camera|speaking to camera|talking head)\b/.test(normalized);
 }
 
 function hasPatternInterrupt(text: string): boolean {
