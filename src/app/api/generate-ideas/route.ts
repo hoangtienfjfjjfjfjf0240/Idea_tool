@@ -219,6 +219,31 @@ function normalizeFrameworkVisualFormat(value: string): string {
   return FRAMEWORK_VISUAL_FORMATS.includes(value as typeof FRAMEWORK_VISUAL_FORMATS[number]) ? value : 'UGC';
 }
 
+function enforceSelectedVisualFormatInScene(text: string, visualType?: string): string {
+  const scene = text.trim();
+  if (!scene || !visualType?.trim()) return scene;
+  const lockedVisualType = normalizeFrameworkVisualFormat(visualType || '');
+  const normalizedScene = normalizeCompareText(scene);
+  if (!lockedVisualType) return scene;
+
+  if (lockedVisualType === '2D Animation' && !/\b(?:2d|animation|animated|minh hoa|hoat hinh|vector|cartoon)\b/.test(normalizedScene)) {
+    return `Trong khung 2D animation minh hoa, ${scene}`;
+  }
+  if (lockedVisualType === '3D Animation' && !/\b(?:3d|cgi|render|animated|animation)\b/.test(normalizedScene)) {
+    return `Trong khung 3D animation/render, ${scene}`;
+  }
+  if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|infographic|animated ui|typography|data visual|bieu do)\b/.test(normalizedScene)) {
+    return `Theo phong cach Motion Graphic/animated UI, ${scene}`;
+  }
+  if (lockedVisualType === 'POV' && !/\b(?:pov|goc nhin|screen recording|man hinh|over the shoulder)\b/.test(normalizedScene)) {
+    return `Theo goc POV/screen-perspective, ${scene}`;
+  }
+  if (lockedVisualType === 'UGC' && !/\b(?:ugc|nguoi that|doi thuong|cam tay|handheld|selfie)\b/.test(normalizedScene)) {
+    return `Theo phong cach UGC doi thuong, ${scene}`;
+  }
+  return scene;
+}
+
 function shouldUseCreativeRulesV7(appName: string, appKnowledge: string): boolean {
   const haystack = `${appName}\n${appKnowledge}`.toLowerCase();
   return haystack.includes(CREATIVE_RULESET_V7_MARKER.toLowerCase())
@@ -626,12 +651,15 @@ function normalizeAndValidateIdeas(
     appName: string;
     category?: string;
     psp?: string;
+    coreUser?: string;
+    emotion?: string;
     angle?: string;
     pillar: string;
     angleIndex: number;
     ideaStartIndex?: number;
     hookDurationSeconds?: number;
     metricLock?: HealthMetricKey | null;
+    visualType?: string;
   }
 ) {
   const valid: Record<string, unknown>[] = [];
@@ -643,6 +671,10 @@ function normalizeAndValidateIdeas(
         duration: context.duration,
         appName: context.appName,
         pillar: context.pillar,
+        visualType: context.visualType,
+        coreUser: asText(context.coreUser),
+        emotion: asText(context.emotion),
+        psp: asText(context.psp),
       }),
       { angleIndex: context.angleIndex, ideaIndex: (context.ideaStartIndex || 0) + ideaIndex, pillar: context.pillar }
     ), context.hookDurationSeconds);
@@ -715,7 +747,9 @@ function readCoreUserDimensionValue(value: string): string {
 
 function isCoreUserLanguageValue(value: string): boolean {
   const label = readCoreUserDimensionLabel(value);
-  return /\b(?:ngon ngu|language)\b/.test(label);
+  if (/\b(?:ngon ngu|language)\b/.test(label)) return true;
+  const normalizedValue = normalizeCompareText(readCoreUserDimensionValue(value));
+  return /^(?:english|spanish|vietnamese|japanese|korean|german|french|portuguese|thai|indonesian|malay|tieng anh|tieng tay ban nha|tieng viet|tieng nhat|tieng han|tieng duc|tieng phap|tieng bo dao nha)$/.test(normalizedValue);
 }
 
 function isCoreUserMarketValue(value: string): boolean {
@@ -974,7 +1008,7 @@ MỌI chi tiết phải PHÙ HỢP văn hóa Đông Nam Á:
 ❌ KHÔNG: bối cảnh Mỹ/Nhật, suburban house, Target/Walmart, miles/°F`;
   }
 
-  if (market.includes('eu') || market.includes('châu âu') || market.includes('de') || market.includes('đức') || market.includes('fr') || market.includes('pháp')) {
+  if (market.includes('eu') || market.includes('châu âu') || market.includes('de') || market.includes('đức') || market.includes('fr') || market.includes('pháp') || market.includes('spain') || market.includes('españa')) {
     return `═══════════════════════════════════════
 ⚠️ THỊ TRƯỜNG MỤC TIÊU: EU (Châu Âu)
 ═══════════════════════════════════════
@@ -1091,27 +1125,29 @@ CÁCH DÙNG:
 - Nếu thị trường mục tiêu không hợp với tuyết/lạnh/ngày lễ Mỹ, hãy localize chi tiết mùa/sự kiện cho hợp văn hóa.`;
 }
 
-function buildBatchDiversityBlock(quantity: number, angle: string, angleIndex: number, totalAngles: number): string {
+function buildBatchDiversityBlock(quantity: number, angle: string, angleIndex: number, totalAngles: number, visualType?: string): string {
   if (quantity <= 1) return '';
 
+  const lockedVisualType = normalizeFrameworkVisualFormat(visualType || '') || 'selected Visual/Theme';
   const lanes = [
-    'Idea 1: UGC handheld đời thường, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.',
-    'Idea 2: Reaction/social interruption, có người hoặc vật thứ hai làm tình huống đổi nhịp.',
-    'Idea 3: Split Screen/reveal bất ngờ, mở bằng một blocking object hoặc không gian khác hẳn idea 1.',
-    'Idea 4: ASMR/oddly satisfying, mở bằng texture, âm thanh hoặc chuyển động nhỏ gây dừng scroll.',
-    'Idea 5: Comment-reply/Social Proof, mở bằng một câu hỏi hoặc phản ứng từ người khác.',
-    'Idea 6: Challenge, biến painpoint thành một câu đố hoặc nhiệm vụ 1 nhịp.',
-    'Idea 7: Interview/street-test, mở bằng một câu hỏi trực diện với người dùng.',
-    'Idea 8: Trend Format, dùng format trend nhưng đổi scene family và first action.',
+    `Idea 1: ${lockedVisualType}, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.`,
+    `Idea 2: ${lockedVisualType}, phản ứng/social interruption có người hoặc vật thứ hai làm tình huống đổi nhịp.`,
+    `Idea 3: ${lockedVisualType}, reveal bất ngờ bằng blocking object hoặc không gian khác hẳn idea 1.`,
+    `Idea 4: ${lockedVisualType}, texture/oddly satisfying motion tạo cảm giác dừng scroll.`,
+    `Idea 5: ${lockedVisualType}, comment-reply/social proof nhưng vẫn giữ đúng production format đã chọn.`,
+    `Idea 6: ${lockedVisualType}, challenge/câu đố 1 nhịp trong cùng format visual.`,
+    `Idea 7: ${lockedVisualType}, interview/podcast beat nếu phù hợp nhưng không đổi sang UGC nếu visual không phải UGC.`,
+    `Idea 8: ${lockedVisualType}, trend structure nhưng đổi scene family và first action trong cùng format visual.`,
   ].slice(0, quantity).join('\n');
 
   return `
 [BATCH DIVERSITY CONTRACT — BẮT BUỘC CHO LẦN GEN NÀY]
 Bạn đang tạo ${quantity} ideas trong CÙNG MỘT batch${angle ? ` cho angle "${angle}"` : ''}${totalAngles > 1 ? ` (angle ${angleIndex}/${totalAngles})` : ''}.
 Các ideas KHÔNG được là 3 biến thể của cùng một cảnh.
+Visual/Theme đang chọn là "${lockedVisualType}" và bị KHÓA cho toàn batch. Không được đổi creativeType sang UGC, POV, Motion Graphic, 3D Animation hoặc 2D Animation khác với lựa chọn này.
 
 MỖI idea phải khác rõ ở ÍT NHẤT 4/6 trục:
-1. creativeType
+1. hook/story pattern hoặc angle_type, nhưng creativeType vẫn giữ "${lockedVisualType}"
 2. địa điểm/góc phòng/bối cảnh mở đầu
 3. hành động đầu tiên của nhân vật
 4. vật cản/props chính tạo painpoint
@@ -1127,7 +1163,7 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Không có 2 title cùng cấu trúc.
 - Không có 2 hook.visual cùng địa điểm + hành động mở đầu.
 - Không có 2 hook.voice cùng ý nói.
-- POV tối đa 1 idea trong batch này, trừ khi user chọn visualType bắt buộc chỉ POV.
+- Không dùng POV/UGC/Motion Graphic như creativeType nếu khác "${lockedVisualType}"; chỉ dùng như hook/story pattern nếu phù hợp.
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
@@ -1775,6 +1811,7 @@ function buildFallbackIdeasForFilters(options: {
         duration: options.duration,
         appName: options.appName,
         pillar: painpoint,
+        visualType: selectedVisualFormat,
       }),
       { angleIndex: normalizedAngleIndex, ideaIndex: displayIndex, pillar: painpoint }
     );
@@ -1960,7 +1997,7 @@ function buildHookTimelineRows(durationSeconds: number) {
   const labels = ranges.map(range => `${formatTimelineSecond(range.start)}-${formatTimelineSecond(range.end)}s`);
   const rows = labels.map((label, index) => {
     if (index === 0) return `${label}: [visual shock / first frame]`;
-    if (index === 1) return `${label}: Text hien: "[hook_text_overlay]" | Voiceover: "[hook_vo]" | [context or pivot]`;
+    if (index === 1) return `${label}: Text hien: "[hook_text_overlay]" | Character speech: "[hook_character_speech]" if a visible person talks, otherwise Voiceover: "[hook_vo]" | [context or pivot]`;
     if (index === labels.length - 1) return `${label}: [curiosity gap / bridge to body]`;
     return `${label}: [supporting visual beat]`;
   });
@@ -1994,6 +2031,7 @@ function buildHookTimingRule(plan: HookDurationPlan, timeline: ReturnType<typeof
 - Recommended timing rows:
   ${timeline.rows.join('\n  ')}
 - Text overlay, voiceover, and on-camera speech may happen inside an existing row; they do not create a new camera angle.
+- If a visible person talks, that line is character speech, not voiceover. In 2-person dialogue/podcast/interview hooks, use role-labelled hook_character_speech such as "Speaker 1: ... / Speaker 2: ..." and keep hook_vo empty unless there is a true off-camera narrator.
 - Split-screen, side-by-side, or complex transition is allowed only when every pane/beat stays visible for about 3s.`;
 }
 
@@ -2005,7 +2043,7 @@ function buildOperatorInteractionDirective(ideaDescription?: string): string {
   const hasTwoPersonCue = /\b(?:two people|2 people|two-person|2-person|2 nguoi|hai nguoi|hai nhan vat|2 nhan vat|bac si|benh nhan|doctor|patient|host|guest|khach moi)\b/.test(normalized);
   if (!hasPodcastCue && !hasTwoPersonCue) return '';
 
-  return `\n[LOCKED INTERACTION FORMAT - OPERATOR DIRECTIVE]\n- The operator requested a 2-person conversation/podcast/interview structure. Treat this as the primary creative format, not a loose suggestion.\n- Do not replace it with a solo UGC, solo phone demo, silent app demo, or generic screen recording.\n- visual_scene_1 must show two visible people in the requested relationship/roles, e.g. doctor and patient if those words appear, with podcast/interview framing, table/mic/phone prop, eye-line, and body posture.\n- hook_character_speech is required. Use a short on-camera dialogue line in the selected copy language. script_vo may include simple role-labelled dialogue; do not make it only narrator voice.\n- Keep the exchange simple and Rule-4 compliant: one conversational beat can live inside one 2.5-3s scene/camera angle. The app/feature action can enter after that first dialogue beat.\n- For health apps, doctor/patient is allowed as a content format, but never imply diagnosis, treatment, cure, disease detection, or doctor replacement.`;
+  return `\n[LOCKED INTERACTION FORMAT - OPERATOR DIRECTIVE]\n- The operator requested a 2-person conversation/podcast/interview structure. Treat this as the primary creative format, not a loose suggestion.\n- Do not replace it with a solo UGC, solo phone demo, silent app demo, or generic screen recording.\n- visual_scene_1 must show two visible people in the requested relationship/roles, e.g. doctor and patient if those words appear, with podcast/interview framing, table/mic/phone prop, eye-line, and body posture.\n- hook_character_speech is required. Use short role-labelled on-camera dialogue in the selected copy language. Do not put a visible person's line into hook_vo. script_vo may include simple role-labelled dialogue; do not make it only narrator voice.\n- Keep the exchange simple and Rule-4 compliant: one conversational beat can live inside one 2.5-3s scene/camera angle. The app/feature action can enter after that first dialogue beat.\n- For health apps, doctor/patient is allowed as a content format, but never imply diagnosis, treatment, cure, disease detection, or doctor replacement.`;
 }
 
 function buildOperatorIdeaBriefBlock(input: {
@@ -2022,6 +2060,37 @@ This field is a creative directive, not optional notes. Use it to decide hook st
 - If the operator describes a trend/reference/scene structure, adapt that structure directly into the hook/body/CTA instead of generating a generic app demo.
 - If the operator does not specify seconds, infer a natural hook length from the content: 1 simple beat = 3s, 2 clear beats = 5s, demo/proof/two-person interaction = 6-8s.
 - Keep the title Vietnamese. Keep visual production prose Vietnamese. Translate only Text hien / Voiceover / CHARACTER SPEECH / CTA into ${input.outputLanguage}.${interactionDirective}`;
+}
+
+function buildSelectedStrategyLockBlock(input: {
+  visualType: string;
+  coreUserValues: string[];
+  emotionValues: string[];
+  marketValues: string[];
+  outputLanguage: string;
+}): string {
+  const lockedVisualType = normalizeFrameworkVisualFormat(input.visualType) || input.visualType || 'selected Visual/Theme';
+  const coreUser = input.coreUserValues.join('; ') || 'selected core user';
+  const emotion = input.emotionValues.join(' -> ') || 'selected emotion';
+  const market = input.marketValues.join('; ') || 'selected market';
+  const normalizedVisual = normalizeCompareText(lockedVisualType);
+  const visualExecutionNote = normalizedVisual.includes('2d')
+    ? '- 2D Animation execution: every visual_scene must explicitly be illustrated/2D/vector/cartoon animation. Characters, rooms, phones, heat icons, duplicate files, and UI panels are drawn elements. Do not output live-action UGC, handheld footage, selfie, real actor footage, or Motion Graphic as the main format.'
+    : normalizedVisual.includes('3d')
+      ? '- 3D Animation execution: every visual_scene must be 3D-rendered/CGI. Do not switch to live-action UGC, flat 2D, or pure screen recording.'
+      : normalizedVisual.includes('motion')
+        ? '- Motion Graphic execution: every visual_scene must be animated UI/data/shape typography. Do not switch to live-action UGC or 2D character animation unless it is a minor supporting graphic.'
+        : normalizedVisual.includes('pov')
+          ? '- POV execution: every visual_scene must be POV/screen-perspective. Do not label it UGC just because a person is implied.'
+          : '- UGC execution: every visual_scene should feel like real social footage. Do not switch to animation or motion graphic as the main format.';
+
+  return `## SELECTED FILTER LOCK - MUST FOLLOW
+- Core user is locked: ${coreUser}. Visuals must match this audience's age/gender/market context and must not invent a different persona.
+- Market/culture is locked: ${market}. Use local setting, home/work details, skin tone/hair/clothing cues, props, and behavior that fit this market. Copy language is still ${input.outputLanguage}; market does not change visual prose language.
+- Emotion trigger is locked: ${emotion}. The first hook beat must visibly trigger this emotion; do not drift to a calmer or unrelated emotion.
+- Visual/Theme is locked: ${lockedVisualType}. Every idea in this batch must have creativeType exactly "${lockedVisualType}".
+${visualExecutionNote}
+- Diversity means different angle_type, first action, prop/blocker, composition, reveal, and wording inside "${lockedVisualType}". Diversity does NOT mean changing the selected Visual/Theme format.`;
 }
 
 function trimWordsLocal(text: string, maxWords: number): string {
@@ -2135,6 +2204,7 @@ function normalizeLeanCreativeOutput(
     angleIndex: number;
     startIndex: number;
     hookDurationSeconds?: number;
+    visualType?: string;
   }
 ): Record<string, unknown>[] {
   const records = collectLeanIdeaRecords(input);
@@ -2149,9 +2219,9 @@ function normalizeLeanCreativeOutput(
     const rawHookText = readLooseText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'hook_primary', 'hookPrimary']);
     const rawHookVo = readLooseText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover']);
     const hookCharacterSpeech = readLooseText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'characterSpeech'], '');
-    const visualScene1 = readLooseText(ideaRecord, ['visual_scene_1', 'visualScene1'], readLooseText(asRecord(ideaRecord.hook), ['visual', 'script']));
-    const visualScene2 = readLooseText(ideaRecord, ['visual_scene_2', 'visualScene2'], readLooseText(asRecord(ideaRecord.body), ['visual', 'script']));
-    const visualScene3 = readLooseText(ideaRecord, ['visual_scene_3', 'visualScene3'], readLooseText(asRecord(ideaRecord.cta), ['visual', 'script']));
+    let visualScene1 = readLooseText(ideaRecord, ['visual_scene_1', 'visualScene1'], readLooseText(asRecord(ideaRecord.hook), ['visual', 'script']));
+    let visualScene2 = readLooseText(ideaRecord, ['visual_scene_2', 'visualScene2'], readLooseText(asRecord(ideaRecord.body), ['visual', 'script']));
+    let visualScene3 = readLooseText(ideaRecord, ['visual_scene_3', 'visualScene3'], readLooseText(asRecord(ideaRecord.cta), ['visual', 'script']));
     const rawCtaText = readLooseText(
       ideaRecord,
       ['cta_text', 'ctaText'],
@@ -2164,6 +2234,9 @@ function normalizeLeanCreativeOutput(
     const hookText = trimWordsLocal(rawHookText, 8);
     const hookVo = trimWordsLocal(rawHookVo, 12);
     const ctaText = trimWordsLocal(rawCtaText, 6);
+    visualScene1 = enforceSelectedVisualFormatInScene(visualScene1, defaults.visualType);
+    visualScene2 = enforceSelectedVisualFormatInScene(visualScene2, defaults.visualType);
+    visualScene3 = enforceSelectedVisualFormatInScene(visualScene3, defaults.visualType);
     const scriptVo = readLooseText(ideaRecord, ['script_vo', 'scriptVo'], [hookVo, readLooseText(asRecord(ideaRecord.body), ['voice', 'voiceover'], ''), ctaText].filter(Boolean).join(' '));
     const overlayRecords = readLooseArray(ideaRecord.text_overlays ?? ideaRecord.textOverlays);
     const overlays = overlayRecords
@@ -2178,12 +2251,13 @@ function normalizeLeanCreativeOutput(
     const ctaOverlay = overlayTextAt(overlays, /\b(?:18|22|25)\b/, readLooseText(asRecord(ideaRecord.cta), ['textOverlay', 'text'], ctaText));
     const track = readLooseText(ideaRecord, ['track'], 'B').toUpperCase();
     const safeTrack = ['A', 'B', 'C'].includes(track) ? track : 'B';
+    const lockedCreativeType = defaults.visualType?.trim() ? normalizeFrameworkVisualFormat(defaults.visualType) : '';
 
     return normalizeIdeaOutput({
       id: `P0-A${defaults.angleIndex}-I${ideaIndex}`,
       title: readLooseText(ideaRecord, ['title'], hookText || angleName || `Idea ${ideaIndex + 1}`),
       duration: defaults.duration,
-      creativeType: safeTrack === 'A' ? 'Screen Recording' : safeTrack === 'C' ? 'Motion Graphic' : 'UGC',
+      creativeType: lockedCreativeType || (safeTrack === 'A' ? 'Screen Recording' : safeTrack === 'C' ? 'Motion Graphic' : 'UGC'),
       meta: {
         builderVersion: 'creative_idea_engine_v2_1_lean',
         pillar,
@@ -2248,6 +2322,7 @@ function normalizeLeanCreativeOutput(
       duration: defaults.duration,
       appName: defaults.appName,
       pillar,
+      visualType: defaults.visualType,
     });
   }).filter((item): item is Record<string, unknown> => Boolean(item));
 }
@@ -2304,6 +2379,13 @@ function buildLeanGeneratePrompt(input: {
     hookPlan: hookDurationPlan,
     outputLanguage: input.outputLanguage,
   });
+  const selectedStrategyLockBlock = buildSelectedStrategyLockBlock({
+    visualType: input.visualType,
+    coreUserValues: input.coreUserValues,
+    emotionValues: input.emotionValues,
+    marketValues: input.targetMarketValues,
+    outputLanguage: input.outputLanguage,
+  });
 
   return `You already have the Creative Idea Engine rules. Use them as default; do not restate them.
 
@@ -2322,6 +2404,7 @@ Angle planning rule:
 - Health/wellness must include/prefer Fact. Utility must include/prefer Comparison or Demo. AI apps must include/prefer Trend.
 - Test: if removing the angle name makes the videos look similar, rewrite the angle.
 ${operatorIdeaBriefBlock}
+${selectedStrategyLockBlock}
 Operator note priority:
 - The Operator note is a high-priority creative direction, not optional context.
 - If it requests a hook length, trend, reference format, structure, pacing, or "only hook ideas", obey it unless it conflicts with compliance.
@@ -2349,7 +2432,7 @@ BRIEF
 - Pain point pillar: ${primaryPillar}
 - Emotion trigger: ${emotionJourney}
 - PSP / feature benefit: ${input.featureContext}
-- Visual/theme: ${input.visualType}
+- Visual/theme: ${input.visualType} (LOCKED creativeType for every idea)
 - Angle to test: ${input.angleContext || 'choose the strongest angle inside the pain point'}
 - Market: ${market}
 - Market visual profile: ${marketVisualProfile}
@@ -2381,6 +2464,7 @@ Use this compact schema:
         "ideas": [
           {
             "id": "P0-A0-I0",
+            "creativeType": "${input.visualType}",
             "title": "tên kịch bản tiếng Việt ngắn, 3-7 từ",
             "hook_text_overlay": "max 8 words",
             "hook_vo": "max 12 words, different from text",
@@ -2635,7 +2719,11 @@ Chỉ trả về JSON array string. Không markdown.`;
       const featureContext = solutionValues.length ? solutionValues.join(', ') : 'General App Features';
       const requestedQuantity = Math.min(toPositiveInt(config.quantity, 3), MAX_IDEAS_PER_REQUEST);
       const duration = asText(config.duration) || 'Short social-first runtime';
-      const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
+      const visualType = normalizeFrameworkVisualFormat(
+        asText(config.visualType)
+        || asStringList(filters.visualType)[0]
+        || 'UGC'
+      );
       const targetLang = detectMarketLang(marketContextValues, coreUserMarketValues);
       const ideaDescription = asText(config.ideaDescription) || undefined;
       const hookDurationPlan = resolveHookDurationPlan({
@@ -2800,9 +2888,9 @@ Hard requirements:
           ],
           doList: [
             'Keep every idea production-ready and executable today',
-            'Stay social-first, UGC-friendly, and market-native',
+            'Stay social-first, market-native, and native to the selected Visual/Theme format',
             'Differentiate opening action, blocker, reveal, and voice opening across ideas',
-            'Use a mixed creativeType spread; POV is allowed only once per selected angle unless the user explicitly selected POV-only visual type',
+            'Use a mixed hook/story pattern spread without changing the selected Visual/Theme creativeType',
           ],
           dontList: [
             'Do not drift away from the selected pain point',
@@ -2812,7 +2900,7 @@ Hard requirements:
           ],
           anglesPerPillar: 1,
           ideasPerAngle: plan.batchQuantity,
-          trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
+          trackRule: `Track is internal difficulty only. All ideas must keep creativeType = ${visualType}.`,
           language: useCreativeRulesV7
             ? `User-facing copy in ${outputLanguage}. Internal visual and production notes in Vietnamese.`
             : usePromptSystemBuilderHtml
@@ -2832,6 +2920,7 @@ Hard requirements:
           duration,
           appName,
           language: outputLanguage,
+          visualType,
           ruleset: creativeRuleset,
         });
         const rulesBlock = useCreativeRulesV7
@@ -2982,6 +3071,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           angle: angleContext,
           ideaDescription,
           language: outputLanguage,
+          visualType,
           ruleset: creativeRuleset,
         });
         let validation = normalizeAndValidateIdeas(briefOutput.items, {
@@ -2989,12 +3079,15 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           appName,
           category: appCategory,
           psp: featureContext,
+          coreUser: coreUserValues.join('; ') || 'General viewer',
+          emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
           angle: angleContext,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaStartIndex: requestStartIndex + plan.batchStartIndex,
           hookDurationSeconds: requestedHookDuration,
           metricLock,
+          visualType,
         });
         validation.invalidReasons.unshift(...briefOutput.invalidReasons);
         let valid = dedupeIdeas(validation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
@@ -3012,6 +3105,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             angleIndex: Math.max(angleIndex - 1, 0),
             startIndex: requestStartIndex + plan.batchStartIndex,
             hookDurationSeconds: requestedHookDuration,
+            visualType,
           }).map(item => sanitizeMedicalClaimsInIdea(item)).filter((item, lenientIndex) => {
             const metricErrors = validateHealthMetricLockOutput(item, metricLock, appName);
             if (metricErrors.length > 0) {
@@ -3084,6 +3178,7 @@ ${retryNotes.join('\n\n')}`, {
               angle: angleContext,
               ideaDescription,
               language: outputLanguage,
+              visualType,
               ruleset: creativeRuleset,
             });
             const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
@@ -3091,12 +3186,15 @@ ${retryNotes.join('\n\n')}`, {
               appName,
               category: appCategory,
               psp: featureContext,
+              coreUser: coreUserValues.join('; ') || 'General viewer',
+              emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
               angle: angleContext,
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
               hookDurationSeconds: requestedHookDuration,
               metricLock,
+              visualType,
             });
             retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
             const retryValid = dedupeIdeas(retryValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
@@ -3154,6 +3252,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               angle: angleContext,
               ideaDescription,
               language: outputLanguage,
+              visualType,
               ruleset: creativeRuleset,
             });
             const fallbackValidation = normalizeAndValidateIdeas(fallbackBriefOutput.items, {
@@ -3161,12 +3260,15 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               appName,
               category: appCategory,
               psp: featureContext,
+              coreUser: coreUserValues.join('; ') || 'General viewer',
+              emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
               angle: angleContext,
               pillar: primaryPillar,
               angleIndex: Math.max(angleIndex - 1, 0),
               ideaStartIndex: requestStartIndex + plan.batchStartIndex,
               hookDurationSeconds: requestedHookDuration,
               metricLock,
+              visualType,
             });
             fallbackValidation.invalidReasons.unshift(...fallbackBriefOutput.invalidReasons);
             const fallbackValid = dedupeIdeas(fallbackValidation.valid, priorGeneratedIdeas).slice(0, plan.batchQuantity);
@@ -3403,7 +3505,11 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const featureContext = solutionValues.length ? solutionValues.join(', ') : "General App Features";
     const quantity = Math.min(toPositiveInt(config.quantity, 3), 5); // Cap at 5 to avoid gateway timeout
     const duration = asText(config.duration) || 'Short social-first runtime';
-    const visualType = normalizeFrameworkVisualFormat(asText(config.visualType) || 'UGC');
+    const visualType = normalizeFrameworkVisualFormat(
+      asText(config.visualType)
+      || asStringList(filters.visualType)[0]
+      || 'UGC'
+    );
     const targetLang = detectMarketLang(marketContextValues, coreUserMarketValues);
     const ideaDescription = asText(config.ideaDescription) || undefined;
     const outputLanguage = inferGenerationCopyLanguage({
@@ -3478,7 +3584,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const variationBlock = variationIndex > 0
       ? `\n[VARIATION TRONG LẦN GEN HIỆN TẠI]\nĐây là idea ${variationIndex}/${totalVariations}. Phải khác các idea còn lại về tình huống mở đầu, hành động đầu tiên, creative type hoặc nhân vật phụ. Vẫn giữ ĐÚNG core user, painpoint, emotion, PSP, target market, month/season/event và output schema.\n`
       : '';
-    const diversityBlock = buildBatchDiversityBlock(quantity, angleContext, angleIndex, totalAngles);
+    const diversityBlock = buildBatchDiversityBlock(quantity, angleContext, angleIndex, totalAngles, visualType);
 
     const painpointPrecisionBlock = useCreativeRulesV7
       ? buildV7ExecutionContract({
@@ -3540,6 +3646,7 @@ Hard requirements:
       duration,
       appName,
       language: outputLanguage,
+      visualType,
       ruleset: creativeRuleset,
     });
     const rulesBlock = useCreativeRulesV7
@@ -3595,7 +3702,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       ],
       doList: [
         'Keep every idea production-ready and executable today',
-        'Stay social-first, UGC-friendly, and market-native',
+        'Stay social-first, market-native, and native to the selected Visual/Theme format',
         'Differentiate opening action, blocker, reveal, and voice opening across ideas',
       ],
       dontList: [
@@ -3605,7 +3712,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       ],
       anglesPerPillar: 1,
       ideasPerAngle: quantity,
-      trackRule: 'A = no real person needed | B = real person / UGC | C = motion / animation',
+      trackRule: `Track is internal difficulty only. All ideas must keep creativeType = ${visualType}.`,
           language: useCreativeRulesV7
             ? `User-facing copy in ${outputLanguage}. Internal visual and production notes in Vietnamese.`
             : usePromptSystemBuilderHtml
@@ -3618,10 +3725,18 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         `Target market: ${marketContextValues.join(', ') || 'Default market'}`,
       ],
     });
+    const selectedStrategyLockBlock = buildSelectedStrategyLockBlock({
+      visualType,
+      coreUserValues,
+      emotionValues,
+      marketValues: marketContextValues,
+      outputLanguage,
+    });
 
     const prompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
 ${frameworkInjection}
+${selectedStrategyLockBlock}
 
 ## SUPPORTING CONTEXT
 ${knowledgeBlock || '- No AI Brain memory yet.'}
@@ -3699,6 +3814,7 @@ ${rulesBlock}`;
       angle: angleContext,
       ideaDescription,
       language: outputLanguage,
+      visualType,
       ruleset: creativeRuleset,
     });
     let validation = normalizeAndValidateIdeas(briefOutput.items, {
@@ -3706,11 +3822,14 @@ ${rulesBlock}`;
       appName,
       category: appCategory,
       psp: featureContext,
+      coreUser: coreUserValues.join('; ') || 'General viewer',
+      emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
       angle: angleContext,
       pillar: primaryPillar,
       angleIndex: Math.max(angleIndex - 1, 0),
       hookDurationSeconds: requestedHookDuration,
       metricLock,
+      visualType,
     });
     validation.invalidReasons.unshift(...briefOutput.invalidReasons);
     let valid = validation.valid.slice(0, quantity);
@@ -3759,6 +3878,7 @@ ${retryNotes.join('\n\n')}`, {
           angle: angleContext,
           ideaDescription,
           language: outputLanguage,
+          visualType,
           ruleset: creativeRuleset,
         });
         const retryValidation = normalizeAndValidateIdeas(retryBriefOutput.items, {
@@ -3766,11 +3886,14 @@ ${retryNotes.join('\n\n')}`, {
           appName,
           category: appCategory,
           psp: featureContext,
+          coreUser: coreUserValues.join('; ') || 'General viewer',
+          emotion: emotionValues.join('; ') || 'Create a clear viewer emotion',
           angle: angleContext,
           pillar: primaryPillar,
           angleIndex: Math.max(angleIndex - 1, 0),
           hookDurationSeconds: requestedHookDuration,
           metricLock,
+          visualType,
         });
         retryValidation.invalidReasons.unshift(...retryBriefOutput.invalidReasons);
         const retryValid = retryValidation.valid.slice(0, quantity);

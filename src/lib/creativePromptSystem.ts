@@ -25,6 +25,7 @@ type IdeaOutputSpecOptions = {
   duration: string;
   appName: string;
   language: string;
+  visualType?: string;
   includeSelectedFilters?: boolean;
   compact?: boolean;
   ruleset?: 'default' | 'v7' | 'builder';
@@ -442,7 +443,8 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - Use only these Visual/Theme formats as production format labels: 2D Animation, 3D Animation, UGC, POV, Motion Graphic.
 - Social patterns such as Trend, Challenge, Interview, Split Screen, or Social Proof are hook/story patterns, not Visual/Theme formats.
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
-- Off-camera narration belongs in hook_vo/script_vo. On-screen copy belongs in hook_text_overlay/text_overlays.
+- If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines. hook_vo stays empty unless there is a true off-camera narrator.
+- Off-camera narration belongs in hook_vo/script_vo. On-camera character lines never belong in hook_vo. On-screen copy belongs in hook_text_overlay/text_overlays.
 - Output scenes in the requested timeline: Hook 0-5, Body 5-18, CTA 18-25, while obeying the pacing limit.
 - User-facing copy follows the requested language. Visual scenes and production notes should be Vietnamese for the internal team.
 
@@ -481,7 +483,7 @@ Choose 3 different emotions if any stage is auto.
 
 ### VISUAL / THEME
 ${input.visualTheme || 'UGC, mobile-first, handheld, social-feed native'}
-[Must keep Meta native feel: vertical 9:16, handheld/selfie/POV/screen recording, natural light, fast cuts.]
+[Must keep Meta-native feel: vertical 9:16, clear first frame, fast social pacing, and the selected production format. Do not force handheld/selfie/UGC treatment when the selected Visual/Theme is animation or motion.]
 
 ### PRODUCT SELLING POINT (PSP)
 Feature -> Benefit mapping:
@@ -688,6 +690,7 @@ Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and
 Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
+${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.` : ''}
 
 [
   {
@@ -703,8 +706,8 @@ Each title must be Vietnamese, unique inside the batch, and name the visual setu
           {
             "id": "P0-A0-I0",
             "hook_text_overlay": "Max 8 words in ${options.language}; on-screen hook text inside Scene 1 or Scene 2",
-            "hook_vo": "Max 12 words in ${options.language}; voice/video line inside Scene 1 or Scene 2; must differ from hook_text_overlay",
-            "hook_character_speech": "On-camera character line in ${options.language} if a visible character speaks in the hook; empty string if no visible speaker",
+            "hook_vo": "Max 12 words in ${options.language}; off-camera narrator/video VO only; empty when the visible character is the one speaking; must differ from hook_text_overlay",
+            "hook_character_speech": "On-camera character line in ${options.language} if a visible character speaks in the hook. For 2-person dialogue/podcast/interview, use short role-labelled lines like Speaker 1: ... / Speaker 2: ... Empty string only if no visible speaker",
             "hook_archetype": "Stat Shock|Body Signal Question|Whisper Secret|POV Narrative|Counter-intuitive|Social Proof|Zoom Problem|Before After Demo|Question Accusation|Speed Ease Claim|Tutorial Opener|Trend Jack|Result First|Demo-Magic|Identity Personal|Challenge Dare",
             "hook_alt_1_text": "Alternative hook text overlay in ${options.language}, different archetype",
             "hook_alt_1_vo": "Alternative hook voice/video line in ${options.language}",
@@ -746,7 +749,7 @@ Each title must be Vietnamese, unique inside the batch, and name the visual setu
 2. Every field above is required. Use "N/A" only if truly not applicable.
 3. hook_text_overlay must be max 8 words.
 4. hook_vo must be max 12 words and must differ from hook_text_overlay.
-5. hook_character_speech must be empty unless visual_scene_1 clearly identifies a visible speaker. If the hook shows a person speaking, asking, replying, or reacting to camera, fill this exact line.
+5. hook_character_speech must be empty unless visual_scene_1 clearly identifies a visible speaker. If the hook shows a person speaking, asking, replying, reacting to camera, or a 2-person dialogue/podcast/interview, fill the exact on-camera line(s) here with speaker labels.
 6. Primary + alt_1 + alt_2 must use 3 different hook_archetype values.
 7. visual_scene_1 must obey pacing: for a 5s hook use max 2 timestamp rows, normally 0-2.5s and 2.5-5s. Never use 3+ scenes/camera angles for 5s.
 8. visual_scene_1 Scene 1 must depict the selected Pain Point situation.
@@ -1344,6 +1347,36 @@ function visualImpliesOnCameraSpeech(visual: string): boolean {
   return /\b(?:noi|noi thang|hoi|tra loi|dap lai|keu|bao|thot|doc|phong van|hoi dap|doi thoai|tro chuyen|trao doi|thao luan|toa dam|podcast|micro|mic|talks?|speaks?|says?|asks?|replies?|answers?|responds?|tells?|confesses?|comments?|interviews?|conversation|dialogue|talking to camera|speaking to camera|talking head)\b/.test(normalized);
 }
 
+function visualImpliesTwoPersonDialogue(visual: string): boolean {
+  const normalized = normalizeCompareText(visual);
+  if (!visualMentionsVisibleSpeaker(visual)) return false;
+  return /\b(?:two people|2 people|two men|two women|two friends|2 friends|two person|2 person|hai nguoi|2 nguoi|hai nhan vat|2 nhan vat|nguoi thu hai|nguoi con lai|ban be|friend|friends|couple|husband|wife|doctor|patient|host|guest|interviewer|interviewee|podcast|interview|conversation|dialogue|doi thoai|tro chuyen|phong van|hoi dap|toa dam)\b/.test(normalized);
+}
+
+function moveOnCameraVoiceoverToCharacterSpeech(
+  visual: string,
+  characterSpeech: string,
+  voiceover: string
+): { characterSpeech: string; voiceover: string } {
+  const spokenVoiceover = readSpeechText(voiceover);
+  if (!spokenVoiceover) return { characterSpeech, voiceover: '' };
+  if (!visualImpliesOnCameraSpeech(visual) && !visualImpliesTwoPersonDialogue(visual)) {
+    return { characterSpeech, voiceover: spokenVoiceover };
+  }
+
+  const spokenCharacter = readSpeechText(characterSpeech);
+  if (!spokenCharacter) return { characterSpeech: spokenVoiceover, voiceover: '' };
+  if (isSameLine(spokenCharacter, spokenVoiceover)) return { characterSpeech: spokenCharacter, voiceover: '' };
+
+  const alreadyLabelled = /\b(?:speaker|host|guest|person|man|woman|doctor|patient|nhan vat|nguoi)\s*\d?\s*:/i.test(`${spokenVoiceover}\n${spokenCharacter}`);
+  return {
+    characterSpeech: alreadyLabelled
+      ? `${spokenVoiceover}\n${spokenCharacter}`
+      : `Speaker 1: ${spokenVoiceover}\nSpeaker 2: ${spokenCharacter}`,
+    voiceover: '',
+  };
+}
+
 function hasPatternInterrupt(text: string): boolean {
   const raw = text.toLowerCase();
   const normalized = normalizeCompareText(text);
@@ -1416,6 +1449,48 @@ function creativeTypeForTrack(track: string): string {
   if (track === 'A') return '2D Animation';
   if (track === 'C') return 'Motion Graphic';
   return 'UGC';
+}
+
+const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
+
+function normalizeFrameworkVisualFormat(value?: string): string {
+  const raw = readText(value);
+  const normalized = normalizeCompareText(raw);
+  if (!normalized) return '';
+  if (/\b2d\b/.test(normalized)) return '2D Animation';
+  if (/\b3d\b/.test(normalized)) return '3D Animation';
+  if (/\bpov\b/.test(normalized) || /\bscreen recording\b/.test(normalized) || /\bdemo app\b/.test(normalized)) return 'POV';
+  if (/\bmotion\b/.test(normalized) || /\bgraphic\b/.test(normalized) || /\bdata visual\b/.test(normalized)) return 'Motion Graphic';
+  if (/\bugc\b/.test(normalized) || /\bnguoi that\b/.test(normalized)) return 'UGC';
+  return FRAMEWORK_VISUAL_FORMATS.includes(raw as typeof FRAMEWORK_VISUAL_FORMATS[number]) ? raw : '';
+}
+
+function creativeTypeForTrackWithLock(track: string, lockedVisualType?: string): string {
+  return normalizeFrameworkVisualFormat(lockedVisualType) || creativeTypeForTrack(track);
+}
+
+function enforceSelectedVisualFormatInScene(text: string, visualType?: string): string {
+  const scene = text.trim();
+  const lockedVisualType = normalizeFrameworkVisualFormat(visualType);
+  const normalizedScene = normalizeCompareText(scene);
+  if (!scene || !lockedVisualType) return scene;
+
+  if (lockedVisualType === '2D Animation' && !/\b(?:2d|animation|animated|minh hoa|hoat hinh|vector|cartoon)\b/.test(normalizedScene)) {
+    return `Trong khung 2D animation minh hoa, ${scene}`;
+  }
+  if (lockedVisualType === '3D Animation' && !/\b(?:3d|cgi|render|animated|animation)\b/.test(normalizedScene)) {
+    return `Trong khung 3D animation/render, ${scene}`;
+  }
+  if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|infographic|animated ui|typography|data visual|bieu do)\b/.test(normalizedScene)) {
+    return `Theo phong cach Motion Graphic/animated UI, ${scene}`;
+  }
+  if (lockedVisualType === 'POV' && !/\b(?:pov|goc nhin|screen recording|man hinh|over the shoulder)\b/.test(normalizedScene)) {
+    return `Theo goc POV/screen-perspective, ${scene}`;
+  }
+  if (lockedVisualType === 'UGC' && !/\b(?:ugc|nguoi that|doi thuong|cam tay|handheld|selfie)\b/.test(normalizedScene)) {
+    return `Theo phong cach UGC doi thuong, ${scene}`;
+  }
+  return scene;
 }
 
 const HOOK_ARCHETYPE_LABELS: Record<string, string> = {
@@ -1749,6 +1824,7 @@ export function normalizeCreativeBriefOutput(
     angle?: string;
     ideaDescription?: string;
     language?: string;
+    visualType?: string;
     ruleset?: 'default' | 'v7' | 'builder';
   }
 ): { items: Record<string, unknown>[]; invalidReasons: string[] } {
@@ -1887,6 +1963,9 @@ export function normalizeCreativeBriefOutput(
         ctaText = sanitizeHealthClaimText(ctaText);
         dontDo = sanitizeHealthClaimText(dontDo);
         visualScene1 = normalizeHookTimingText(visualScene1);
+        visualScene1 = enforceSelectedVisualFormatInScene(visualScene1, defaults.visualType);
+        visualScene2 = enforceSelectedVisualFormatInScene(visualScene2, defaults.visualType);
+        visualScene3 = enforceSelectedVisualFormatInScene(visualScene3, defaults.visualType);
 
         if (!hookTextOverlay) {
           hookTextOverlay = hookPrimary;
@@ -1915,6 +1994,11 @@ export function normalizeCreativeBriefOutput(
             hookCharacterSpeech = speechCandidate;
           }
         }
+        ({ characterSpeech: hookCharacterSpeech, voiceover: hookVoiceover } = moveOnCameraVoiceoverToCharacterSpeech(
+          visualScene1,
+          hookCharacterSpeech,
+          hookVoiceover
+        ));
         if (!pspBridge) {
           pspBridge = `Luc nay ${defaults.appName} la buoc xu ly dung van de vua lo ra.`;
         }
@@ -2015,7 +2099,7 @@ export function normalizeCreativeBriefOutput(
           id,
           title: scriptTitle,
           duration: defaults.duration,
-          creativeType: creativeTypeForTrack(normalizeBriefTrack(track)),
+          creativeType: creativeTypeForTrackWithLock(normalizeBriefTrack(track), defaults.visualType),
           meta: {
             builderVersion: 'creative_idea_engine_v2_1',
             pillar,
@@ -2397,10 +2481,38 @@ export function parseJsonLoose(text: string) {
 
 export function normalizeIdeaOutput(
   input: unknown,
-  defaults: { duration: string; appName: string; pillar?: string }
+  defaults: {
+    duration: string;
+    appName: string;
+    pillar?: string;
+    visualType?: string;
+    coreUser?: string;
+    emotion?: string;
+    psp?: string;
+  }
 ): Record<string, unknown> {
   const item = readRecord(input);
   const framework = readRecord(item.framework);
+  const hook = normalizeSection(item.hook, { includeViewerFields: true, includeDurationSeconds: true });
+  const body = normalizeSection(item.body);
+  const cta = normalizeSection(item.cta, { includeEndCard: true });
+  const enforceSectionVisual = (section: Record<string, unknown>) => {
+    const visual = enforceSelectedVisualFormatInScene(readText(section.visual), defaults.visualType);
+    const script = enforceSelectedVisualFormatInScene(readText(section.script), defaults.visualType);
+    const speech = moveOnCameraVoiceoverToCharacterSpeech(
+      visual || script,
+      readText(section.characterSpeech),
+      readText(section.voiceover, readText(section.voice))
+    );
+    return {
+      ...section,
+      visual,
+      script: script || visual,
+      characterSpeech: speech.characterSpeech,
+      voiceover: speech.voiceover,
+      voice: speech.voiceover || speech.characterSpeech,
+    };
+  };
   const rawTitle = readText(item.title, `Y tuong ${defaults.appName}`);
   const titleContext = [
     rawTitle,
@@ -2413,19 +2525,19 @@ export function normalizeIdeaOutput(
     id: item.id ?? 1,
     title: coerceVietnameseScriptTitle(rawTitle, titleContext, 0),
     duration: readText(item.duration, defaults.duration),
-    creativeType: readText(item.creativeType, 'UGC'),
+    creativeType: normalizeFrameworkVisualFormat(defaults.visualType) || readText(item.creativeType, 'UGC'),
     meta: normalizeMeta(item.meta, { pillar: defaults.pillar }),
     selectedFilters: readRecord(item.selectedFilters),
     framework: {
-      coreUser: readText(framework.coreUser, 'General viewer'),
-      painpoint: readText(framework.painpoint, defaults.pillar || 'General user friction'),
-      emotion: readText(framework.emotion, 'Create a clear viewer emotion'),
-      psp: readText(framework.psp, defaults.appName),
+      coreUser: readText(defaults.coreUser, readText(framework.coreUser, 'General viewer')),
+      painpoint: readText(defaults.pillar, readText(framework.painpoint, 'General user friction')),
+      emotion: readText(defaults.emotion, readText(framework.emotion, 'Create a clear viewer emotion')),
+      psp: readText(defaults.psp, readText(framework.psp, defaults.appName)),
     },
     explanation: readText(item.explanation),
-    hook: normalizeSection(item.hook, { includeViewerFields: true, includeDurationSeconds: true }),
-    body: normalizeSection(item.body),
-    cta: normalizeSection(item.cta, { includeEndCard: true }),
+    hook: enforceSectionVisual(hook),
+    body: enforceSectionVisual(body),
+    cta: enforceSectionVisual(cta),
   };
 }
 
