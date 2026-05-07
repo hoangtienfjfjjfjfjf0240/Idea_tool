@@ -171,6 +171,27 @@ function buildLocalizedFallbackAnglesFromPainpoints(painpoints: string[], output
   ]);
 }
 
+function hasGermanAngleCue(value: string) {
+  const normalized = normalizeCompareText(value);
+  return /\b(?:ich|mich|mir|mein|meine|beim|nach|warum|dachte|merkte|wollte|brauchte|nicht|ohne|aber|blutdruck|messen|messgeraet|gerat|wartezimmer|spaziergang|fruhstuck|reisen)\b/.test(normalized);
+}
+
+function hasSystemEnglishAngleCue(value: string) {
+  const normalized = normalizeCompareText(value);
+  return /\b(?:angle type|auto angle|required angle type|this angle must|must look visually different|choose one|operator angle request|app context)\b/.test(normalized);
+}
+
+function isInvalidGeneratedAngle(value: string) {
+  return hasGermanAngleCue(value) || hasSystemEnglishAngleCue(value);
+}
+
+function cleanAngleOptions(values: string[]) {
+  return values
+    .map(value => value.trim())
+    .filter(Boolean)
+    .filter(value => !isInvalidGeneratedAngle(value));
+}
+
 function isGenericImportedTrendAnalysis(analysis?: Partial<ImportedTrendAnalysis> | null) {
   if (!analysis) return true;
 
@@ -412,7 +433,7 @@ function buildStrategicAutoAngles(brief: CompactCreativeBrief | null, app: AppPr
     return fallbackAngles.map((angle, index) => {
       const detectedType = normalizeAngleTypeLabel(angle);
       const requiredType = detectedType || (!hasRequiredType && index === 0 ? defaultPlan[0] : defaultPlan[index]);
-      return `ANGLE TYPE ${requiredType}: ${angle}. This angle must look visually different from other angles.`;
+      return `Góc ${requiredType}: ${angle}. Phải khác rõ các góc còn lại về tình huống mở đầu và hành động đầu tiên.`;
     });
   }
 
@@ -427,9 +448,9 @@ function buildStrategicAutoAngles(brief: CompactCreativeBrief | null, app: AppPr
     const lockedType = locks.get(index);
     const plannedType = lockedType || defaultPlan.find(type => !used.has(type)) || defaultPlan[index % defaultPlan.length];
     used.add(plannedType);
-    return `AUTO ANGLE ${index + 1}/${requestedCount} - REQUIRED angle_type: ${plannedType}. ` +
-      `Choose one ${plannedType} angle from the brief and pain point. Do not repeat other AUTO ANGLE slots. ` +
-      `Operator angle request: ${brief?.angleRequest || 'AI chooses the strongest distinct angles'}. App context: ${app.name} / ${app.category}.`;
+    return `Góc ${index + 1}/${requestedCount} - angle_type bắt buộc: ${plannedType}. ` +
+      `Chọn một góc ${plannedType} bám sát painpoint, không lặp với các góc khác. ` +
+      `Yêu cầu thêm: ${brief?.angleRequest || 'AI chọn góc khác biệt mạnh nhất'}. App: ${app.name} / ${app.category}.`;
   });
 }
 
@@ -1118,7 +1139,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const values = raw
               .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
               .map(item => item.trim());
-            return [key, key === 'visualType' ? sanitizeVisualTypes(values) : values] as const;
+            return [key, key === 'visualType' ? sanitizeVisualTypes(values) : key === 'angle' ? cleanAngleOptions(values) : values] as const;
           })
           .filter(([, values]) => values.length > 0)
       ) as Partial<FilterState>;
@@ -1154,7 +1175,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const loadOptions = async () => {
     const fullOptions = await dbService.getFilterOptions(app);
-    setOptions(prev => mergeOptionSelections({ ...fullOptions, visualType: GLOBAL_VISUAL_TYPES }, prefillFilters || filters));
+    const safeFullOptions = {
+      ...fullOptions,
+      angle: cleanAngleOptions(fullOptions.angle || []),
+    };
+    const safeSelectedFilters = {
+      ...(prefillFilters || filters),
+      angle: cleanAngleOptions((prefillFilters || filters).angle || []),
+    };
+    setOptions(prev => mergeOptionSelections({ ...safeFullOptions, visualType: GLOBAL_VISUAL_TYPES }, safeSelectedFilters));
     return;
     // Merge market presets with any DB options
     const marketPresets = ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'];
@@ -2581,6 +2610,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
     const outputLanguage = 'Vietnamese';
     setGeneratingAngles(true);
+    setFilters(prev => ({ ...prev, angle: cleanAngleOptions(prev.angle || []) }));
     try {
       const res = await authenticatedFetch('/api/generate-ideas', {
         method: 'POST',
@@ -2600,26 +2630,29 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const result = await res.json();
       if (res.ok && result.success && result.angles?.length > 0) {
         // Add generated angles to options
-        const newAngles = result.angles as string[];
+        const newAngles = cleanAngleOptions(result.angles as string[]);
+        if (newAngles.length === 0) {
+          throw new Error('Generated angles were not Vietnamese-safe.');
+        }
         setOptions(prev => {
-          const existing = prev.angle || [];
+          const existing = cleanAngleOptions(prev.angle || []);
           const merged = [...new Set([...existing, ...newAngles])];
           return { ...prev, angle: merged };
         });
       } else {
         // Fallback: generate angles locally from painpoints
-        const fallbackAngles = buildLocalizedFallbackAnglesFromPainpoints(selectedPainpoints, outputLanguage);
+        const fallbackAngles = cleanAngleOptions(buildLocalizedFallbackAnglesFromPainpoints(selectedPainpoints, outputLanguage));
         setOptions(prev => {
-          const existing = prev.angle || [];
+          const existing = cleanAngleOptions(prev.angle || []);
           const merged = [...new Set([...existing, ...fallbackAngles])];
           return { ...prev, angle: merged };
         });
       }
     } catch {
       // Fallback on error
-      const fallbackAngles = buildLocalizedFallbackAnglesFromPainpoints(filters.painPoint || [], outputLanguage);
+      const fallbackAngles = cleanAngleOptions(buildLocalizedFallbackAnglesFromPainpoints(filters.painPoint || [], outputLanguage));
       setOptions(prev => {
-        const existing = prev.angle || [];
+        const existing = cleanAngleOptions(prev.angle || []);
         const merged = [...new Set([...existing, ...fallbackAngles])];
         return { ...prev, angle: merged };
       });
