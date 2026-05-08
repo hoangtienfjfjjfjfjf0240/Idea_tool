@@ -2142,7 +2142,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       hookText && !hookVisualIncludesCopy ? `Text hiện: "${hookText}"` : '',
       hookSpeech.characterSpeech ? `Lời nhân vật: "${hookSpeech.characterSpeech}"` : '',
       hookSpeech.voiceover && !hookVisualIncludesCopy ? `Voiceover: "${hookSpeech.voiceover}"` : '',
-      hookVoiceVi ? `Hook voice VI: "${hookVoiceVi}"` : '',
+      hookVoiceVi ? `Dịch hook voice: "${hookVoiceVi}"` : '',
       hookVariants ? `Biến thể hook:\n${hookVariants}` : '',
       '',
       bodyVisual ? `Diễn biến (Body): ${bodyVisual}` : 'Diễn biến (Body):',
@@ -2319,8 +2319,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   const isProbablyVietnameseHookLine = (value: string) => {
+    const hasVietnameseDiacritics = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(value);
+    if (hasVietnameseDiacritics) return true;
     const normalized = normalizeCompareText(value);
-    const vietnameseTokens = normalized.match(/\b(?:toi|minh|ban|nguoi|khong|co|la|nay|do|voi|vi|luc|khi|da|kiem|tra|huyet|ap|nhip|tim|con|so|lo|lang|dang|so|binh|tinh|dien|thoai|ngay|mot|minh|cam|thay|kiem|tra)\b/g) || [];
+    const vietnameseTokens = normalized.match(/\b(?:toi|minh|ban|nguoi|anh|chi|ong|ba|ay|khong|co|la|nay|do|voi|vi|luc|khi|da|kiem|tra|huyet|ap|nhip|tim|con|so|lo|lang|dang|so|binh|tinh|dien|thoai|ngay|mot|cam|thay|nghi|met|moi|bo|qua|nho|hon|khac|cau|chuyen)\b/g) || [];
     return vietnameseTokens.length >= 2;
   };
 
@@ -3711,7 +3713,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
                         {hookSpeech.voiceover && !hookPreviewIncludesCopy && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
                         {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
-                        {hookVoiceVi && <p className="text-gray-800 whitespace-pre-line">[HOOK VOICE VI] {hookVoiceVi}</p>}
+                        {hookVoiceVi && <p className="text-gray-800 whitespace-pre-line">[DỊCH HOOK VOICE] {hookVoiceVi}</p>}
                         {hookText && !hookPreviewIncludesCopy && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>

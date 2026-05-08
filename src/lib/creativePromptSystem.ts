@@ -1501,24 +1501,24 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
   if (lockedVisualType === 'Motion Graphic') {
     const hasOffFormatCue = /\b(?:podcast|interview|talk show|host|guest|speaker\s*[12]|two people|2 people|two men|two women|living room|sofa|armchair|camera iphone|eye line|doi thoai|tro chuyen|phong van|hai nguoi|2 nguoi|nguoi that|dien vien|nhan vat)\b/.test(normalizedScene);
     if (hasOffFormatCue) {
-      return 'Motion Graphic 2D thuan: khung app UI/phone screen, typography lon, icon flat, arrows, waveform/heart-rate line va animated chart/data callout chuyen dong theo beat. Khong co podcast, host/speaker, nguoi that, sofa hay phong ghi hinh.';
+      return 'Motion Graphic 2D thuần: khung app UI/phone screen, typography lớn, icon flat, arrows, waveform/heart-rate line và animated chart/data callout chuyển động theo beat. Không có podcast, host/speaker, người thật, sofa hay phòng ghi hình.';
     }
   }
 
   if (lockedVisualType === '2D Animation' && !/\b(?:2d|animation|animated|minh hoa|hoat hinh|vector|cartoon)\b/.test(normalizedScene)) {
-    return `Trong khung 2D animation minh hoa, ${scene}`;
+    return `Trong khung 2D animation minh họa, ${scene}`;
   }
   if (lockedVisualType === '3D Animation' && !/\b(?:3d|cgi|render|animated|animation)\b/.test(normalizedScene)) {
     return `Trong khung 3D animation/render, ${scene}`;
   }
   if (lockedVisualType === 'Motion Graphic' && !/\b(?:motion graphic|2d motion|kinetic typography|animated ui|ui motion|shape animation|icon animation|infographic|typography|data visual|animated chart|bieu do)\b/.test(normalizedScene)) {
-    return `Theo phong cach Motion Graphic 2D: typography/shape/icon/UI chuyen dong, ${scene}`;
+    return `Theo phong cách Motion Graphic 2D: typography/shape/icon/UI chuyển động, ${scene}`;
   }
   if (lockedVisualType === 'POV' && !/\b(?:pov|goc nhin|screen recording|man hinh|over the shoulder)\b/.test(normalizedScene)) {
-    return `Theo goc POV/screen-perspective, ${scene}`;
+    return `Theo góc POV/screen-perspective, ${scene}`;
   }
   if (lockedVisualType === 'UGC' && !/\b(?:ugc|nguoi that|doi thuong|cam tay|handheld|selfie)\b/.test(normalizedScene)) {
-    return `Theo phong cach UGC doi thuong, ${scene}`;
+    return `Theo phong cách UGC đời thường, ${scene}`;
   }
   return scene;
 }
@@ -1662,6 +1662,7 @@ function createBriefValidationErrors(input: {
   hookCharacterSpeech?: string;
   hookVoiceover?: string;
   hookTextOverlay?: string;
+  hookVoiceVi?: string;
   emotionJourney?: string;
   bodyMotivationPattern?: string;
   ctaFrictionReducer?: string;
@@ -1766,8 +1767,14 @@ function createBriefValidationErrors(input: {
   const hookCharacterSpeech = readSpeechText(input.hookCharacterSpeech);
   const hookVoiceover = readSpeechText(input.hookVoiceover);
   const hookTextOverlay = readText(input.hookTextOverlay);
+  const hookVoiceVi = readText(input.hookVoiceVi);
   if (!hookCharacterSpeech && !hookVoiceover && !hookTextOverlay) {
     errors.push('hook needs hook_character_speech, hook_voiceover, or hook_text_overlay');
+  }
+  if (!hookVoiceVi) {
+    errors.push('hook_voice_vi is required for Vietnamese hook voice translation');
+  } else if (!looksVietnamese(hookVoiceVi)) {
+    errors.push('hook_voice_vi must be Vietnamese, not the original market copy');
   }
   if (hookCharacterSpeech && !visualMentionsVisibleSpeaker(input.visualScene1)) {
     errors.push('hook_character_speech requires a clearly visible speaker in visual_scene_1');
@@ -2113,6 +2120,7 @@ export function normalizeCreativeBriefOutput(
           hookCharacterSpeech,
           hookVoiceover,
           hookTextOverlay,
+          hookVoiceVi,
           emotionJourney,
           bodyMotivationPattern,
           ctaFrictionReducer,
