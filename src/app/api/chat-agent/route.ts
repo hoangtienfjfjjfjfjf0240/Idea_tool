@@ -20,7 +20,6 @@ const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
-    'gemini-3.1-flash': 'gemini/gemini-3.1-flash',
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
     'gemini-3-pro': 'gemini/gemini-3-pro-preview',

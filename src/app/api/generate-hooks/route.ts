@@ -19,7 +19,6 @@ const GEMINI3_HOOK_MODEL = 'gemini/gemini-3-pro-preview';
 
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
-    'gemini-3.1-flash': 'gemini/gemini-3.1-flash',
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
     'gemini-3-pro': GEMINI3_HOOK_MODEL,
@@ -484,7 +483,7 @@ Schema:
       const text = await askAI(prompt, {
         model,
         temperature: 0.55,
-        max_tokens: Math.max(1200, requestedQuantity * 520),
+        max_tokens: Math.max(2800, requestedQuantity * 1200),
         useCreativePersona: false,
         priority: 'high',
         timeoutMs: modelTimeoutMs,
