@@ -268,20 +268,22 @@ If the selected Pain Point is abstract, rewrite it internally into: Who + Where 
 ## INPUT GRAMMAR - 6 REQUIRED CONCEPT STRUCTURES
 Use this grammar whenever you interpret, rewrite, or generate framework inputs.
 
-1. CORE USER = Who + What they are thinking + What they are doing + Why they have not solved it + What makes them act.
+1. CORE USER = TARGET VIEWER/AUDIENCE: Who + What they are thinking + What they are doing + Why they have not solved it + What makes them act.
 - Bad: "Users 25-45 who like technology."
 - Good: "Female 40-50, iPhone, US. Healthy but asks 'am I okay?' after reading health posts on Facebook. Googles symptoms at night. Busy, avoids doctor visits. Acts when she sees a worrying number about herself."
 - Health: state "not a patient" when relevant. Utility: include tech-savvy level. AI: name the main social platform.
+- This is who the ad is for. It is not automatically the exact age, identity, or mood of every on-screen character/talent.
 
 2. PAIN POINT = Who + Where + Doing What + What Goes Wrong.
 - It must be a filmable scene, not a feeling.
 - Core User + PSP -> Pain Points -> Angles -> Ideas. Pain points must be large and app-relevant enough to generate strong angles.
 - Sweet spot: 3 pillars.
 
-3. EMOTION TRIGGER = Hook Emotion -> Body Emotion -> CTA Emotion, and all 3 must be different.
+3. EMOTION TRIGGER = VIEWER EMOTION: Hook Emotion -> Body Emotion -> CTA Emotion, and all 3 must be different.
 - Health default: Fear -> Curiosity -> Relief.
 - Utility default: Frustration -> Hope -> Satisfaction.
 - AI default: Curiosity -> Amazement -> Excitement.
+- This is the feeling the video should create in the viewer, not merely the character's facial emotion.
 - Standard emotion drivers available for every app:
 ${GLOBAL_EMOTION_PROMPT_GUIDE}
 
@@ -321,6 +323,8 @@ Category priority:
 ACT 1 Hook, Sec 0-5: use at most 2 scenes/camera angles. Each scene/camera angle must last at least 2.5 seconds.
 Scene 1 (0-2.5s): VISUAL SHOCK. First frame stops the scroll and depicts the pain point situation. No logo, black screen, greeting, or text-only setup.
 Scene 2 (2.5-5s): CONTEXT + CURIOSITY GAP. Text overlay appears, VO can begin, and the open loop bridges to the body. Text and VO complement each other, never duplicate.
+- DIRECTNESS: if the selected PSP/painpoint contains a concrete metric/feature, name it in the first hook beat. For blood pressure, say "blood pressure" early; for heart rate, say "heart rate" early. Do not start with vague copy like "this number" or "something felt off" before the viewer knows the topic.
+- SETTING: do not default to kitchen, living room, sofa, or generic apartment. The setting must come from the selected angle/visual/painpoint. TV/editor/news/fact angles should use studio, newsroom, desk, lower-third, panel, chart, or infographic execution.
 
 ACT 2 Body, Sec 5-18: tension plus payoff. Choose one body motivation pattern: Reveal, Demo-Story, Escalate, Compare, Transform. The body must not be just "show app features".
 
@@ -433,9 +437,10 @@ export const PROMPT_SYSTEM_BUILDER_RULES = CREATIVE_PROMPT_RULES;
 export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS - V2.1
 - Treat the selected Core User, Emotion, Visual/Theme, PSP, and Pain Point as locked strategy inputs.
 - The UI may provide broad labels. Internally convert them into a shootable V2.1 brief before writing.
-- Core User grammar: who + what they think + what they do + why unsolved + what makes them act.
+- Core User grammar: target viewer/audience + what they think + what they do + why unsolved + what makes them act. Do not treat it as a literal casting requirement unless asked.
 - Keep the selected Pain Point exact, but express it as a specific situation.
 - Pain Point grammar: who + where + doing what + what goes wrong. It must come from Core User + PSP.
+- Emotion grammar: viewer emotion to provoke, not only character mood.
 - Angle grammar: one angle_type, one distinct market/framework approach, and one visually different execution.
 - Market grammar: geo + output language + cultural references to use/avoid.
 - Notes grammar: max 3-5 bullets; DO, DON'T, Data, Constraint only.
@@ -444,6 +449,8 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - Motion Graphic means 2D motion graphics: animated typography, flat vector shapes, icons, charts, app UI panels, arrows, labels, data callouts, and infographic transitions. It is not podcast/interview, not live-action, not 3D render, and not full 2D character/cartoon scene animation.
 - Angle/reference patterns must obey the selected Visual/Theme. If an angle suggests podcast/interview/reaction but Visual/Theme is Motion Graphic, translate that angle into UI/data/typography/icon motion instead of using people or speakers.
 - Social patterns such as Trend, Challenge, Interview, Split Screen, or Social Proof are hook/story patterns, not Visual/Theme formats.
+- Direct feature language: when the selected PSP/painpoint names a concrete metric/feature, hook_text_overlay or hook_vo must name it in the first beat instead of opening with vague "this number/this thing" wording.
+- Scene selection must follow Angle/Visual/Painpoint. Do not default to kitchen/living room/sofa/generic apartment; TV/editor/news/fact angles should use studio/newsroom/desk/lower-third/chart/infographic execution.
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
 - If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines. hook_vo stays empty unless there is a true off-camera narrator.
 - Off-camera narration belongs in hook_vo/script_vo. On-camera character lines never belong in hook_vo. On-screen copy belongs in hook_text_overlay/text_overlays.

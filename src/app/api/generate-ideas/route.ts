@@ -302,10 +302,11 @@ function buildV7ExecutionContract(input: {
 - User direction: ${input.ideaDescription || 'None'}
 
 Hard V7 requirements:
-- First, silently digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Painpoint into a shootable brief. Do not output the brief.
+- First, silently digest the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Painpoint into a shootable brief. Core User means target viewer/audience, not automatically the on-screen talent age. Emotion Trigger means the emotion to create in the viewer, not merely the character's emotion. Do not output the brief.
 - Ignore old rules about hook word count, hook 3-5s, 12-word hooks, and short one-line hook templates.
 - The direct opening is the first stop-scroll beat: show consequence, shock, or an unusual visual at second 0.1.
 - The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
+- Directness rule: if the feature/painpoint contains a concrete metric or feature (blood pressure, heart rate, storage, calories, etc.), that exact metric/feature must appear in hook_text_overlay or hook_vo within the first 0-3 seconds. Do not hide it behind vague lines like "a weird number", "this matters", or "something felt off".
 - Use the selected painpoint as the target of attack. Convert it into a concrete first-3-second situation, but do not soften it into a generic symptom.
 - All Text/Voice must be written in ${input.copyLanguage}. Visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
@@ -317,11 +318,12 @@ Hard V7 requirements:
 
 function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested output language') {
   return `Generate ${quantity} V7 production-ready short-form ad ideas for the selected filter combination.
-- Before writing JSON, silently convert the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Do not output that brief.
+- Before writing JSON, silently convert the selected Core User, Emotion Trigger, Visual/Theme, PSP, and Pain Point into one shootable creative brief. Core User is the target viewer; Emotion Trigger is the viewer response to provoke. Do not treat them as literal facts about every on-screen character. Do not output that brief.
 - The selected Pain Point must appear as a specific first-3-second situation, not a label.
 - Each idea must follow: Concept Name -> Market & User Adaptation -> Direct Opening (0-3s) -> Solution Pivot (3-6s) -> Proof/CTA continuation.
 - The first frame must be a pattern interruption, not setup.
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
+- The selected metric/feature must be named early. For example, if the app/PSP is blood pressure, use direct copy like "Your iPhone can check blood pressure" or "Blood pressure on iPhone" in the first hook beat, while staying compliant.
 - If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
 - Script title/name must be Vietnamese. Write user-facing copy in ${copyLanguage}: hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
 - For visual_scene rows, write the scene/action/camera prose in Vietnamese. Only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside the scene are in ${copyLanguage}.
@@ -506,6 +508,30 @@ function validateHealthMetricLockOutput(
   return [
     `health metric must stay on ${getHealthMetricPromptLabel(metricLock)}; found ${conflictingMetrics.map(getHealthMetricPromptLabel).join(', ')}`,
   ];
+}
+
+function validateHealthMetricDirectHookOutput(
+  item: Record<string, unknown>,
+  metricLock: HealthMetricKey | null | undefined
+): string[] {
+  if (!metricLock) return [];
+
+  const hook = asRecord(item.hook);
+  const meta = asRecord(item.meta);
+  const hookText = [
+    asText(meta.hookPrimary),
+    asText(meta.hook_primary),
+    asText(hook.textOverlay),
+    asText(hook.text_overlay),
+    asText(hook.text),
+    asText(hook.voiceover),
+    asText(hook.voice),
+    asText(hook.characterSpeech),
+  ].join(' ');
+
+  return getHealthMetricsInText(hookText).includes(metricLock)
+    ? []
+    : [`hook copy must name ${getHealthMetricPromptLabel(metricLock)} directly in the first beat`];
 }
 
 function isInteriorDecorContext(context: {
@@ -700,6 +726,7 @@ function normalizeAndValidateIdeas(
     const errors = [
       ...validateIdeaOutput(normalized),
       ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
+      ...validateHealthMetricDirectHookOutput(normalized, context.metricLock),
       ...validateInteriorDecorClarityOutput(normalized, context),
     ];
 
@@ -1159,9 +1186,9 @@ function buildBatchDiversityBlock(quantity: number, angle: string, angleIndex: n
     `Idea 8: ${lockedVisualType}, trend structure nhung bien thanh UI/data motion, khong dung interview/podcast.`,
   ];
   const generalLanes = [
-    `Idea 1: ${lockedVisualType}, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.`,
-    `Idea 2: ${lockedVisualType}, phản ứng/social interruption có người hoặc vật thứ hai làm tình huống đổi nhịp.`,
-    `Idea 3: ${lockedVisualType}, reveal bất ngờ bằng blocking object hoặc không gian khác hẳn idea 1.`,
+    `Idea 1: ${lockedVisualType}, mở bằng một hành động cá nhân đang bị kẹt giữa chừng trong bối cảnh đúng angle.`,
+    `Idea 2: ${lockedVisualType}, phản ứng/social interruption có người hoặc vật thứ hai làm tình huống đổi nhịp trong bối cảnh khác idea 1.`,
+    `Idea 3: ${lockedVisualType}, reveal bất ngờ bằng blocking object hoặc không gian khác hẳn idea 1 và 2.`,
     `Idea 4: ${lockedVisualType}, texture/oddly satisfying motion tạo cảm giác dừng scroll.`,
     `Idea 5: ${lockedVisualType}, comment-reply/social proof nhưng vẫn giữ đúng production format đã chọn.`,
     `Idea 6: ${lockedVisualType}, challenge/câu đố 1 nhịp trong cùng format visual.`,
@@ -1195,6 +1222,7 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Không có 2 hook.voice cùng ý nói.
 - Không dùng POV/UGC/Motion Graphic như creativeType nếu khác "${lockedVisualType}"; chỉ dùng như hook/story pattern nếu phù hợp.
 - Nếu Visual/Theme là Motion Graphic, không được dùng podcast/interview/host/guest/Speaker 1/Speaker 2/người thật/phòng khách/sofa; phải là 2D typography, icon, UI panel, chart, data callout.
+- Không default về bếp/phòng khách/sofa/căn hộ nếu angle/visual không yêu cầu. Với style truyền hình/biên tập viên, dùng studio/newsroom/desk/panel/infographic set; với Fact/Comparison/Demo, dùng chart/UI/desk/clinic waiting/office/outdoor errand theo logic.
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
@@ -2116,12 +2144,13 @@ function buildSelectedStrategyLockBlock(input: {
           : '- UGC execution: every visual_scene should feel like real social footage. Do not switch to animation or motion graphic as the main format.';
 
   return `## SELECTED FILTER LOCK - MUST FOLLOW
-- Core user is locked: ${coreUser}. Visuals must match this audience's age/gender/market context and must not invent a different persona.
+- Core user is locked as TARGET VIEWER/AUDIENCE: ${coreUser}. This tells who the ad is for, what they think/do, and why they act. Do not automatically make every on-screen person the same age/demographic unless the brief explicitly asks. Choose talent/objects/scenes that make this viewer stop scrolling.
 - Market/culture is locked: ${market}. Use local setting, home/work details, skin tone/hair/clothing cues, props, and behavior that fit this market. Copy language is still ${input.outputLanguage}; market does not change visual prose language.
-- Emotion trigger is locked: ${emotion}. The first hook beat must visibly trigger this emotion; do not drift to a calmer or unrelated emotion.
+- Emotion trigger is locked as VIEWER RESPONSE: ${emotion}. The hook should make the viewer feel this emotion. Do not treat it as only the character's mood.
 - Visual/Theme is locked: ${lockedVisualType}. Every idea in this batch must have creativeType exactly "${lockedVisualType}".
 ${visualExecutionNote}
 - The selected Angle is only the strategic angle. It must not override Visual/Theme. If an angle/reference implies podcast/interview/reaction but Visual/Theme is Motion Graphic, translate it into typography, UI, icons, charts, and data motion instead.
+- Scene selection must follow the selected Angle/Visual. Do not default to kitchen, living room, sofa, or generic apartment unless the selected painpoint or angle requires it. For TV/editor/news/fact angles, use newsroom/studio desk/lower-third/panel/chart/infographic environments.
 - Diversity means different angle_type, first action, prop/blocker, composition, reveal, and wording inside "${lockedVisualType}". Diversity does NOT mean changing the selected Visual/Theme format.`;
 }
 
@@ -2430,6 +2459,7 @@ Generate exactly ${input.quantity} production-ready Meta vertical video ad ideas
 The UI already imported the selected chips/config. Treat the BRIEF below as the source of truth.
 If any chip is abstract (for example a disease, fear, trend, or broad concern), silently sharpen it into a specific filmable situation before writing the idea. Do not reject the brief for being short.
 Do not replace selected product metric or PSP with a nearby feature. If the PSP says blood pressure, keep blood pressure; if it says heart rate, keep heart rate.
+Core user is the target viewer/audience for the ad, not automatically the on-screen character's exact age or identity. Emotion trigger is the viewer emotion the hook must create, not just the mood of a character in the scene.
 For health/wellness apps, avoid banned medical claims: diagnose, cure, treat, detect disease, replace doctor. Use safe words like track, check, monitor, reference, wellness.
 For health/wellness apps, if the Operator note asks for before/after, adapt it as before checking/logging vs after seeing an app number, reference, chart, or trend screen. Never make before/after about body change, disease outcome, symptom improvement, recovery, or prevention.
 If Angle to test starts with "AUTO ANGLE", choose a genuinely distinct strongest angle for that slot from the brief. Do not output a generic angle name.
@@ -2439,6 +2469,7 @@ Angle planning rule:
 - Across AUTO ANGLE slots, angle_type must be different. Do not create three videos that only change wording.
 - Health/wellness must include/prefer Fact. Utility must include/prefer Comparison or Demo. AI apps must include/prefer Trend.
 - Test: if removing the angle name makes the videos look similar, rewrite the angle.
+- Scene test: if the angle says TV/editor/news/fact, the setting must feel like studio/newsroom/desk/panel/lower-third/chart/infographic. Do not fall back to kitchen/living room/sofa unless the painpoint explicitly requires it.
 ${operatorIdeaBriefBlock}
 ${selectedStrategyLockBlock}
 Operator note priority:
@@ -2454,6 +2485,7 @@ User-facing copy language rule:
 - Do NOT write the whole visual_scene in ${input.outputLanguage}. Only the audience-facing quoted copy is ${input.outputLanguage}.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
+- hook_text_overlay or hook_vo must name the selected concrete metric/feature in the first hook beat when one exists. Use "blood pressure" directly for blood pressure, "heart rate" directly for heart rate, etc.; do not rely on vague phrases like "this number" or "something changed" before the viewer knows the topic.
 
 Timeline output rule:
 ${timelineRule}
@@ -2796,7 +2828,9 @@ Chỉ trả về JSON array string. Không markdown.`;
         GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS,
         Math.min(timeoutMs, getRemainingAiBudgetMs())
       );
-      const metricLock = getPrimarySolutionMetric(solutionValues);
+      const metricLock = getPrimarySolutionMetric(
+        solutionValues.length ? solutionValues : [...painPointValues, ...angleValues]
+      );
       const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
         solutionValues,
         angleValues,
@@ -2871,8 +2905,10 @@ Chỉ trả về JSON array string. Không markdown.`;
 - User direction: ${ideaDescription || 'None'}
 
 Hard requirements:
+- Core user is the target viewer/audience, not a required literal on-screen character profile. Emotion trigger is the feeling to create in the viewer, not only the character's emotion.
 - Do not reduce the pain point to a broad symptom. The hook and visual_scene_1 must include at least 2 concrete anchors from the selected pain point/angle, such as trigger moment, body signal, suspected cause, location, object, or user fear.
 - The first 3 seconds must show WHY this user cares now, not just that the symptom exists.
+- The first 3 seconds must name the selected concrete metric/feature as early as possible. If the selected PSP is blood pressure, say blood pressure directly in hook_text_overlay or hook_vo; do not use vague substitutes like "this number" without naming it.
 - visual_scene_2 must show the selected PSP/app action solving or organizing the same problem. Do not jump to a generic app demo.
 - visual_scene_1/2/3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 must obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; each scene/camera angle >=2.5s.
@@ -2888,13 +2924,15 @@ Hard requirements:
         const v21ExecutionOverrideBlock = `
 ## CREATIVE IDEA ENGINE V2.1 OVERRIDE - APPLIES TO ALL APPS
 - Use the V2.1 output fields, not legacy hook_primary-first fields.
-- Core User must be interpreted as: Who + what they think + what they do + why unsolved + what makes them act.
+- Core User must be interpreted as TARGET VIEWER: Who + what they think + what they do + why unsolved + what makes them act. It is not automatically the age/emotion of the on-screen character.
+- Emotion Trigger must be interpreted as VIEWER EMOTION to provoke through the hook, not merely the character's mood.
 - Pain Point must be a SITUATION: Who + Where + Doing What + What Goes Wrong.
 - Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
 - Angle must be one angle_type + one market/framework approach + one visually different execution.
 - If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
 - visual_scene_1 must follow the Hook Timing Rule below, not a fixed 5s template.
 - Scene 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
+- Scene 1 must not default to kitchen/living room/sofa/apartment. Choose the setting from the selected angle/visual/painpoint; TV/editor/fact angles should look like studio/newsroom/desk/panel/chart/infographic execution.
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
 - hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.
@@ -3143,11 +3181,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             hookDurationSeconds: requestedHookDuration,
             visualType,
           }).map(item => sanitizeMedicalClaimsInIdea(item)).filter((item, lenientIndex) => {
-            const metricErrors = validateHealthMetricLockOutput(item, metricLock, appName);
+            const metricErrors = [
+              ...validateHealthMetricLockOutput(item, metricLock, appName),
+              ...validateHealthMetricDirectHookOutput(item, metricLock),
+            ];
             if (metricErrors.length > 0) {
               validation.invalidReasons.push(`Soft metric warning P0-A${Math.max(angleIndex - 1, 0)}-I${requestStartIndex + plan.batchStartIndex + lenientIndex}: ${metricErrors.join('; ')}`);
             }
-            const errors = validateIdeaOutput(item);
+            const errors = [...validateIdeaOutput(item), ...metricErrors];
             if (errors.length > 0) {
               lenientRejectedReasons.push(`Lenient P0-A${Math.max(angleIndex - 1, 0)}-I${requestStartIndex + plan.batchStartIndex + lenientIndex}: ${errors.join('; ')}`);
             }
@@ -3611,7 +3652,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const totalVariations = Number(config.totalVariations || quantity);
     const angleIndex = Number(config.angleIndex || 1);
     const totalAngles = Number(config.totalAngles || 1);
-    const metricLock = getPrimarySolutionMetric(solutionValues);
+    const metricLock = getPrimarySolutionMetric(
+      solutionValues.length ? solutionValues : [...painPointValues, ...angleValues]
+    );
     const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
       solutionValues,
       angleValues,
@@ -3644,8 +3687,10 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
 - User direction: ${ideaDescription || 'None'}
 
 Hard requirements:
+- Core user is the target viewer/audience, not a required literal on-screen character profile. Emotion trigger is the feeling to create in the viewer, not only the character's emotion.
 - Do not reduce the pain point to a broad symptom. The hook and visual_scene_1 must include at least 2 concrete anchors from the selected pain point/angle, such as trigger moment, body signal, suspected cause, location, object, or user fear.
 - The first 3 seconds must show WHY this user cares now, not just that the symptom exists.
+- The first 3 seconds must name the selected concrete metric/feature as early as possible. If the selected PSP is blood pressure, say blood pressure directly in hook_text_overlay or hook_vo; do not use vague substitutes like "this number" without naming it.
 - visual_scene_2 must show the selected PSP/app action solving or organizing the same problem. Do not jump to a generic app demo.
 - visual_scene_1/2/3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 must obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; each scene/camera angle >=2.5s.
@@ -3661,13 +3706,15 @@ Hard requirements:
     const v21ExecutionOverrideBlock = `
 ## CREATIVE IDEA ENGINE V2.1 OVERRIDE - APPLIES TO ALL APPS
 - Use the V2.1 output fields, not legacy hook_primary-first fields.
-- Core User must be interpreted as: Who + what they think + what they do + why unsolved + what makes them act.
+- Core User must be interpreted as TARGET VIEWER: Who + what they think + what they do + why unsolved + what makes them act. It is not automatically the age/emotion of the on-screen character.
+- Emotion Trigger must be interpreted as VIEWER EMOTION to provoke through the hook, not merely the character's mood.
 - Pain Point must be a SITUATION: Who + Where + Doing What + What Goes Wrong.
 - Pain Point must be derived from Core User + PSP, app-relevant, and filmable in 3 seconds.
 - Angle must be one angle_type + one market/framework approach + one visually different execution.
 - If this app is Health, include/prefer Fact angle. If Utility, include/prefer Comparison or Demo. If AI, include/prefer Trend.
 - visual_scene_1 must follow the Hook Timing Rule below, not a fixed 5s template.
 - Scene 1 must depict the selected pain point situation before any app UI unless the category is AI and the hook archetype is Result First.
+- Scene 1 must not default to kitchen/living room/sofa/apartment. Choose the setting from the selected angle/visual/painpoint; TV/editor/fact angles should look like studio/newsroom/desk/panel/chart/infographic execution.
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
 - hook_text_overlay is max 8 words. hook_vo is max 12 words. They must not duplicate.

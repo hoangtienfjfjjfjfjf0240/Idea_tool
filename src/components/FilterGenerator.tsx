@@ -2114,8 +2114,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const hookVisualIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
     const mainBodyVoiceover = bodySpeech.voiceover || content.body?.voice || '';
     const finalCtaText = ctaText || ctaSpeech.voiceover || content.cta?.endCard || '';
+    const selectedInputLines = getResultInputChips(idea, content).map(chip => `${chip.label}: ${chip.value}`);
 
     const readableText = [
+      'INPUT DA CHON',
+      ...selectedInputLines,
+      '',
       'TÌNH HUỐNG GỐC (PAIN POINT)',
       framework.painpoint || '',
       '',
@@ -2245,6 +2249,40 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const text = cleanPreviewText(value);
     if (text.length <= limit) return text;
     return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const listFilterValues = (snapshot: FilterState | null | undefined, key: string, fallback: unknown = '') => {
+    const values = Array.isArray(snapshot?.[key])
+      ? (snapshot?.[key] || [])
+      : [];
+    const cleaned = values
+      .map(value => cleanPreviewText(value))
+      .filter(Boolean);
+    const fallbackText = cleanPreviewText(fallback);
+    return cleaned.length > 0 ? cleaned : (fallbackText ? [fallbackText] : []);
+  };
+
+  const formatInputChipValue = (values: string[], limit = 34) => truncatePreviewText(values.join(' + '), limit);
+
+  const getResultInputChips = (idea: GeneratedIdea, content: Partial<IdeaContent> | Record<string, unknown>) => {
+    const framework = ((content as IdeaContent).framework || {}) as Partial<IdeaContent['framework']>;
+    const snapshot = idea.filters_snapshot || null;
+    const chips = [
+      { key: 'coreUser', label: 'Người xem', values: listFilterValues(snapshot, 'coreUser', framework.coreUser), className: 'bg-blue-50 text-blue-600' },
+      { key: 'emotion', label: 'Cảm xúc', values: listFilterValues(snapshot, 'emotion', framework.emotion), className: 'bg-rose-50 text-rose-600' },
+      { key: 'visualType', label: 'Visual', values: listFilterValues(snapshot, 'visualType', (content as IdeaContent).creativeType), className: 'bg-indigo-50 text-indigo-600' },
+      { key: 'painPoint', label: 'Pain', values: listFilterValues(snapshot, 'painPoint', framework.painpoint), className: 'bg-red-50 text-red-600' },
+      { key: 'solution', label: 'PSP', values: shouldHidePspForApp(app) ? [] : listFilterValues(snapshot, 'solution', framework.psp), className: 'bg-emerald-50 text-emerald-600' },
+      { key: 'targetMarket', label: 'Market', values: listFilterValues(snapshot, 'targetMarket'), className: 'bg-sky-50 text-sky-600' },
+      { key: 'angle', label: 'Angle', values: listFilterValues(snapshot, 'angle'), className: 'bg-teal-50 text-teal-600' },
+    ];
+
+    return chips
+      .filter(chip => chip.values.length > 0)
+      .map(chip => ({
+        ...chip,
+        value: formatInputChipValue(chip.values, chip.key === 'painPoint' || chip.key === 'coreUser' ? 42 : 34),
+      }));
   };
 
   const getSectionCharacterSpeech = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
@@ -3509,7 +3547,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const ideaFavoriteKeys = getAllIdeaFavoriteKeys(idea);
             const isFavorite = hasFavoriteIdeaKey(app.id, idea, favoriteIdeas);
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
-            const angleTag = Array.isArray(idea.filters_snapshot?.angle) ? idea.filters_snapshot?.angle?.[0] : '';
             const isBuilderIdea = isBuilderIdeaContent(c);
             const hookVisual = normalizeHookTimingLabel(hookData?.visual || hookData?.script || '');
             const hookDuration = isBuilderIdea ? 3 : getHookDurationSeconds(hookData);
@@ -3518,9 +3555,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const primaryHook = c?.meta?.hookPrimary || '';
             const hookPreviewIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
             const showPrimaryHookLine = cleanPreviewText(primaryHook).toLowerCase() !== cleanPreviewText(hookText).toLowerCase();
-            const creativeTag = c?.creativeType || c?.framework?.emotion || 'Creative';
             const scriptDisplayLabel = getReadableScriptLabel(idea, idx);
             const strategyCode = String(c?.meta?.strategyCode || '');
+            const selectedInputChips = getResultInputChips(idea, c || {});
             return (
               <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -3535,9 +3572,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <div className="flex gap-2 flex-wrap">
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                         {strategyCode && <span className="text-[11px] px-2 py-0.5 bg-slate-900 text-white rounded-md font-bold">{strategyCode}</span>}
-                        <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{creativeTag}</span>
-                        {c?.framework?.coreUser && <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-500 rounded-md">{truncatePreviewText(c.framework.coreUser, 28)}</span>}
-                        {angleTag && <span className="text-[11px] px-2 py-0.5 bg-teal-50 text-teal-600 rounded-md">{truncatePreviewText(angleTag, 32)}</span>}
+                        {selectedInputChips.map(chip => (
+                          <span key={`${ideaKey}-${chip.key}`} className={`text-[11px] px-2 py-0.5 rounded-md ${chip.className}`}>
+                            {chip.label}: {chip.value}
+                          </span>
+                        ))}
                       </div>
                     </div>
                     <div className="flex gap-1">
