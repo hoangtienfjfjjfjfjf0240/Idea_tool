@@ -138,6 +138,49 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setHooks(data);
   }, [app?.id]);
 
+  const renderHookMedia = (
+    hook: Pick<Hook, 'title' | 'thumb' | 'image_url' | 'video_url'> | null | undefined,
+    mediaClassName: string,
+    fallbackClassName: string,
+  ) => {
+    const imageUrl = hook?.image_url || '';
+    const videoUrl = hook?.video_url || '';
+
+    if (imageUrl || videoUrl) {
+      return (
+        <div className={`${mediaClassName} bg-gray-100`}>
+          {imageUrl ? (
+            <img src={imageUrl} alt={hook?.title || 'Hook'} className="w-full h-full object-cover" />
+          ) : (
+            <video
+              src={videoUrl}
+              className="w-full h-full object-cover"
+              muted
+              playsInline
+              preload="auto"
+            />
+          )}
+          {videoUrl && (
+            <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+              <div className="w-12 h-12 bg-white/25 backdrop-blur-sm rounded-full flex items-center justify-center">
+                <Play className="text-white ml-0.5" size={20} fill="currentColor" />
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className={fallbackClassName}>
+        <span className="text-5xl mb-3 drop-shadow-sm">{hook?.thumb || '🎬'}</span>
+        <div className="w-10 h-10 bg-indigo-500/20 rounded-full flex items-center justify-center">
+          <Play className="text-indigo-500 ml-0.5" size={16} fill="currentColor" />
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => { loadHooks(); }, [loadHooks]);
   useEffect(() => { setExpandedFullIdeaKeys({}); }, [selectedHook?.id, isViewingFullIdeasHistory]);
 
@@ -1721,27 +1764,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
               </div>
 
               {/* Thumbnail */}
-              <div className="aspect-[3/4] relative overflow-hidden">
-                {hook.image_url ? (
-                  <>
-                    <img src={hook.image_url} alt={hook.title} className="w-full h-full object-cover" />
-                    {hook.video_url && (
-                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                        <div className="w-12 h-12 bg-white/25 backdrop-blur-sm rounded-full flex items-center justify-center">
-                          <Play className="text-white ml-0.5" size={20} fill="currentColor" />
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 flex flex-col items-center justify-center">
-                    <span className="text-5xl mb-3 drop-shadow-sm">{hook.thumb || '🎬'}</span>
-                    <div className="w-10 h-10 bg-indigo-500/20 rounded-full flex items-center justify-center">
-                      <Play className="text-indigo-500 ml-0.5" size={16} fill="currentColor" />
-                    </div>
-                  </div>
-                )}
-              </div>
+              {renderHookMedia(
+                hook,
+                'aspect-[3/4] relative overflow-hidden',
+                'aspect-[3/4] bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 flex flex-col items-center justify-center'
+              )}
 
               {/* Info */}
               <div className="p-3.5">
@@ -2086,14 +2113,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           <div className="lg:col-span-4 space-y-5">
             {/* Hook Card */}
             <div className="bg-white rounded-2xl overflow-hidden border-2 border-amber-200 shadow-sm">
-              {selectedHook.image_url ? (
-                <div className="h-48 bg-gray-100">
-                  <img src={selectedHook.image_url} alt={selectedHook.title} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="h-32 bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
-                  <span className="text-5xl">{selectedHook.thumb || '🎬'}</span>
-                </div>
+              {renderHookMedia(
+                selectedHook,
+                'h-48 relative overflow-hidden',
+                'h-32 bg-gradient-to-br from-amber-100 to-orange-100 flex flex-col items-center justify-center'
               )}
               <div className="p-5">
                 <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">🏆 Winning Hook — Framework Analysis</span>
@@ -2350,14 +2373,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         <div className="lg:col-span-4 space-y-5">
           {/* Selected Hook Card */}
           <div className="bg-white rounded-2xl overflow-hidden border-2 border-indigo-200 shadow-sm">
-            {selectedHook?.image_url ? (
-              <div className="h-48 bg-gray-100">
-                <img src={selectedHook.image_url} alt={selectedHook.title} className="w-full h-full object-cover" />
-              </div>
-            ) : (
-              <div className="h-32 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
-                <span className="text-5xl">{selectedHook?.thumb || '🎬'}</span>
-              </div>
+            {renderHookMedia(
+              selectedHook,
+              'h-48 relative overflow-hidden',
+              'h-32 bg-gradient-to-br from-indigo-100 to-purple-100 flex flex-col items-center justify-center'
             )}
             <div className="p-5">
               <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Hook Gốc (Winning)</span>

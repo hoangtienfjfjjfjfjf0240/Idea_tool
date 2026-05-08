@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { askAI } from '@/lib/aiClient';
+import { askAI, getLastAIErrorMessage } from '@/lib/aiClient';
 import {
   buildHookOutputSpec,
   normalizeHookOutput,
@@ -15,11 +15,13 @@ import { enrichHookWithFramework } from '@/lib/hookFramework';
 export const maxDuration = 60;
 
 const MAX_HOOK_VARIATIONS = 20;
-const HOOK_ROUTE_BUDGET_MS = 52000;
-const HOOK_MODEL_TIMEOUT_MS = 26000;
-const HOOK_FALLBACK_TIMEOUT_MS = 9000;
-const MIN_HOOK_MODEL_TIME_MS = 6500;
-const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash', 'openai/gpt-5.4-mini'];
+const HOOK_ROUTE_BUDGET_MS = 45000;
+const HOOK_MODEL_TIMEOUT_MS = 18000;
+const HOOK_FALLBACK_TIMEOUT_MS = 7000;
+const HOOK_QUEUE_TIMEOUT_MS = 1500;
+const MIN_HOOK_MODEL_TIME_MS = 5000;
+const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
+const FAST_HOOK_MODEL_SET = new Set(FAST_HOOK_MODELS);
 
 function toPositiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
@@ -362,15 +364,6 @@ function buildBetterFallbackHookVariations(
 }
 
 function resolveHookModels(selected?: string): string[] {
-  if (selected === 'gemini-3-pro') {
-    return [
-      'gemini/gemini-2.5-flash',
-      'gemini/gemini-2.5-pro',
-      'gemini/gemini-3-pro-preview',
-      ...FAST_HOOK_MODELS,
-    ].filter((model, index, models) => models.indexOf(model) === index);
-  }
-
   const map: Record<string, string> = {
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
@@ -383,8 +376,10 @@ function resolveHookModels(selected?: string): string[] {
   };
   const resolved = map[selected || ''];
 
-  const primary = resolved || FAST_HOOK_MODELS[0];
-  return Array.from(new Set([primary, ...FAST_HOOK_MODELS]));
+  return Array.from(new Set([
+    ...(resolved && FAST_HOOK_MODEL_SET.has(resolved) ? [resolved] : []),
+    ...FAST_HOOK_MODELS,
+  ]));
 }
 
 export async function POST(request: NextRequest) {
@@ -466,6 +461,12 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
     const routeStartedAt = Date.now();
     let lastError = 'AI hook generation timed out or gateway returned an error.';
     let bestValidItems: Record<string, unknown>[] = [];
+    console.log('[generate-hooks] request', {
+      requestedQuantity,
+      targetLanguage,
+      modelCount: candidateModels.length,
+      selectedModel: selectedModel || '',
+    });
 
     for (const [index, model] of candidateModels.entries()) {
       const remainingMs = HOOK_ROUTE_BUDGET_MS - (Date.now() - routeStartedAt);
@@ -484,16 +485,20 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
         useCreativePersona: false,
         priority: 'high',
         timeoutMs: modelTimeoutMs,
+        queueTimeoutMs: HOOK_QUEUE_TIMEOUT_MS,
       });
 
       if (!text) {
-        lastError = `Model ${model} không trả về text.`;
+        const aiError = getLastAIErrorMessage();
+        lastError = `Model ${model} không trả về text${aiError ? `: ${aiError}` : ''}.`;
+        console.warn('[generate-hooks] empty AI response', { model, lastError });
         continue;
       }
 
       const parsed = parseJson(text);
       if (!parsed) {
         lastError = `Model ${model} trả về text nhưng không parse được JSON.`;
+        console.warn('[generate-hooks] parse failed', { model, sample: text.substring(0, 220) });
         continue;
       }
 
@@ -531,10 +536,12 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
         bestValidItems = data;
       }
       if (data.length >= requestedQuantity) {
+        console.log('[generate-hooks] success', { model, count: data.length });
         return NextResponse.json({ success: true, data, modelUsed: model });
       }
 
       lastError = `Model ${model} chỉ tạo được ${data.length}/${requestedQuantity} hook hợp lệ.`;
+      console.warn('[generate-hooks] insufficient valid hooks', { model, count: data.length, requestedQuantity });
     }
 
     const allowLocalRefill = targetLanguage === 'English';
@@ -546,6 +553,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
     const data = dedupeHookVariations([...bestValidItems, ...refillItems]).slice(0, requestedQuantity);
 
     if (data.length > 0) {
+      console.log('[generate-hooks] partial success', { count: data.length, bestValidCount: bestValidItems.length });
       return NextResponse.json({
         success: true,
         data,
@@ -560,11 +568,13 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       });
     }
 
+    console.warn('[generate-hooks] failed', { lastError, requestedQuantity, bestValidCount: bestValidItems.length });
     return NextResponse.json({
       success: false,
       error: `${lastError} No usable hook variations were produced.`,
     }, { status: 502 });
   } catch (err) {
+    console.error('[generate-hooks] Exception:', err);
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
 }

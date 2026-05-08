@@ -117,6 +117,7 @@ interface AICallOptions {
   useCreativePersona?: boolean;
   priority?: AIPriority;
   timeoutMs?: number;
+  queueTimeoutMs?: number;
 }
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
@@ -132,7 +133,8 @@ const AI_RESERVED_INTERACTIVE_SLOTS = Math.min(
 
 type QueueEntry = {
   priority: AIPriority;
-  resolve: (release: () => void) => void;
+  resolve: (release: (() => void) | null) => void;
+  timeout?: ReturnType<typeof setTimeout>;
 };
 
 const PRIORITY_ORDER: Record<AIPriority, number> = {
@@ -165,6 +167,7 @@ function drainAICallQueue() {
       if (!canStartAICall(entry.priority)) continue;
 
       pendingAICallQueue.splice(index, 1);
+      if (entry.timeout) clearTimeout(entry.timeout);
       activeAICallCount += 1;
       entry.resolve(() => {
         activeAICallCount = Math.max(0, activeAICallCount - 1);
@@ -176,7 +179,7 @@ function drainAICallQueue() {
   }
 }
 
-function acquireAICallSlot(priority: AIPriority): Promise<() => void> {
+function acquireAICallSlot(priority: AIPriority, queueTimeoutMs = 30000): Promise<(() => void) | null> {
   if (canStartAICall(priority)) {
     activeAICallCount += 1;
     return Promise.resolve(() => {
@@ -186,7 +189,15 @@ function acquireAICallSlot(priority: AIPriority): Promise<() => void> {
   }
 
   return new Promise(resolve => {
-    pendingAICallQueue.push({ priority, resolve });
+    const entry: QueueEntry = { priority, resolve };
+    if (queueTimeoutMs > 0) {
+      entry.timeout = setTimeout(() => {
+        const index = pendingAICallQueue.indexOf(entry);
+        if (index >= 0) pendingAICallQueue.splice(index, 1);
+        resolve(null);
+      }, queueTimeoutMs);
+    }
+    pendingAICallQueue.push(entry);
     sortPendingAICalls();
     drainAICallQueue();
   });
@@ -211,6 +222,7 @@ export async function callAI(
     useCreativePersona = true,
     priority = 'normal',
     timeoutMs = 180000,
+    queueTimeoutMs = 30000,
   } = options;
 
   // Prepend system prompt if using creative persona
@@ -218,7 +230,12 @@ export async function callAI(
     ? [{ role: 'system', content: CREATIVE_SYSTEM_PROMPT }, ...messages]
     : messages;
 
-  const releaseSlot = await acquireAICallSlot(priority);
+  const releaseSlot = await acquireAICallSlot(priority, queueTimeoutMs);
+  if (!releaseSlot) {
+    lastAIErrorMessage = `AI queue timed out after ${Math.round(queueTimeoutMs / 1000)} seconds`;
+    console.error('[AI]', lastAIErrorMessage);
+    return null;
+  }
 
   try {
     const controller = new AbortController();
