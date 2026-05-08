@@ -2245,12 +2245,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     return text;
   };
 
-  const truncatePreviewText = (value: unknown, limit = 150) => {
-    const text = cleanPreviewText(value);
-    if (text.length <= limit) return text;
-    return `${text.slice(0, limit).trim()}...`;
-  };
-
   const listFilterValues = (snapshot: FilterState | null | undefined, key: string, fallback: unknown = '') => {
     const values = Array.isArray(snapshot?.[key])
       ? (snapshot?.[key] || [])
@@ -2262,8 +2256,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     return cleaned.length > 0 ? cleaned : (fallbackText ? [fallbackText] : []);
   };
 
-  const formatInputChipValue = (values: string[], limit = 34) => truncatePreviewText(values.join(' + '), limit);
-
   const getResultInputChips = (idea: GeneratedIdea, content: Partial<IdeaContent> | Record<string, unknown>) => {
     const framework = ((content as IdeaContent).framework || {}) as Partial<IdeaContent['framework']>;
     const snapshot = idea.filters_snapshot || null;
@@ -2273,6 +2265,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       { key: 'visualType', label: 'Visual', values: listFilterValues(snapshot, 'visualType', (content as IdeaContent).creativeType), className: 'bg-indigo-50 text-indigo-600' },
       { key: 'painPoint', label: 'Pain', values: listFilterValues(snapshot, 'painPoint', framework.painpoint), className: 'bg-red-50 text-red-600' },
       { key: 'solution', label: 'PSP', values: shouldHidePspForApp(app) ? [] : listFilterValues(snapshot, 'solution', framework.psp), className: 'bg-emerald-50 text-emerald-600' },
+      { key: 'videoStructure', label: 'Structure', values: listFilterValues(snapshot, 'videoStructure'), className: 'bg-violet-50 text-violet-600' },
       { key: 'targetMarket', label: 'Market', values: listFilterValues(snapshot, 'targetMarket'), className: 'bg-sky-50 text-sky-600' },
       { key: 'angle', label: 'Angle', values: listFilterValues(snapshot, 'angle'), className: 'bg-teal-50 text-teal-600' },
     ];
@@ -2281,7 +2274,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       .filter(chip => chip.values.length > 0)
       .map(chip => ({
         ...chip,
-        value: formatInputChipValue(chip.values, chip.key === 'painPoint' || chip.key === 'coreUser' ? 42 : 34),
+        value: chip.values.join(' + '),
       }));
   };
 
@@ -3572,11 +3565,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       <div className="flex gap-2 flex-wrap">
                         <span className="text-[11px] px-2 py-0.5 bg-gray-100 text-gray-500 rounded-md">{new Date(idea.created_at).toLocaleDateString('vi-VN')}</span>
                         {strategyCode && <span className="text-[11px] px-2 py-0.5 bg-slate-900 text-white rounded-md font-bold">{strategyCode}</span>}
-                        {selectedInputChips.map(chip => (
-                          <span key={`${ideaKey}-${chip.key}`} className={`text-[11px] px-2 py-0.5 rounded-md ${chip.className}`}>
-                            {chip.label}: {chip.value}
-                          </span>
-                        ))}
                       </div>
                     </div>
                     <div className="flex gap-1">
@@ -3607,6 +3595,23 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                       )}
                     </div>
                   </div>
+
+                  {selectedInputChips.length > 0 && (
+                    <div className="mb-3 rounded-lg border border-gray-100 bg-gray-50/70 p-2.5">
+                      <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Cáº¥u hÃ¬nh input</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedInputChips.map(chip => (
+                          <span
+                            key={`${ideaKey}-${chip.key}`}
+                            title={chip.value}
+                            className={`max-w-full whitespace-normal break-words rounded-md px-2 py-1 text-[11px] font-medium leading-snug ${chip.className}`}
+                          >
+                            <span className="font-bold">{chip.label}:</span> {chip.value}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mb-2 flex items-center justify-end gap-2">
                     <button

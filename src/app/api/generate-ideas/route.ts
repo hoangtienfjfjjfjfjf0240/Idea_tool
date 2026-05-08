@@ -1355,7 +1355,7 @@ function hasSameHookFrame(a: Record<string, unknown>, b: Record<string, unknown>
   const left = ideaHookLine(a);
   const right = ideaHookLine(b);
   if (!left || !right) return false;
-  return normalizeCompareText(left) === normalizeCompareText(right) || jaccardSimilarity(left, right) >= 0.72;
+  return normalizeCompareText(left) === normalizeCompareText(right) || jaccardSimilarity(left, right) >= 0.66;
 }
 
 function creativeTypeKey(idea: Record<string, unknown>): string {
@@ -1402,7 +1402,7 @@ function hasNearDuplicateIdeas(ideas: Record<string, unknown>[]): boolean {
     for (let j = i + 1; j < ideas.length; j++) {
       if (
         hasSameHookFrame(ideas[i], ideas[j])
-        || jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.82
+        || jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.76
       ) {
         return true;
       }
@@ -1430,7 +1430,7 @@ function dedupeIdeas(candidates: Record<string, unknown>[], existing: Record<str
     const creativeKey = creativeTypeKey(candidate);
     const isOverusedPov = creativeKey === 'pov' && (creativeCounts.pov || 0) >= maxPovPerRequest;
     const isUnique = [...existing, ...unique].every(item => (
-      jaccardSimilarity(signature, ideaSignature(item)) < 0.82
+      jaccardSimilarity(signature, ideaSignature(item)) < 0.76
     )) && ![...existing, ...unique].some(item => hasSameHookFrame(candidate, item));
 
     if (isUnique && !isOverusedPov) {
@@ -3200,14 +3200,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           for (const candidate of [...valid, ...lenientCandidates]) {
             const signature = ideaSignature(candidate);
             const isUnique = [...priorGeneratedIdeas, ...merged].every(item => (
-              jaccardSimilarity(signature, ideaSignature(item)) < 0.82
+              jaccardSimilarity(signature, ideaSignature(item)) < 0.76
             )) && ![...priorGeneratedIdeas, ...merged].some(item => hasSameHookFrame(candidate, item));
             if (isUnique) merged.push(candidate);
             if (merged.length >= plan.batchQuantity) break;
           }
           valid = merged;
         }
-        const duplicateDetected = false;
+        const duplicateDetected = plan.batchQuantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid);
         const needsValidationRetry = false;
 
         if ((needsValidationRetry || duplicateDetected) && hasAiBudget()) {
