@@ -15,13 +15,11 @@ import { enrichHookWithFramework } from '@/lib/hookFramework';
 export const maxDuration = 60;
 
 const MAX_HOOK_VARIATIONS = 20;
-const HOOK_ROUTE_BUDGET_MS = 45000;
-const HOOK_MODEL_TIMEOUT_MS = 18000;
-const HOOK_FALLBACK_TIMEOUT_MS = 7000;
-const HOOK_QUEUE_TIMEOUT_MS = 1500;
-const MIN_HOOK_MODEL_TIME_MS = 5000;
-const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash'];
-const FAST_HOOK_MODEL_SET = new Set(FAST_HOOK_MODELS);
+const HOOK_ROUTE_BUDGET_MS = 54000;
+const HOOK_MODEL_TIMEOUT_MS = 50000;
+const HOOK_QUEUE_TIMEOUT_MS = 2000;
+const MIN_HOOK_MODEL_TIME_MS = 10000;
+const GEMINI3_HOOK_MODEL = 'gemini/gemini-3-pro-preview';
 
 function toPositiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
@@ -363,23 +361,8 @@ function buildBetterFallbackHookVariations(
   });
 }
 
-function resolveHookModels(selected?: string): string[] {
-  const map: Record<string, string> = {
-    'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
-    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
-    'gemini-3-pro': 'gemini/gemini-3-pro-preview',
-    'gpt-5.4': 'openai/gpt-5.4',
-    'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
-    'gpt-5.4-mini': 'openai/gpt-5.4-mini',
-    'gpt-4.1': 'openai/gpt-4.1',
-    'o4-mini': 'openai/o4-mini',
-  };
-  const resolved = map[selected || ''];
-
-  return Array.from(new Set([
-    ...(resolved && FAST_HOOK_MODEL_SET.has(resolved) ? [resolved] : []),
-    ...FAST_HOOK_MODELS,
-  ]));
+function resolveHookModels(): string[] {
+  return [GEMINI3_HOOK_MODEL];
 }
 
 export async function POST(request: NextRequest) {
@@ -457,7 +440,7 @@ Create exactly ${requestedQuantity} hook-only variations.
 
 ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })}`;
 
-    const candidateModels = resolveHookModels(selectedModel);
+    const candidateModels = resolveHookModels();
     const routeStartedAt = Date.now();
     let lastError = 'AI hook generation timed out or gateway returned an error.';
     let bestValidItems: Record<string, unknown>[] = [];
@@ -466,18 +449,16 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       targetLanguage,
       modelCount: candidateModels.length,
       selectedModel: selectedModel || '',
+      forcedModel: GEMINI3_HOOK_MODEL,
     });
 
-    for (const [index, model] of candidateModels.entries()) {
+    for (const model of candidateModels) {
       const remainingMs = HOOK_ROUTE_BUDGET_MS - (Date.now() - routeStartedAt);
       if (remainingMs < MIN_HOOK_MODEL_TIME_MS) {
         lastError = `${lastError} Route time budget ended before trying ${model}.`;
         break;
       }
-      const modelTimeoutMs = Math.min(
-        index === 0 ? HOOK_MODEL_TIMEOUT_MS : HOOK_FALLBACK_TIMEOUT_MS,
-        remainingMs,
-      );
+      const modelTimeoutMs = Math.min(HOOK_MODEL_TIMEOUT_MS, remainingMs);
       const text = await askAI(prompt, {
         model,
         temperature: 0.75,
