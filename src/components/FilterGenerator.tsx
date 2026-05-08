@@ -1658,10 +1658,11 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       );
       const totalRequestedIdeas = anglesToGenerate.length * effectiveQuantity;
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
-      const maxConcurrent = Math.min(3, generationTasks.length);
       const maxAttemptsPerAngle = 1;
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = () => selectedModel || '';
+      const isSlowIdeaModel = getAttemptModel() === 'gemini-3-pro';
+      const maxConcurrent = Math.min(isSlowIdeaModel ? 1 : 3, generationTasks.length);
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
 

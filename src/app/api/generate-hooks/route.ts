@@ -17,6 +17,21 @@ const HOOK_QUEUE_TIMEOUT_MS = 2000;
 const MIN_HOOK_MODEL_TIME_MS = 10000;
 const GEMINI3_HOOK_MODEL = 'gemini/gemini-3-pro-preview';
 
+function resolveModel(selected?: string): string {
+  const map: Record<string, string> = {
+    'gemini-3.1-flash': 'gemini/gemini-3.1-flash',
+    'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
+    'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
+    'gemini-3-pro': GEMINI3_HOOK_MODEL,
+    'gpt-5.4': 'openai/gpt-5.4',
+    'gpt-5.4-pro': 'openai/gpt-5.4-pro-2026-03-05',
+    'gpt-5.4-mini': 'openai/gpt-5.4-mini',
+    'gpt-4.1': 'openai/gpt-4.1',
+    'o4-mini': 'openai/o4-mini',
+  };
+  return map[selected || ''] || GEMINI3_HOOK_MODEL;
+}
+
 function toPositiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
@@ -357,8 +372,8 @@ function buildBetterFallbackHookVariations(
   });
 }
 
-function resolveHookModels(): string[] {
-  return [GEMINI3_HOOK_MODEL];
+function resolveHookModels(selected?: string): string[] {
+  return [resolveModel(selected)];
 }
 
 export async function POST(request: NextRequest) {
@@ -447,7 +462,7 @@ Schema:
   }
 ]`;
 
-    const candidateModels = resolveHookModels();
+    const candidateModels = resolveHookModels(selectedModel);
     const routeStartedAt = Date.now();
     let lastError = 'AI hook generation timed out or gateway returned an error.';
     let bestValidItems: Record<string, unknown>[] = [];
@@ -456,7 +471,7 @@ Schema:
       targetLanguage,
       modelCount: candidateModels.length,
       selectedModel: selectedModel || '',
-      forcedModel: GEMINI3_HOOK_MODEL,
+      model: candidateModels[0],
     });
 
     for (const model of candidateModels) {
@@ -544,7 +559,7 @@ Schema:
           success: true,
           data,
           modelUsed: model,
-          warning: `Gemini 3 returned ${data.length}/${requestedQuantity} usable hooks.`,
+          warning: `${model} returned ${data.length}/${requestedQuantity} usable hooks.`,
           meta: { requestedQuantity, aiCount: data.length },
         });
       }

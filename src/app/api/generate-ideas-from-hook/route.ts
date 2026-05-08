@@ -1244,6 +1244,7 @@ function normalizeLooseFullIdeasFromHook(
 
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
+    'gemini-3.1-flash': 'gemini/gemini-3.1-flash',
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
     'gemini-3-pro': 'gemini/gemini-3-pro-preview',
@@ -1257,28 +1258,7 @@ function resolveModel(selected?: string): string {
 }
 
 function resolveIdeaModels(selected?: string): string[] {
-  if (selected === 'gemini-3-pro') {
-    return [
-      'gemini/gemini-3-pro-preview',
-      'gemini/gemini-2.5-pro',
-      'gemini/gemini-2.5-flash',
-    ];
-  }
-
-  const primary = resolveModel(selected);
-  const fallbackModels = primary.startsWith('gemini/')
-    ? [
-        primary,
-        'gemini/gemini-2.5-pro',
-        'gemini/gemini-2.5-flash',
-      ]
-    : [
-        primary,
-        'gemini/gemini-2.5-flash',
-        'gemini/gemini-2.5-pro',
-      ];
-
-  return Array.from(new Set(fallbackModels));
+  return [resolveModel(selected)];
 }
 
 export async function POST(request: NextRequest) {

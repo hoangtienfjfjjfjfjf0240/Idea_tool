@@ -75,6 +75,14 @@ function positiveIntEnv(name: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function booleanEnv(name: string, fallback: boolean) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return fallback;
+}
+
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
@@ -83,8 +91,10 @@ const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const ENABLE_AI_RECOVERY_REFILL = false;
-const ENABLE_LOCAL_FALLBACK_TOPUP = false;
+const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 2);
+const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 220000);
+const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
+const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', true);
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
@@ -842,6 +852,7 @@ function getCoreUserMarketValues(coreUsers: string[]): string[] {
 // Map frontend model names to gateway model identifiers
 function resolveModel(selected?: string): string {
   const map: Record<string, string> = {
+    'gemini-3.1-flash': 'gemini/gemini-3.1-flash',
     'gemini-2.5-flash': 'gemini/gemini-2.5-flash',
     'gemini-2.5-pro': 'gemini/gemini-2.5-pro',
     'gemini-3-pro': 'gemini/gemini-3-pro-preview',
@@ -898,29 +909,7 @@ async function callDirectGemini(
 }
 
 function resolveIdeaModels(selected?: string): string[] {
-  if (selected === 'gemini-3-pro') {
-    return [
-      'gemini/gemini-3-pro-preview',
-      'openai/gpt-5.4-mini',
-      'gemini/gemini-2.5-pro',
-    ];
-  }
-
-  const primary = resolveModel(selected);
-  const fallbackModels = primary.startsWith('gemini/')
-    ? [
-        primary,
-        'openai/gpt-5.4-mini',
-        'gemini/gemini-2.5-flash',
-      ]
-    : [
-        primary,
-        'openai/gpt-5.4',
-        'openai/gpt-5.4-mini',
-        'openai/gpt-4.1',
-        'gemini/gemini-2.5-pro',
-      ];
-  return Array.from(new Set(fallbackModels));
+  return [resolveModel(selected)];
 }
 
 function clampPromptContext(value: unknown, maxLength: number) {
@@ -1469,11 +1458,12 @@ function toPositiveInt(value: unknown, fallback: number) {
   return Math.floor(parsed);
 }
 
-function buildIdeaBatchPlans(totalRequestedQuantity: number): IdeaBatchPlan[] {
+function buildIdeaBatchPlans(totalRequestedQuantity: number, maxBatchSize = MAX_IDEAS_PER_AI_BATCH): IdeaBatchPlan[] {
   const plans: IdeaBatchPlan[] = [];
-  for (let batchStartIndex = 0; batchStartIndex < totalRequestedQuantity; batchStartIndex += MAX_IDEAS_PER_AI_BATCH) {
+  const batchSize = Math.max(1, Math.min(maxBatchSize, MAX_IDEAS_PER_AI_BATCH));
+  for (let batchStartIndex = 0; batchStartIndex < totalRequestedQuantity; batchStartIndex += batchSize) {
     plans.push({
-      batchQuantity: Math.min(MAX_IDEAS_PER_AI_BATCH, totalRequestedQuantity - batchStartIndex),
+      batchQuantity: Math.min(batchSize, totalRequestedQuantity - batchStartIndex),
       batchStartIndex,
     });
   }
@@ -2869,9 +2859,17 @@ Chỉ trả về JSON array string. Không markdown.`;
       const requestStartIndex = Math.max(0, Number(config.startIndex || 0) || 0);
       const totalVariations = Math.max(requestedQuantity, Number(config.totalVariations || requestedQuantity) || requestedQuantity);
       const modelCandidates = resolveIdeaModels(selectedModel).slice(0, MAX_IDEA_MODEL_CANDIDATES);
-      const batchPlans = buildIdeaBatchPlans(requestedQuantity);
+      const primaryModel = modelCandidates[0] || resolveModel(selectedModel);
+      const isGemini3Ideas = primaryModel.includes('gemini-3-pro');
+      const batchPlans = buildIdeaBatchPlans(
+        requestedQuantity,
+        isGemini3Ideas ? GEMINI3_IDEA_MAX_BATCH_SIZE : MAX_IDEAS_PER_AI_BATCH
+      );
       const aiBudgetStartedAt = Date.now();
-      const getRemainingAiBudgetMs = () => GENERATE_IDEAS_REQUEST_AI_BUDGET_MS - (Date.now() - aiBudgetStartedAt);
+      const requestAiBudgetMs = isGemini3Ideas
+        ? Math.max(GENERATE_IDEAS_REQUEST_AI_BUDGET_MS, GEMINI3_IDEA_REQUEST_BUDGET_MS)
+        : GENERATE_IDEAS_REQUEST_AI_BUDGET_MS;
+      const getRemainingAiBudgetMs = () => requestAiBudgetMs - (Date.now() - aiBudgetStartedAt);
       const hasAiBudget = () => getRemainingAiBudgetMs() >= GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS;
       const getBudgetedTimeoutMs = (timeoutMs: number) => Math.max(
         GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS,
@@ -3139,22 +3137,29 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             : GENERATE_IDEAS_RETRY_TIMEOUT_MS;
           const generationTemperature = plan.batchQuantity > 1 ? 0.82 : 0.75;
           const budgetedTimeoutMs = getBudgetedTimeoutMs(candidateTimeoutMs);
-          const candidateText = await callDirectGemini(model, prompt, {
-            systemInstruction: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
-            temperature: generationTemperature,
-            maxOutputTokens: responseTokenBudget,
-            timeoutMs: budgetedTimeoutMs,
-          }) || await callAI([
-            { role: 'system', content: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT },
-            { role: 'user', content: prompt },
-          ], {
-            model,
-            temperature: generationTemperature,
-            max_tokens: responseTokenBudget,
-            useCreativePersona: false,
-            priority: 'high',
-            timeoutMs: budgetedTimeoutMs,
-          });
+          const directGeminiAvailable = Boolean(DIRECT_GEMINI_API_KEY) && model.startsWith('gemini/');
+          let candidateText = directGeminiAvailable
+            ? await callDirectGemini(model, prompt, {
+                systemInstruction: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+                temperature: generationTemperature,
+                maxOutputTokens: responseTokenBudget,
+                timeoutMs: budgetedTimeoutMs,
+              })
+            : null;
+
+          if (!candidateText) {
+            candidateText = await callAI([
+              { role: 'system', content: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ], {
+              model,
+              temperature: generationTemperature,
+              max_tokens: responseTokenBudget,
+              useCreativePersona: false,
+              priority: 'high',
+              timeoutMs: getBudgetedTimeoutMs(candidateTimeoutMs),
+            });
+          }
 
           if (!candidateText) {
             const aiError = getAIGenerationErrorMessage();

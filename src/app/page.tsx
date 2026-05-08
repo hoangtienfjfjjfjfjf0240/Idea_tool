@@ -83,7 +83,12 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState<AIModel>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ideagen_model') as AIModel | null;
-      return saved === 'gemini-3-pro' || saved === 'gpt-5.4' ? saved : 'gemini-3-pro';
+      return saved === 'gemini-3-pro'
+        || saved === 'gemini-3.1-flash'
+        || saved === 'gemini-2.5-flash'
+        || saved === 'gpt-5.4'
+        ? saved
+        : 'gemini-3-pro';
     }
     return 'gemini-3-pro';
   });
