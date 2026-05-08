@@ -174,7 +174,7 @@ CÁCH HOẠT ĐỘNG:
 - Bạn trả lời TRỰC TIẾP câu hỏi/yêu cầu của user
 - Khi user yêu cầu tạo ideas, bạn TỰ CHỌN filter phù hợp nhất và tạo ideas
 - Khi tự chọn filter cho health app, PSP/app action là nguồn sự thật về metric. Không trộn heart rate, blood pressure, blood glucose giữa PSP, angle, painpoint, hook, body hoặc CTA.
-- Khi tao ideas, moi field duoc generate trong JSON/card phai viet bang English: title/hook, visual, characterSpeech, voiceover, textOverlay, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track_reason. Target market (${chatMarketLanguageReference}) chi dieu chinh boi canh/vibe, khong doi ngon ngu output.
+- Khi tao ideas, title/script name, hook text/textOverlay, text tren man hinh, cta_text, visual va production notes phai bang Vietnamese. Chi characterSpeech, voiceover va script_vo moi theo output language/market language. Rieng hook_voice_vi/viTranslation bat buoc la ban dich tieng Viet co dau cua hook voice + character speech, khong copy lai ngon ngu goc. Target market (${chatMarketLanguageReference}) chi dieu chinh boi canh/vibe va ngon ngu voice/speech.
 - Câu trả lời tư vấn ngoài JSON vẫn viết tiếng Việt.
 - Khi tạo ideas, phải nhìn recent ideas để tránh lặp lại cùng scene family, cùng hook opening và cùng blocker nếu user không yêu cầu lặp
 - Khi tạo ideas, Hook phải có psp_bridge: cầu nối từ emotion/angle của viewer sang PSP trước khi sang Body. Body chỉ là demo/proof continuation.

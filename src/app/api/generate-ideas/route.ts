@@ -132,10 +132,10 @@ Emotion drivers chuẩn dùng cho mọi app:
 ${GLOBAL_EMOTION_PROMPT_GUIDE}
 
 V. LANGUAGE RULES
-- User-facing copy must use the requested output language.
-- This includes hook lines, character speech, text on screen, voice-over/video voice, script_vo, and CTA text. Script title/name stays Vietnamese for the internal Idea tool UI.
-- Visual descriptions and production notes should be Vietnamese so the internal team can read and execute them quickly.
-- Target market controls setting, behavior, props, culture, and vibe; it must not change the user-facing copy language.
+- Script title/name, hook text/text overlay, text on screen, CTA text, visual descriptions, and production notes must be Vietnamese for the internal Idea tool UI.
+- Only character speech, voice-over/video voice, and script_vo use the requested output language.
+- hook_voice_vi/viTranslation must be Vietnamese with full diacritics, translating only the requested-language voice/speech lines.
+- Target market controls setting, behavior, props, culture, vibe, and the voice/speech language; it must not switch Vietnamese on-screen/internal fields into the market language.
 
 V-B. BULLETPROOF VISUAL ANCHORS
 - Every visual_scene_1, visual_scene_2, and visual_scene_3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
@@ -292,7 +292,7 @@ function buildV7ExecutionContract(input: {
 - App: ${input.appName}
 - Market: ${input.targetMarketValues.join('; ') || 'Selected/default market'}
 - Market language/culture reference: ${input.targetLang}
-- Copy language: ${input.copyLanguage} for dialogue, on-screen text, voice-over, hook lines, script_vo, and CTA. Script title/name stays Vietnamese.
+- Voice language: ${input.copyLanguage} for dialogue, character speech, voice-over, and script_vo only. Script title/name, on-screen text, hook text lines, CTA, and production prose stay Vietnamese.
 - Visual descriptions and production notes must be Vietnamese for the internal team.
 - Core user: ${input.coreUserValues.join('; ') || 'General viewer'}
 - Painpoint to attack: ${input.primaryPillar}
@@ -308,10 +308,11 @@ Hard V7 requirements:
 - The solution pivot must happen immediately after: show the app/feature action with a specific finger movement and clear UI/number/chart change.
 - Directness rule: if the feature/painpoint contains a concrete metric or feature (blood pressure, heart rate, storage, calories, etc.), that exact metric/feature must appear in hook_text_overlay or hook_vo within the first 0-3 seconds. Do not hide it behind vague lines like "a weird number", "this matters", or "something felt off".
 - Use the selected painpoint as the target of attack. Convert it into a concrete first-3-second situation, but do not soften it into a generic symptom.
-- All Text/Voice must be written in ${input.copyLanguage}. Visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
+- Voice/character speech must be written in ${input.copyLanguage}. On-screen text, CTA, hook text lines, and visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
+- Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put on-camera speech only in hook_character_speech with time + speaker, and put off-camera narration only in hook_voiceover.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Obey Rule 4 pacing: 0-3s direct opening is one scene/camera angle; 3-6s pivot is one scene/camera angle; no split-screen or extra cut unless each beat gets at least 2.5s.
-- If a visible person speaks, asks, replies, reacts to camera, or is asked a question in the hook, hook_character_speech is required. If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
+- If a visible person speaks, asks, replies, reacts to camera, or is asked a question in the hook, hook_character_speech is required with time + speaker and hook_voiceover must be empty. If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
 - No rhetorical questions. Use direct statements.
 - Keep production simple, but make every action, face, prop, environment, and screen state specific enough to shoot.`;
 }
@@ -325,8 +326,8 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - The solution pivot must use the selected Feature/PSP as the tool that handles the problem.
 - The selected metric/feature must be named early. For example, if the app/PSP is blood pressure, use direct copy like "Your iPhone can check blood pressure" or "Blood pressure on iPhone" in the first hook beat, while staying compliant.
 - If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
-- Script title/name must be Vietnamese. Write user-facing copy in ${copyLanguage}: hook lines, character dialogue, Text/Voice, text on screen, voice-over, and CTA. Write visual descriptions and production notes in Vietnamese.
-- For visual_scene rows, write the scene/action/camera prose in Vietnamese. Only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside the scene are in ${copyLanguage}.
+- Script title/name, hook lines/text overlay, text on screen, CTA, visual descriptions, and production notes must be Vietnamese. Only character dialogue, voice-over, and script_vo use ${copyLanguage}.
+- For visual_scene rows, write only scene/action/camera prose in Vietnamese. Do not include quoted Voiceover / CHARACTER SPEECH / Text hien snippets inside the scene.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Obey Rule 4 pacing: 5s outputs max 2 scenes/camera angles; 8-10s outputs max 3-4 scenes/camera angles; fewer scenes are allowed.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
@@ -418,7 +419,9 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   const hookAlt1 = asText(meta.hookAlt1);
   const hookAlt2 = asText(meta.hookAlt2);
   const hookVisual = asText(hook.visual) || asText(hook.script);
-  const hookVoice = [asText(hook.characterSpeech), asText(hook.voiceover), asText(hook.voice)].filter(Boolean).join(' ');
+  const hookCharacterSpeech = asText(hook.characterSpeech);
+  const hookVoiceover = asText(hook.voiceover);
+  const hookVoice = [hookCharacterSpeech, hookVoiceover, asText(hook.voice)].filter(Boolean).join(' ');
   const hookTextOverlay = asText(hook.textOverlay) || asText(hook.text);
   const hookVoiceVi = asText(hook.viTranslation)
     || asText(hook.vi_translation)
@@ -432,10 +435,19 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   if (!hookPrimary) errors.push('meta.hookPrimary is required');
   if (!hookVisual) errors.push('hook.visual is required');
   if (!hookVoice && !hookTextOverlay) errors.push('hook needs voice or text overlay');
+  if (hookCharacterSpeech && hookVoiceover) {
+    errors.push('hook must use either characterSpeech or voiceover, not both');
+  }
+  if (hookCharacterSpeech && !/^\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*s\s*[-:]\s*[^:]{2,80}:/m.test(hookCharacterSpeech)) {
+    errors.push('hook characterSpeech must include time + speaker label');
+  }
+  if (/\b(?:Voiceover|Voice over|VO|Character speech|CHARACTER SPEECH|VOICEOVER|VOICE|Text\s+(?:hien|hi[eệ]n))\s*:/i.test(hookVisual)) {
+    errors.push('hook visual must not contain inline Voiceover, Character speech, or Text hien labels');
+  }
   if (!hookVoiceVi) {
     errors.push('hook_voice_vi is required for Vietnamese hook voice translation');
-  } else if (!hasVietnameseCopyCue(hookVoiceVi)) {
-    errors.push('hook_voice_vi must be Vietnamese, not the original market copy');
+  } else if (!hasVietnameseDiacritics(hookVoiceVi) || !hasVietnameseCopyCue(hookVoiceVi) || hasUntranslatedAudienceCopyCue(hookVoiceVi)) {
+    errors.push('hook_voice_vi must be Vietnamese with full diacritics, not the original market copy');
   }
   if (hookVisual) errors.push(...validateHookPacingOutput(hookVisual));
 
@@ -1132,24 +1144,24 @@ function buildMarketVisualProfile(values: string[]): string {
   const hasAny = (tokens: string[]) => tokens.some(token => new RegExp(`\\b${token}\\b`).test(normalized));
 
   if (hasAny(['latam', 'latin', 'mexico', 'brazil', 'brasil', 'argentina', 'colombia', 'spanish', 'tay ban nha'])) {
-    return 'Market Visual Profile LATAM: mô tả bằng tiếng Việt một nhân vật Latin/Hispanic phù hợp bối cảnh, thường da nâu sáng/olive đến nâu trung bình, tóc đen hoặc nâu đậm, trang phục đời thường. Bối cảnh nên là căn hộ/casa, bếp gia đình, phòng khách, farmacia/tienda hoặc không gian đô thị Mỹ Latin. Tránh biến toàn bộ visual_scene sang tiếng Tây Ban Nha; chỉ câu Text/Voice/Speech mới dùng Spanish nếu copy language là Spanish.';
+    return 'Market Visual Profile LATAM: mô tả bằng tiếng Việt một nhân vật Latin/Hispanic phù hợp bối cảnh, thường da nâu sáng/olive đến nâu trung bình, tóc đen hoặc nâu đậm, trang phục đời thường. Bối cảnh nên là căn hộ/casa, bếp gia đình, phòng khách, farmacia/tienda hoặc không gian đô thị Mỹ Latin. Tránh biến toàn bộ visual_scene sang tiếng Tây Ban Nha; chỉ câu Voice/Speech mới dùng Spanish nếu copy language là Spanish, còn Text hiện vẫn tiếng Việt.';
   }
   if (hasAny(['us', 'usa', 'united states', 'america', 'american', 'my', 'english'])) {
-    return 'Market Visual Profile US: mô tả bằng tiếng Việt một người Mỹ đa sắc tộc phù hợp core user, có thể là White/Black/Latino/Asian American tùy ý tưởng; tóc, da, trang phục casual và bối cảnh apartment/suburban house/clinic/waiting room kiểu Mỹ. Chỉ Text/Voice/Speech dùng English; visual_scene prose vẫn tiếng Việt.';
+    return 'Market Visual Profile US: mô tả bằng tiếng Việt một người Mỹ đa sắc tộc phù hợp core user, có thể là White/Black/Latino/Asian American tùy ý tưởng; tóc, da, trang phục casual và bối cảnh apartment/suburban house/clinic/waiting room kiểu Mỹ. Chỉ Voice/Speech dùng English; Text hiện và visual_scene prose vẫn tiếng Việt.';
   }
   if (hasAny(['jp', 'japan', 'japanese', 'nhat'])) {
-    return 'Market Visual Profile JP: mô tả bằng tiếng Việt một người Nhật/Đông Á, tóc đen hoặc nâu đậm, trang phục gọn tối giản; bối cảnh mansion/apartment nhỏ, phòng khám, ga tàu, konbini hoặc phòng khách Nhật. Chỉ Text/Voice/Speech dùng Japanese; visual_scene prose vẫn tiếng Việt.';
+    return 'Market Visual Profile JP: mô tả bằng tiếng Việt một người Nhật/Đông Á, tóc đen hoặc nâu đậm, trang phục gọn tối giản; bối cảnh mansion/apartment nhỏ, phòng khám, ga tàu, konbini hoặc phòng khách Nhật. Chỉ Voice/Speech dùng Japanese; Text hiện và visual_scene prose vẫn tiếng Việt.';
   }
   if (hasAny(['kr', 'korea', 'korean', 'han'])) {
-    return 'Market Visual Profile KR: mô tả bằng tiếng Việt một người Hàn/Đông Á, tóc đen hoặc nâu đậm, style gọn hiện đại; bối cảnh apartment/officetel, cafe, phòng khám, subway hoặc phòng khách Hàn. Chỉ Text/Voice/Speech dùng Korean; visual_scene prose vẫn tiếng Việt.';
+    return 'Market Visual Profile KR: mô tả bằng tiếng Việt một người Hàn/Đông Á, tóc đen hoặc nâu đậm, style gọn hiện đại; bối cảnh apartment/officetel, cafe, phòng khám, subway hoặc phòng khách Hàn. Chỉ Voice/Speech dùng Korean; Text hiện và visual_scene prose vẫn tiếng Việt.';
   }
   if (hasAny(['de', 'germany', 'german', 'duc', 'eu', 'france', 'french', 'phap', 'spain', 'italy', 'europe'])) {
-    return 'Market Visual Profile EU: mô tả bằng tiếng Việt nhân vật và bối cảnh châu Âu phù hợp quốc gia đã chọn, ưu tiên flat/apartment, phòng khám, phương tiện công cộng, phố nội đô; ngoại hình, tóc, trang phục đời thường phải hợp thị trường nhưng không rập khuôn. Chỉ Text/Voice/Speech dùng ngôn ngữ quốc gia; visual_scene prose vẫn tiếng Việt.';
+    return 'Market Visual Profile EU: mô tả bằng tiếng Việt nhân vật và bối cảnh châu Âu phù hợp quốc gia đã chọn, ưu tiên flat/apartment, phòng khám, phương tiện công cộng, phố nội đô; ngoại hình, tóc, trang phục đời thường phải hợp thị trường nhưng không rập khuôn. Chỉ Voice/Speech dùng ngôn ngữ quốc gia; Text hiện và visual_scene prose vẫn tiếng Việt.';
   }
   if (hasAny(['vn', 'vietnam', 'viet', 'sea', 'thai', 'thailand', 'indonesia', 'malaysia', 'philippines'])) {
-    return 'Market Visual Profile SEA/VN: mô tả bằng tiếng Việt nhân vật Đông Nam Á phù hợp quốc gia, tóc đen/nâu đậm, trang phục đời thường; bối cảnh chung cư, nhà phố, phòng khám, quán cà phê, xe máy hoặc trung tâm thương mại. Text/Voice/Speech dùng ngôn ngữ thị trường nếu có; visual_scene prose vẫn tiếng Việt.';
+    return 'Market Visual Profile SEA/VN: mô tả bằng tiếng Việt nhân vật Đông Nam Á phù hợp quốc gia, tóc đen/nâu đậm, trang phục đời thường; bối cảnh chung cư, nhà phố, phòng khám, quán cà phê, xe máy hoặc trung tâm thương mại. Voice/Speech dùng ngôn ngữ thị trường nếu có; Text hiện và visual_scene prose vẫn tiếng Việt.';
   }
-  return 'Market Visual Profile Global: mô tả bằng tiếng Việt ngoại hình nhân vật, màu da/tóc, trang phục và bối cảnh phổ biến theo core user đã chọn. Không rập khuôn; dùng chi tiết vừa đủ để creator/AI video dựng đúng thị trường. Chỉ Text/Voice/Speech dùng copy language; visual_scene prose vẫn tiếng Việt.';
+  return 'Market Visual Profile Global: mô tả bằng tiếng Việt ngoại hình nhân vật, màu da/tóc, trang phục và bối cảnh phổ biến theo core user đã chọn. Không rập khuôn; dùng chi tiết vừa đủ để creator/AI video dựng đúng thị trường. Chỉ Voice/Speech dùng copy language; Text hiện và visual_scene prose vẫn tiếng Việt.';
 }
 
 function buildSeasonalVisualBlock(context: unknown): string {
@@ -1888,8 +1900,20 @@ function buildFallbackIdeasForFilters(options: {
 
 function hasVietnameseCopyCue(text: string): boolean {
   const normalized = normalizeCompareText(text);
-  return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text)
+  return hasVietnameseDiacritics(text)
     || /\b(?:nguoi|khong|phong|nha|thiet|ke|noi|that|can|muon|nhung|dang|nhin|thay|choang|huyet|tim|nhip|suc|khoe|dien|thoai|anh|video|mien|phi|thu|ngay)\b/.test(normalized);
+}
+
+function hasVietnameseDiacritics(text: string): boolean {
+  return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text);
+}
+
+function hasUntranslatedAudienceCopyCue(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  if (!normalized) return false;
+  const foreignTokens = normalized.match(/\b(?:speaker|perdeu|foto|viagem|memoria|cheia|camara|telemovel|espaco|proxima|duplicados|desfocados|lixo|limpa|quando|espera|travou|ficheiros|recupera|fotografar|sem|para|comecar|esta|estao|voce|uma|the|you|your|camera|storage|photo|video|clean|duplicate|blurred|trash|cuando|llena|viaje|espacio|siguiente|basura)\b/g) || [];
+  const vietnameseTokens = normalized.match(/\b(?:nguoi|ban|toi|minh|bo|lo|anh|chuyen|di|du|lich|nho|day|don|dep|trung|mo|rac|may|dien|thoai|neu|khi|hay|da|dang|vua|roi|sach|nhanh)\b/g) || [];
+  return foreignTokens.length >= 2 && foreignTokens.length > vietnameseTokens.length;
 }
 
 function hasGermanCopyCue(text: string): boolean {
@@ -1898,7 +1922,7 @@ function hasGermanCopyCue(text: string): boolean {
 }
 
 function hasVietnameseAngleCue(text: string): boolean {
-  return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text)
+  return hasVietnameseDiacritics(text)
     || /\b(?:toi|ban|nguoi|khong|nhung|van|can|muon|khi|luc|moi|cu|may|do|kiem|tra|theo|doi|nhip|tim|huyet|ap|suc|khoe|lo|lang|roi|ro|rang|tinh|huong|khoanh|khac|cuoc|song|du|da|chon|goc)\b/.test(normalizeCompareText(text));
 }
 
@@ -2127,7 +2151,7 @@ This field is a creative directive, not optional notes. Use it to decide hook st
 - Hook duration: ${formatTimelineSecond(input.hookPlan.seconds)}s (${input.hookPlan.explicit ? 'explicitly requested' : 'AI inferred from content'}).
 - If the operator describes a trend/reference/scene structure, adapt that structure directly into the hook/body/CTA instead of generating a generic app demo.
 - If the operator does not specify seconds, infer a natural hook length from the content: 1 simple beat = 3s, 2 clear beats = 5s, demo/proof/two-person interaction = 6-8s.
-- Keep the title Vietnamese. Keep visual production prose Vietnamese. Translate only Text hien / Voiceover / CHARACTER SPEECH / CTA into ${input.outputLanguage}.${interactionDirective}`;
+- Keep the title, Text hien, CTA, and visual production prose Vietnamese. Translate only Voiceover / CHARACTER SPEECH into ${input.outputLanguage}.${interactionDirective}`;
 }
 
 function buildSelectedStrategyLockBlock(input: {
@@ -2154,7 +2178,7 @@ function buildSelectedStrategyLockBlock(input: {
 
   return `## SELECTED FILTER LOCK - MUST FOLLOW
 - Core user is locked as TARGET VIEWER/AUDIENCE: ${coreUser}. This tells who the ad is for, what they think/do, and why they act. Do not automatically make every on-screen person the same age/demographic unless the brief explicitly asks. Choose talent/objects/scenes that make this viewer stop scrolling.
-- Market/culture is locked: ${market}. Use local setting, home/work details, skin tone/hair/clothing cues, props, and behavior that fit this market. Copy language is still ${input.outputLanguage}; market does not change visual prose language.
+- Market/culture is locked: ${market}. Use local setting, home/work details, skin tone/hair/clothing cues, props, and behavior that fit this market. Voice/speech language is ${input.outputLanguage}; market does not change Vietnamese hook text, CTA, or visual prose language.
 - Emotion trigger is locked as VIEWER RESPONSE: ${emotion}. The hook should make the viewer feel this emotion. Do not treat it as only the character's mood.
 - Visual/Theme is locked: ${lockedVisualType}. Every idea in this batch must have creativeType exactly "${lockedVisualType}".
 ${visualExecutionNote}
@@ -2320,7 +2344,7 @@ function normalizeLeanCreativeOutput(
     if (!hookVoiceVi && /^vietnamese$/i.test(defaults.outputLanguage || '')) {
       hookVoiceVi = [hookCharacterSpeech, hookVo, hookText].filter(Boolean).join(' / ');
     }
-    if (hookVoiceVi && !hasVietnameseCopyCue(hookVoiceVi)) {
+    if (hookVoiceVi && (!hasVietnameseDiacritics(hookVoiceVi) || !hasVietnameseCopyCue(hookVoiceVi) || hasUntranslatedAudienceCopyCue(hookVoiceVi))) {
       hookVoiceVi = '';
     }
     const scriptVo = readLooseText(ideaRecord, ['script_vo', 'scriptVo'], [hookVo, readLooseText(asRecord(ideaRecord.body), ['voice', 'voiceover'], ''), ctaText].filter(Boolean).join(' '));
@@ -2498,14 +2522,15 @@ Operator note priority:
 - The Operator note is a high-priority creative direction, not optional context.
 - If it requests a hook length, trend, reference format, structure, pacing, or "only hook ideas", obey it unless it conflicts with compliance.
 - If it mentions a trend or pasted structure, adapt that trend/structure directly into the hook/body/CTA instead of generating a generic app demo.
-User-facing copy language rule:
-- title/script name MUST be written in Vietnamese for the internal Idea tool UI.
-- hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
-- hook_voice_vi MUST be Vietnamese. It translates hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay.
-- The selected market/core user decides this copy language. Example: US -> English, LATAM/Mexico/Spain -> Spanish, Brazil -> Portuguese, Germany -> German.
+Language matrix rule:
+- title/script name, hook_text_overlay, text_overlays.text, cta_text, visual_scene_1/2/3, and production notes MUST be written in Vietnamese.
+- hook_vo, hook_character_speech, and script_vo MUST be written in ${input.outputLanguage}; these are the only audience speech/voice fields that follow the selected market language.
+- hook_vo and hook_character_speech must be direct, pain-led, and emotion-led. In the first hook beat they must name the visible blocker/consequence from the selected pain point and make the selected emotion (${emotionJourney}) obvious; do not use generic soft lines.
+- hook_voice_vi MUST be Vietnamese with full diacritics only. It is the Vietnamese translation of hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay. Do not copy the original ${input.outputLanguage} line into hook_voice_vi and do not output unaccented Vietnamese.
+- The selected market/core user decides this voice/speech language. Example: US -> English, LATAM/Mexico/Spain -> Spanish, Brazil/Portugal -> Portuguese, Germany -> German.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
-- Inside visual_scene_1, keep the production prose Vietnamese, but any quoted Text hien / Voiceover / CHARACTER SPEECH lines MUST be translated into ${input.outputLanguage}.
-- Do NOT write the whole visual_scene in ${input.outputLanguage}. Only the audience-facing quoted copy is ${input.outputLanguage}.
+- Inside visual_scene_1, keep the production prose Vietnamese. Quoted Voiceover / CHARACTER SPEECH lines use ${input.outputLanguage}; quoted Text hiện stays Vietnamese.
+- Do NOT write the whole visual_scene in ${input.outputLanguage}. Only audience speech/voice snippets use ${input.outputLanguage}.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
 - hook_text_overlay or hook_vo must name the selected concrete metric/feature in the first hook beat when one exists. Use "blood pressure" directly for blood pressure, "heart rate" directly for heart rate, etc.; do not rely on vague phrases like "this number" or "something changed" before the viewer knows the topic.
@@ -2514,7 +2539,7 @@ Timeline output rule:
 ${timelineRule}
 - visual_scene_2 MUST be one concise Vietnamese body paragraph for "Diễn biến (Body)".
 - script_vo MUST be the main voiceover only, in ${input.outputLanguage}, without production labels.
-- cta_text MUST be the final CTA/slogan only, in ${input.outputLanguage}.
+- cta_text MUST be the final CTA/slogan only, in Vietnamese.
 
 BRIEF
 - App: ${input.appName}
@@ -2527,7 +2552,7 @@ BRIEF
 - Angle to test: ${input.angleContext || 'choose the strongest angle inside the pain point'}
 - Market: ${market}
 - Market visual profile: ${marketVisualProfile}
-- Copy language: ${input.outputLanguage}
+- Voice/speech language: ${input.outputLanguage}
 - Production notes language: Vietnamese
 - Operator note: ${input.ideaDescription || 'N/A'}
 - Trending hooks: ${trends}
@@ -2629,7 +2654,7 @@ export async function POST(request: NextRequest) {
         pillars: [asText(originalFramework.painpoint)].filter(Boolean),
         anglesPerPillar: 1,
         ideasPerAngle: 1,
-        language: 'User-facing copy must be English; internal visual and production notes can stay Vietnamese',
+        language: 'Vietnamese hook text/CTA/visual notes; English only for voice, character speech, and script_vo',
         priority: 'A',
         extraContext: [
           'Task type: refine an existing idea, do not rewrite unrelated parts.',
@@ -2964,7 +2989,7 @@ Hard requirements:
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
-- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
+- title/script name, hook_text_overlay, text_overlays.text, cta_text, visual_scene prose, and production notes MUST be Vietnamese. hook_vo, hook_character_speech, and script_vo MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese with full diacritics. Only quoted Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}; quoted Text hiện stays Vietnamese.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
         const frameworkInjection = buildFrameworkInjection({
@@ -3000,10 +3025,10 @@ Hard requirements:
           ideasPerAngle: plan.batchQuantity,
           trackRule: `Track is internal difficulty only. All ideas must keep creativeType = ${visualType}.`,
           language: useCreativeRulesV7
-            ? `User-facing copy in ${outputLanguage}. Internal visual and production notes in Vietnamese.`
+            ? `Vietnamese hook text/CTA/visual notes. Only voice, character speech, and script_vo in ${outputLanguage}.`
             : usePromptSystemBuilderHtml
-              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`
-              : `User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`,
+              ? `Prompt System Builder HTML V1. Vietnamese hook text/CTA/visual notes; only voice, character speech, and script_vo in ${outputLanguage}.`
+              : `Vietnamese hook text/CTA/visual notes; only voice, character speech, and script_vo in ${outputLanguage}.`,
           priority: 'A',
           extraContext: [
             `Selected angle: ${angleContext || 'Creative freedom'}`,
@@ -3042,14 +3067,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. In visual_scene rows, only quoted Text hien / Voiceover / CHARACTER SPEECH uses ${outputLanguage}. Target market affects local setting and vibe only.
-- hook_voice_vi must be Vietnamese translation of hook_vo + hook_character_speech; if both are empty, translate hook_text_overlay.
+- title/script name, hook_text_overlay, text_overlays.text, cta_text, visual scenes, and production notes must be Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, only quoted Voiceover / CHARACTER SPEECH uses ${outputLanguage}; quoted Text hien stays Vietnamese. Target market affects local setting and vibe only.
+- hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in the selected copy language inside an existing timing row when needed.
+- visual_scene_1 must follow the Hook Timing Rule below. Include Text hien in Vietnamese and Voiceover in the selected voice language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Duration: ${duration}
 - The final target for this selected angle is ${totalVariations} ideas. This API call only covers items ${requestStartIndex + plan.batchStartIndex + 1}-${requestStartIndex + plan.batchStartIndex + plan.batchQuantity}.
@@ -3747,7 +3772,7 @@ Hard requirements:
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
+- title/script name, hook_text_overlay, text_overlays.text, cta_text, visual_scene prose, and production notes MUST be Vietnamese. hook_vo, hook_character_speech, and script_vo MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese with full diacritics. Only quoted Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}; quoted Text hiện stays Vietnamese.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
     const outputSpec = buildCreativeBriefOutputSpec({
@@ -3778,14 +3803,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. In visual_scene rows, only quoted Text hien / Voiceover / CHARACTER SPEECH uses ${outputLanguage}. Target market affects local setting and vibe only.
-- hook_voice_vi must be Vietnamese translation of hook_vo + hook_character_speech; if both are empty, translate hook_text_overlay.
+- title/script name, hook_text_overlay, text_overlays.text, cta_text, visual scenes, and production notes must be Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, only quoted Voiceover / CHARACTER SPEECH uses ${outputLanguage}; quoted Text hien stays Vietnamese. Target market affects local setting and vibe only.
+- hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in the selected copy language inside an existing timing row when needed.
+- visual_scene_1 must follow the Hook Timing Rule below. Include Text hien in Vietnamese and Voiceover in the selected voice language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.
 - Each idea must stay inside the selected pillar and selected angle focus.
@@ -3824,10 +3849,10 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       ideasPerAngle: quantity,
       trackRule: `Track is internal difficulty only. All ideas must keep creativeType = ${visualType}.`,
           language: useCreativeRulesV7
-            ? `User-facing copy in ${outputLanguage}. Internal visual and production notes in Vietnamese.`
+            ? `Vietnamese hook text/CTA/visual notes. Only voice, character speech, and script_vo in ${outputLanguage}.`
             : usePromptSystemBuilderHtml
-              ? `Prompt System Builder HTML V1. User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`
-              : `User-facing copy in ${outputLanguage}; internal visual and production notes in Vietnamese.`,
+              ? `Prompt System Builder HTML V1. Vietnamese hook text/CTA/visual notes; only voice, character speech, and script_vo in ${outputLanguage}.`
+              : `Vietnamese hook text/CTA/visual notes; only voice, character speech, and script_vo in ${outputLanguage}.`,
       priority: 'A',
       extraContext: [
         `Selected angle: ${angleContext || 'Creative freedom'}`,

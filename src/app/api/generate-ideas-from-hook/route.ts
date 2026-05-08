@@ -268,7 +268,9 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   const hookAlt1 = asText(meta.hookAlt1);
   const hookAlt2 = asText(meta.hookAlt2);
   const hookVisual = asText(hook.visual) || asText(hook.script);
-  const hookVoice = [asText(hook.characterSpeech), asText(hook.voiceover), asText(hook.voice)].filter(Boolean).join(' ');
+  const hookCharacterSpeech = asText(hook.characterSpeech);
+  const hookVoiceover = asText(hook.voiceover);
+  const hookVoice = [hookCharacterSpeech, hookVoiceover, asText(hook.voice)].filter(Boolean).join(' ');
   const hookTextOverlay = asText(hook.textOverlay) || asText(hook.text);
   const bodyVisual = asText(body.visual) || asText(body.script);
   const bodyVoice = [asText(body.characterSpeech), asText(body.voiceover), asText(body.voice)].filter(Boolean).join(' ');
@@ -285,6 +287,13 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   if (!hookPrimary) errors.push('meta.hookPrimary is required');
   if (!hookVisual) errors.push('hook.visual is required');
   if (!hookVoice && !hookTextOverlay) errors.push('hook needs voice or text overlay');
+  if (hookCharacterSpeech && hookVoiceover) errors.push('hook must use either characterSpeech or voiceover, not both');
+  if (hookCharacterSpeech && !/^\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*s\s*[-:]\s*[^:]{2,80}:/m.test(hookCharacterSpeech)) {
+    errors.push('hook characterSpeech must include time + speaker label');
+  }
+  if (/\b(?:Voiceover|Voice over|VO|Character speech|CHARACTER SPEECH|VOICEOVER|VOICE|Text\s+(?:hien|hi[eệ]n))\s*:/i.test(hookVisual)) {
+    errors.push('hook visual must not contain inline Voiceover, Character speech, or Text hien labels');
+  }
   if (!bodyVisual) errors.push('body.visual is required');
   if (!bodyVoice && !bodyTextOverlay) errors.push('body needs voice or text overlay');
   if (!ctaVisual) errors.push('cta.visual is required');

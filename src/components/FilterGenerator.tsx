@@ -1895,6 +1895,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               characterSpeech: getSectionCharacterSpeech(item.hook),
               voiceover: getSectionVoiceover(item.hook),
               voice: item.hook?.voice || '',
+              viTranslation: getSectionViTranslation(item.hook) || '',
             },
             body: {
               script: item.body?.script || item.body?.visual || '',
@@ -2318,36 +2319,52 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     return englishTokens.length >= 3 && englishTokens.length > vietnameseTokens.length;
   };
 
-  const isProbablyVietnameseHookLine = (value: string) => {
-    const hasVietnameseDiacritics = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(value);
-    if (hasVietnameseDiacritics) return true;
+  const isProbablyUntranslatedHookLine = (value: string) => {
     const normalized = normalizeCompareText(value);
-    const vietnameseTokens = normalized.match(/\b(?:toi|minh|ban|nguoi|anh|chi|ong|ba|ay|khong|co|la|nay|do|voi|vi|luc|khi|da|kiem|tra|huyet|ap|nhip|tim|con|so|lo|lang|dang|so|binh|tinh|dien|thoai|ngay|mot|cam|thay|nghi|met|moi|bo|qua|nho|hon|khac|cau|chuyen)\b/g) || [];
-    return vietnameseTokens.length >= 2;
+    const foreignTokens = normalized.match(/\b(?:speaker|perdeu|foto|viagem|memoria|cheia|camara|telemovel|espaco|proxima|duplicados|desfocados|lixo|limpa|quando|espera|travou|ficheiros|recupera|fotografar|sem|para|comecar|esta|estao|voce|uma|the|you|your|camera|storage|photo|video|clean|duplicate|blurred|trash|cuando|llena|viaje|espacio|siguiente|basura)\b/g) || [];
+    const vietnameseTokens = normalized.match(/\b(?:toi|minh|ban|nguoi|anh|chi|ong|ba|khong|co|la|nay|do|voi|vi|luc|khi|da|kiem|tra|dien|thoai|ngay|mot|bo|lo|nho|day|don|dep|rac|chuyen|di)\b/g) || [];
+    return foreignTokens.length >= 2 && foreignTokens.length > vietnameseTokens.length;
+  };
+
+  const isProbablyCorruptHookLine = (value: string) => {
+    return /(?:\?{2,}|�|Ã|Ä|Æ|áº|á»|Ng\?\?i|ng\?\?i)/.test(value);
+  };
+
+  const hasVietnameseDiacritics = (value: string) => {
+    return /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(value);
+  };
+
+  const isProbablyVietnameseHookLine = (value: string) => {
+    return hasVietnameseDiacritics(value);
   };
 
   const getSectionViTranslation = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
     const raw = (section || {}) as Record<string, unknown> & IdeaApiSection;
-    const text = cleanPreviewText(
-      raw.hookVoiceVi
-      ?? raw.hook_voice_vi
-      ?? raw.viTranslation
-      ?? raw.vi_translation
-      ?? raw.vietnameseTranslation
-      ?? raw.vietnamese_translation
-    );
-    if (!text) return '';
+    const candidates = [
+      raw.hookVoiceVi,
+      raw.hook_voice_vi,
+      raw.viTranslation,
+      raw.vi_translation,
+      raw.vietnameseTranslation,
+      raw.vietnamese_translation,
+    ].map(value => cleanPreviewText(value)).filter(Boolean);
 
     const spokenSource = [
       getSectionCharacterSpeech(raw),
       getSectionVoiceover(raw),
       getSectionLegacyVoice(raw),
     ].filter(Boolean).join(' / ');
-    if (spokenSource && normalizeCompareText(text) === normalizeCompareText(spokenSource)) return '';
-    if (isProbablyEnglishHookLine(text)) return '';
-    if (!isProbablyVietnameseHookLine(text)) return '';
 
-    return text;
+    for (const text of candidates) {
+      if (spokenSource && normalizeCompareText(text) === normalizeCompareText(spokenSource)) continue;
+      if (isProbablyCorruptHookLine(text)) continue;
+      if (isProbablyEnglishHookLine(text)) continue;
+      if (isProbablyUntranslatedHookLine(text)) continue;
+      if (!isProbablyVietnameseHookLine(text)) continue;
+      return text;
+    }
+
+    return '';
   };
 
   const getSectionSpokenLines = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined) => {
@@ -3607,7 +3624,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const strategyCode = String(c?.meta?.strategyCode || '');
             const selectedInputChips = getResultInputChips(idea, c || {});
             return (
-              <div key={ideaKey} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
+              <div key={ideaKey} className="h-full bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
                   <div className="flex justify-between items-start gap-3 mb-3">
                     <div className="flex-1 min-w-0">
@@ -3652,14 +3669,14 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   </div>
 
                   {selectedInputChips.length > 0 && (
-                    <div className="mb-3 rounded-lg border border-gray-100 bg-gray-50/70 p-2.5">
+                    <div className="mb-3 h-[116px] overflow-y-auto rounded-lg border border-gray-100 bg-gray-50/70 p-2.5">
                       <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Input config</div>
                       <div className="flex flex-wrap gap-1.5">
                         {selectedInputChips.map(chip => (
                           <span
                             key={`${ideaKey}-${chip.key}`}
                             title={chip.value}
-                            className={`max-w-full whitespace-normal break-words rounded-md px-2 py-1 text-[11px] font-medium leading-snug ${chip.className}`}
+                            className={`inline-block max-w-full truncate rounded-md px-2 py-1 text-[11px] font-medium leading-snug ${chip.className}`}
                           >
                             <span className="font-bold">{chip.label}:</span> {chip.value}
                           </span>
