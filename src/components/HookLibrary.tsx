@@ -52,14 +52,41 @@ interface FullIdea {
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+type ApiResult<T> = {
+  success?: boolean;
+  data?: T;
+  error?: string;
+  fallback?: boolean;
+  warning?: string;
+  meta?: Record<string, unknown> & { warnings?: string[] };
+};
+
 const FULL_IDEA_SECTIONS = [
   { key: 'hook', label: '🎣 HOOK', bg: 'bg-red-50', border: 'border-red-100', title: 'text-red-500' },
   { key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
 ] as const;
 
-const MODIFY_HOOK_REQUEST_TIMEOUT_MS = 70000;
+const MODIFY_HOOK_REQUEST_TIMEOUT_MS = 58000;
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
+
+async function readApiResult<T>(response: Response): Promise<ApiResult<T>> {
+  const text = await response.text();
+  const compactText = text.replace(/\s+/g, ' ').trim();
+  if (!compactText) {
+    return { error: `API trả response rỗng (HTTP ${response.status}).` };
+  }
+
+  try {
+    return JSON.parse(text) as ApiResult<T>;
+  } catch {
+    const snippet = compactText.slice(0, 260);
+    return {
+      error: `API không trả JSON (HTTP ${response.status}). ${snippet || 'Không có chi tiết lỗi.'}`,
+      meta: { contentType: response.headers.get('content-type') || '' },
+    };
+  }
+}
 
 export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScreen, app, selectedModel }) => {
   const [hooks, setHooks] = useState<Hook[]>([]);
@@ -290,6 +317,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const handleGenerate = async () => {
     if (!selectedHook || !modifyPrompt) return;
     setIsLoading(true);
+    setGeneratedIdeas([]);
     setModifiedHooksSaveStatus('idle');
     setSavedModifiedHookCount(0);
     setSavedModifiedHookSessionId(null);
@@ -314,20 +342,24 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           appName: app?.name || '',
           appCategory: app?.category || '',
           selectedModel: selectedModel || '',
+          previousHooks: modifyLiveIdeas.slice(0, 10).map((idea, index) => (
+            `${index + 1}. ${idea.title || 'Modified Hook'} | visual="${idea.hook?.visual || idea.hook?.script || ''}" | text="${idea.hook?.textOverlay || idea.hook?.text || ''}" | voice="${idea.hook?.characterSpeech || idea.hook?.voiceover || idea.hook?.voice || ''}"`
+          )).join('\n'),
         }),
         signal: controller.signal,
       });
-      const result = await res.json();
+      const result = await readApiResult<HookIdea[]>(res);
       if (result?.fallback && !result.data?.length) {
         throw new Error('Backend đang trả fallback hook thay vì output AI sạch. Không lưu kết quả fallback.');
       }
-      if (res.ok && result.success && result.data?.length > 0) {
-        const generated = (result.data as HookIdea[]).slice(0, quantity);
+      const resultData = Array.isArray(result.data) ? result.data : [];
+      if (res.ok && result.success && resultData.length > 0) {
+        const generated = resultData.slice(0, quantity);
         setGeneratedIdeas(generated);
         setModifyLiveIdeas(generated);
         await saveModifiedHooksToHistory(generated);
       } else {
-        alert(result.error || 'Có lỗi khi tạo hook. Vui lòng thử lại.');
+        alert(result.error || `Có lỗi khi tạo hook (HTTP ${res.status}). Vui lòng thử lại.`);
       }
     } catch (err) {
       if (requestTimedOut) {
@@ -2002,14 +2034,15 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           }),
           signal: controller.signal,
         });
-        const result = await res.json();
+        const result = await readApiResult<FullIdea[]>(res);
         if (result?.meta?.warnings?.length) {
           console.warn('[generate-ideas-from-hook] warnings:', result.meta.warnings);
         }
-        if ((result?.meta?.fallbackCount || 0) > 0) {
+        const fallbackCount = Number(result?.meta?.fallbackCount || 0);
+        if (fallbackCount > 0) {
           throw new Error('Backend đang trả fallback ideas thay vì output AI sạch. Cần siết prompt/context rồi chạy lại.');
         }
-        const resultData = Array.isArray(result?.data) ? (result.data as FullIdea[]) : [];
+        const resultData = Array.isArray(result?.data) ? result.data : [];
         if (res.ok && result.success && resultData.length > 0) {
           const generated = resultData.slice(0, fullIdeasQty);
           const saved = await saveFullIdeasToDatabase(generated);
@@ -2513,7 +2546,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
                   <div className="p-4">
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Modified Hook</span>
-                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">English Copy</span>
+                      <span className="text-[11px] px-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-gray-600">Visual/Text VI</span>
                       {idea.savedIdeaId && (
                         <span className="text-[11px] px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-md text-emerald-700">Đã lưu History</span>
                       )}

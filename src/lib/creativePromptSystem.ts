@@ -2413,24 +2413,24 @@ Return ${quantityLabel} objects in this exact schema:
   "explanation": "Vietnamese explanation of what changed and why it works",
   "meta": {
     "builderVersion": "prompt_system_builder_v1",
-    "hookPrimary": "Natural hook line in ${options.language}, 6-16 words",
-    "hookAlt1": "Alternative hook A in ${options.language} with a different rhetorical approach",
-    "hookAlt2": "Alternative hook B in ${options.language} with a different rhetorical approach",
-    "visualRefNotes": "Specific production note",
-    "talentProfile": "Age, look, clothing, or No talent",
-    "dontDo": "1 specific thing not to do"
+    "hookPrimary": "Natural hook text overlay in Vietnamese, 6-16 words",
+    "hookAlt1": "Alternative hook A in Vietnamese with a different rhetorical approach",
+    "hookAlt2": "Alternative hook B in Vietnamese with a different rhetorical approach",
+    "visualRefNotes": "Specific Vietnamese production note",
+    "talentProfile": "Vietnamese age, look, clothing, or No talent",
+    "dontDo": "1 specific Vietnamese thing not to do"
   },
   "hook": {
     "durationSeconds": 3,
-    "visual": "Detailed hook-only visual in ${options.language}. Do not include Voiceover/Text hien/CHARACTER SPEECH in this visual text. ${visualAnchorClause} ${pacingClause}",
+    "visual": "Detailed hook-only visual in Vietnamese. Do not include Voiceover/Text hien/Text hiện/CHARACTER SPEECH in this visual text. ${visualAnchorClause} ${pacingClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; include time + speaker when filled, e.g. 0-3s - Creator: line; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty when characterSpeech is filled",
     "voice": "Legacy compatibility line in ${options.language}: same as characterSpeech or voiceover, not a merged script",
-    "textOverlay": "Readable on-screen text in ${options.language}, around 6-16 words, aligned with meta.hookPrimary",
-    "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
-    "viewerEmotion": "${options.language} description of what the viewer feels",
-    "painpointImpact": "${options.language} description of why this pain lands",
-    "whyTheyStopScrolling": "1 ${options.language} sentence explaining the stop-scroll reason"
+    "textOverlay": "Readable on-screen text in Vietnamese, around 6-16 words, aligned with meta.hookPrimary",
+    "viTranslation": "Vietnamese translation of hook characterSpeech + voiceover only; if both are empty, translate textOverlay",
+    "viewerEmotion": "Vietnamese description of what the viewer feels",
+    "painpointImpact": "Vietnamese description of why this pain lands",
+    "whyTheyStopScrolling": "1 Vietnamese sentence explaining the stop-scroll reason"
   }
 }]
 
@@ -2443,6 +2443,8 @@ Return ${quantityLabel} objects in this exact schema:
 - visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.
 - visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual must obey Rule 4 pacing: hook-only 3s output uses one scene/camera angle; do not use split-screen or multiple cuts.
+- title, meta hook text fields, hook.textOverlay, hook.visual, and production notes must be Vietnamese. Only characterSpeech, voiceover, and voice use ${options.language}.
+- If characterSpeech is filled, voiceover must be empty. Do not duplicate the same spoken line across both fields.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
 - The variation must be visually distinct, not just paraphrased text.`;
 }
@@ -2759,11 +2761,19 @@ export function normalizeIdeaOutput(
 
 export function normalizeHookOutput(input: unknown): Record<string, unknown> {
   const item = readRecord(input);
+  const hook = normalizeSection(item.hook, { includeViewerFields: true, includeDurationSeconds: true });
+  const rawTitle = readText(item.title, 'Biến thể hook');
+  const titleContext = [
+    rawTitle,
+    readText(readRecord(item.hook).visual),
+    readText(readRecord(item.hook).textOverlay),
+    readText(readRecord(item.meta).hookPrimary),
+  ].filter(Boolean).join(' ');
   return {
     id: item.id ?? 1,
-    title: readText(item.title, 'Bien the hook'),
+    title: coerceVietnameseScriptTitle(rawTitle, titleContext, 0),
     explanation: readText(item.explanation),
     meta: normalizeMeta(item.meta),
-    hook: normalizeSection(item.hook, { includeViewerFields: true, includeDurationSeconds: true }),
+    hook,
   };
 }

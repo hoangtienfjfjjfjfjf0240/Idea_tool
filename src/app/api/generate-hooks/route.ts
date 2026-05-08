@@ -15,8 +15,10 @@ import { enrichHookWithFramework } from '@/lib/hookFramework';
 export const maxDuration = 60;
 
 const MAX_HOOK_VARIATIONS = 20;
-const HOOK_MODEL_TIMEOUT_MS = 45000;
-const HOOK_FALLBACK_TIMEOUT_MS = 20000;
+const HOOK_ROUTE_BUDGET_MS = 52000;
+const HOOK_MODEL_TIMEOUT_MS = 26000;
+const HOOK_FALLBACK_TIMEOUT_MS = 9000;
+const MIN_HOOK_MODEL_TIME_MS = 6500;
 const FAST_HOOK_MODELS = ['gemini/gemini-2.5-flash', 'gemini/gemini-2.0-flash', 'openai/gpt-5.4-mini'];
 
 function toPositiveInt(value: unknown, fallback: number) {
@@ -390,7 +392,16 @@ export async function POST(request: NextRequest) {
     const guard = await guardApiRequest(request, { key: 'generate-hooks', max: 60, windowMs: 5 * 60 * 1000 });
     if (guard instanceof NextResponse) return guard;
 
-    const { hook: rawHook, instruction, quantity = 3, appName, appCategory, selectedModel, targetMarket } = await request.json();
+    const {
+      hook: rawHook,
+      instruction,
+      quantity = 3,
+      appName,
+      appCategory,
+      selectedModel,
+      targetMarket,
+      previousHooks,
+    } = await request.json();
     const hook = enrichHookWithFramework(rawHook || {}, { appName, appCategory });
     const requestedQuantity = Math.min(toPositiveInt(quantity, 3), MAX_HOOK_VARIATIONS);
     const targetMarketValues = [
@@ -408,6 +419,10 @@ export async function POST(request: NextRequest) {
       angleValues: [readText(hook.title), readText(hook.description), readText(instruction)].filter(Boolean),
       painPointValues: [readText(hook.painpoint)].filter(Boolean),
     });
+
+    const previousHooksBlock = readText(previousHooks)
+      ? `\n## PREVIOUS MODIFIED HOOKS - DO NOT REPEAT\n${readText(previousHooks)}\n`
+      : '';
 
     const prompt = `You are a senior performance creative strategist for mobile app ads.
 Create hook-only variations for a winning hook. This is not a full idea and must stay fast.
@@ -428,6 +443,7 @@ ${filterConsistencyBlock || ''}
 
 ## USER MODIFY BRIEF
 "${instruction}"
+${previousHooksBlock}
 
 ## TASK
 Create exactly ${requestedQuantity} hook-only variations.
@@ -436,24 +452,38 @@ Create exactly ${requestedQuantity} hook-only variations.
 - Preserve the interaction pattern and number of people when possible.
 - Each variation should differ from the original on at least 3 of these axes: situation, character, setting, blocker, mood.
 - hook.visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- Strategy/explanation fields can be Vietnamese; title, hook voice, character speech, voiceover, and textOverlay must be ${targetLanguage}.
-- Target market controls local behavior, setting, culture, props, and vibe only. Do not switch copy away from ${targetLanguage}.
+- Internal UI/production fields must be Vietnamese: title, explanation, meta.hookPrimary, hookAlt1, hookAlt2, visualRefNotes, talentProfile, dontDo, hook.visual, hook.textOverlay, viTranslation, viewerEmotion, painpointImpact, whyTheyStopScrolling.
+- Only hook.characterSpeech, hook.voiceover, and hook.voice follow ${targetLanguage}.
+- If a visible person speaks in the hook, put that line in hook.characterSpeech with time + speaker (example: 0-3s - Creator: line) and leave hook.voiceover empty. Do not return both for the same spoken line.
+- Do not put Voiceover, CHARACTER SPEECH, Text hien, Text hiện, or TEXT OVERLAY snippets inside hook.visual.
+- No two variations may use the same title, first visible subject/object, first physical action, setting, or hook structure.
+- Target market controls local behavior, setting, culture, props, and vibe only. Do not switch production prose away from Vietnamese.
 - Output compact JSON only. No markdown fences. No full Body or CTA.
 
 ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })}`;
 
     const candidateModels = resolveHookModels(selectedModel);
+    const routeStartedAt = Date.now();
     let lastError = 'AI hook generation timed out or gateway returned an error.';
     let bestValidItems: Record<string, unknown>[] = [];
 
     for (const [index, model] of candidateModels.entries()) {
+      const remainingMs = HOOK_ROUTE_BUDGET_MS - (Date.now() - routeStartedAt);
+      if (remainingMs < MIN_HOOK_MODEL_TIME_MS) {
+        lastError = `${lastError} Route time budget ended before trying ${model}.`;
+        break;
+      }
+      const modelTimeoutMs = Math.min(
+        index === 0 ? HOOK_MODEL_TIMEOUT_MS : HOOK_FALLBACK_TIMEOUT_MS,
+        remainingMs,
+      );
       const text = await askAI(prompt, {
         model,
         temperature: 0.75,
         max_tokens: Math.max(2400, requestedQuantity * 900),
         useCreativePersona: false,
         priority: 'high',
-        timeoutMs: index === 0 ? HOOK_MODEL_TIMEOUT_MS : HOOK_FALLBACK_TIMEOUT_MS,
+        timeoutMs: modelTimeoutMs,
       });
 
       if (!text) {
@@ -474,10 +504,10 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
         const characterSpeech = readText(normalizedHook.characterSpeech);
         const voiceover = readText(normalizedHook.voiceover);
         const textOverlay = readText(normalizedHook.textOverlay, readText(normalizedHook.text));
-        const voice = readText(normalizedHook.voice, voiceover || characterSpeech || textOverlay);
+        const voice = readText(normalizedHook.voice, voiceover || characterSpeech);
         return {
           id: `hook-${Date.now()}-${i}`,
-          title: normalized.title || `Bien the ${i + 1}`,
+          title: readText(normalized.title, `Biến thể hook ${i + 1}`),
           explanation: normalized.explanation || '',
           meta: normalized.meta || {},
           hook: {
