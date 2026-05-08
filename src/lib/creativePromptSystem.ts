@@ -441,7 +441,8 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - Notes grammar: max 3-5 bullets; DO, DON'T, Data, Constraint only.
 - PSP must become Feature -> Benefit -> Transformation so the app action feels earned.
 - Use only these Visual/Theme formats as production format labels: 2D Animation, 3D Animation, UGC, POV, Motion Graphic.
-- Motion Graphic means 2D motion graphics: animated typography, flat vector shapes, icons, charts, app UI panels, arrows, labels, data callouts, and infographic transitions. It is not live-action, not 3D render, and not full 2D character/cartoon scene animation.
+- Motion Graphic means 2D motion graphics: animated typography, flat vector shapes, icons, charts, app UI panels, arrows, labels, data callouts, and infographic transitions. It is not podcast/interview, not live-action, not 3D render, and not full 2D character/cartoon scene animation.
+- Angle/reference patterns must obey the selected Visual/Theme. If an angle suggests podcast/interview/reaction but Visual/Theme is Motion Graphic, translate that angle into UI/data/typography/icon motion instead of using people or speakers.
 - Social patterns such as Trend, Challenge, Interview, Split Screen, or Social Proof are hook/story patterns, not Visual/Theme formats.
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
 - If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines. hook_vo stays empty unless there is a true off-camera narrator.
@@ -691,7 +692,7 @@ Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and
 Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
-${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.${options.visualType === 'Motion Graphic' ? ' Motion Graphic must be 2D motion graphics: animated typography, flat shapes/icons/charts/UI panels/data callouts, not live-action, 3D, or full character animation.' : ''}` : ''}
+${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.${options.visualType === 'Motion Graphic' ? ' Motion Graphic must be 2D motion graphics: animated typography, flat shapes/icons/charts/UI panels/data callouts. Do not use podcast, interview, host/guest, Speaker 1/Speaker 2, live-action, 3D, or full character animation.' : ''}` : ''}
 
 [
   {
@@ -1476,6 +1477,13 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
   const normalizedScene = normalizeCompareText(scene);
   if (!scene || !lockedVisualType) return scene;
 
+  if (lockedVisualType === 'Motion Graphic') {
+    const hasOffFormatCue = /\b(?:podcast|interview|talk show|host|guest|speaker\s*[12]|two people|2 people|two men|two women|living room|sofa|armchair|camera iphone|eye line|doi thoai|tro chuyen|phong van|hai nguoi|2 nguoi|nguoi that|dien vien|nhan vat)\b/.test(normalizedScene);
+    if (hasOffFormatCue) {
+      return 'Motion Graphic 2D thuan: khung app UI/phone screen, typography lon, icon flat, arrows, waveform/heart-rate line va animated chart/data callout chuyen dong theo beat. Khong co podcast, host/speaker, nguoi that, sofa hay phong ghi hinh.';
+    }
+  }
+
   if (lockedVisualType === '2D Animation' && !/\b(?:2d|animation|animated|minh hoa|hoat hinh|vector|cartoon)\b/.test(normalizedScene)) {
     return `Trong khung 2D animation minh hoa, ${scene}`;
   }
@@ -1492,6 +1500,18 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
     return `Theo phong cach UGC doi thuong, ${scene}`;
   }
   return scene;
+}
+
+function isMotionGraphicVisual(visualType?: string) {
+  return normalizeFrameworkVisualFormat(visualType || '') === 'Motion Graphic';
+}
+
+function stripRoleLabelsForVoiceover(text: string) {
+  return text
+    .replace(/\bSpeaker\s*\d+\s*:\s*/gi, '')
+    .replace(/\b(?:Host|Guest)\s*:\s*/gi, '')
+    .replace(/\s*\/\s*/g, ' ')
+    .trim();
 }
 
 const HOOK_ARCHETYPE_LABELS: Record<string, string> = {
@@ -1967,6 +1987,10 @@ export function normalizeCreativeBriefOutput(
         visualScene1 = enforceSelectedVisualFormatInScene(visualScene1, defaults.visualType);
         visualScene2 = enforceSelectedVisualFormatInScene(visualScene2, defaults.visualType);
         visualScene3 = enforceSelectedVisualFormatInScene(visualScene3, defaults.visualType);
+        if (isMotionGraphicVisual(defaults.visualType) && hookCharacterSpeech) {
+          hookVoiceover = hookVoiceover || trimWords(stripRoleLabelsForVoiceover(hookCharacterSpeech), 12);
+          hookCharacterSpeech = '';
+        }
 
         if (!hookTextOverlay) {
           hookTextOverlay = hookPrimary;

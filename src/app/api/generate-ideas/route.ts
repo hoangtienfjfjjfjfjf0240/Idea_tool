@@ -226,6 +226,13 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
   const normalizedScene = normalizeCompareText(scene);
   if (!lockedVisualType) return scene;
 
+  if (lockedVisualType === 'Motion Graphic') {
+    const hasOffFormatCue = /\b(?:podcast|interview|talk show|host|guest|speaker\s*[12]|two people|2 people|two men|two women|living room|sofa|armchair|camera iphone|eye line|doi thoai|tro chuyen|phong van|hai nguoi|2 nguoi|nguoi that|dien vien|nhan vat)\b/.test(normalizedScene);
+    if (hasOffFormatCue) {
+      return 'Motion Graphic 2D thuan: khung app UI/phone screen, typography lon, icon flat, arrows, waveform/heart-rate line va animated chart/data callout chuyen dong theo beat. Khong co podcast, host/speaker, nguoi that, sofa hay phong ghi hinh.';
+    }
+  }
+
   if (lockedVisualType === '2D Animation' && !/\b(?:2d|animation|animated|minh hoa|hoat hinh|vector|cartoon)\b/.test(normalizedScene)) {
     return `Trong khung 2D animation minh hoa, ${scene}`;
   }
@@ -242,6 +249,18 @@ function enforceSelectedVisualFormatInScene(text: string, visualType?: string): 
     return `Theo phong cach UGC doi thuong, ${scene}`;
   }
   return scene;
+}
+
+function isMotionGraphicVisual(visualType?: string) {
+  return normalizeFrameworkVisualFormat(visualType || '') === 'Motion Graphic';
+}
+
+function stripRoleLabelsForVoiceover(text: string) {
+  return text
+    .replace(/\bSpeaker\s*\d+\s*:\s*/gi, '')
+    .replace(/\b(?:Host|Guest)\s*:\s*/gi, '')
+    .replace(/\s*\/\s*/g, ' ')
+    .trim();
 }
 
 function shouldUseCreativeRulesV7(appName: string, appKnowledge: string): boolean {
@@ -1129,16 +1148,27 @@ function buildBatchDiversityBlock(quantity: number, angle: string, angleIndex: n
   if (quantity <= 1) return '';
 
   const lockedVisualType = normalizeFrameworkVisualFormat(visualType || '') || 'selected Visual/Theme';
-  const lanes = [
+  const motionGraphicLanes = [
+    `Idea 1: ${lockedVisualType}, mo bang typography/data number bat thuong phong to tren app UI.`,
+    `Idea 2: ${lockedVisualType}, mo bang icon/shape interruption lam chart bi giat nhip.`,
+    `Idea 3: ${lockedVisualType}, mo bang split data cards hoac before-after chart reveal.`,
+    `Idea 4: ${lockedVisualType}, texture/oddly satisfying line graph motion tao cam giac dung scroll.`,
+    `Idea 5: ${lockedVisualType}, social proof bang comment bubble/data badge, khong co nguoi that hay podcast.`,
+    `Idea 6: ${lockedVisualType}, challenge/cau do 1 nhip bang typography va UI tap target.`,
+    `Idea 7: ${lockedVisualType}, myth-vs-fact infographic beat bang icon, labels va arrows.`,
+    `Idea 8: ${lockedVisualType}, trend structure nhung bien thanh UI/data motion, khong dung interview/podcast.`,
+  ];
+  const generalLanes = [
     `Idea 1: ${lockedVisualType}, mở bằng một hành động cá nhân đang bị kẹt giữa chừng.`,
     `Idea 2: ${lockedVisualType}, phản ứng/social interruption có người hoặc vật thứ hai làm tình huống đổi nhịp.`,
     `Idea 3: ${lockedVisualType}, reveal bất ngờ bằng blocking object hoặc không gian khác hẳn idea 1.`,
     `Idea 4: ${lockedVisualType}, texture/oddly satisfying motion tạo cảm giác dừng scroll.`,
     `Idea 5: ${lockedVisualType}, comment-reply/social proof nhưng vẫn giữ đúng production format đã chọn.`,
     `Idea 6: ${lockedVisualType}, challenge/câu đố 1 nhịp trong cùng format visual.`,
-    `Idea 7: ${lockedVisualType}, interview/podcast beat nếu phù hợp nhưng không đổi sang UGC nếu visual không phải UGC.`,
+    `Idea 7: ${lockedVisualType}, myth-vs-fact hoặc expert-proof beat nhưng vẫn đúng format visual, không tự đổi sang interview/podcast.`,
     `Idea 8: ${lockedVisualType}, trend structure nhưng đổi scene family và first action trong cùng format visual.`,
-  ].slice(0, quantity).join('\n');
+  ];
+  const lanes = (lockedVisualType === 'Motion Graphic' ? motionGraphicLanes : generalLanes).slice(0, quantity).join('\n');
 
   return `
 [BATCH DIVERSITY CONTRACT — BẮT BUỘC CHO LẦN GEN NÀY]
@@ -1164,6 +1194,7 @@ TRƯỚC KHI OUTPUT, tự kiểm tra:
 - Không có 2 hook.visual cùng địa điểm + hành động mở đầu.
 - Không có 2 hook.voice cùng ý nói.
 - Không dùng POV/UGC/Motion Graphic như creativeType nếu khác "${lockedVisualType}"; chỉ dùng như hook/story pattern nếu phù hợp.
+- Nếu Visual/Theme là Motion Graphic, không được dùng podcast/interview/host/guest/Speaker 1/Speaker 2/người thật/phòng khách/sofa; phải là 2D typography, icon, UI panel, chart, data callout.
 - Nếu trùng scene family, viết lại idea sau thành scene family khác.`;
 }
 
@@ -2079,7 +2110,7 @@ function buildSelectedStrategyLockBlock(input: {
     : normalizedVisual.includes('3d')
       ? '- 3D Animation execution: every visual_scene must be 3D-rendered/CGI. Do not switch to live-action UGC, flat 2D, or pure screen recording.'
       : normalizedVisual.includes('motion')
-        ? '- Motion Graphic execution means 2D motion graphics: animated typography, flat vector shapes, icons, charts, app UI panels, data callouts, arrows, labels, and simple infographic transitions. Do not switch to live-action UGC, handheld footage, 3D render/CGI, or full 2D character/cartoon scene animation as the main format.'
+        ? '- Motion Graphic execution means 2D motion graphics only: animated typography, flat vector shapes, icons, charts, app UI panels, data callouts, arrows, labels, and simple infographic transitions. Do not use podcast/interview/host/guest/Speaker 1/Speaker 2, real people, living-room dialogue, handheld footage, 3D render/CGI, or full 2D character/cartoon scene animation.'
         : normalizedVisual.includes('pov')
           ? '- POV execution: every visual_scene must be POV/screen-perspective. Do not label it UGC just because a person is implied.'
           : '- UGC execution: every visual_scene should feel like real social footage. Do not switch to animation or motion graphic as the main format.';
@@ -2090,6 +2121,7 @@ function buildSelectedStrategyLockBlock(input: {
 - Emotion trigger is locked: ${emotion}. The first hook beat must visibly trigger this emotion; do not drift to a calmer or unrelated emotion.
 - Visual/Theme is locked: ${lockedVisualType}. Every idea in this batch must have creativeType exactly "${lockedVisualType}".
 ${visualExecutionNote}
+- The selected Angle is only the strategic angle. It must not override Visual/Theme. If an angle/reference implies podcast/interview/reaction but Visual/Theme is Motion Graphic, translate it into typography, UI, icons, charts, and data motion instead.
 - Diversity means different angle_type, first action, prop/blocker, composition, reveal, and wording inside "${lockedVisualType}". Diversity does NOT mean changing the selected Visual/Theme format.`;
 }
 
@@ -2218,7 +2250,7 @@ function normalizeLeanCreativeOutput(
     const angleDesc = readLooseText(angleRecord, ['angle_desc', 'angleDesc'], `Idea for ${angleName}`);
     const rawHookText = readLooseText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'hook_primary', 'hookPrimary']);
     const rawHookVo = readLooseText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover']);
-    const hookCharacterSpeech = readLooseText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'characterSpeech'], '');
+    let hookCharacterSpeech = readLooseText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'characterSpeech'], '');
     let visualScene1 = readLooseText(ideaRecord, ['visual_scene_1', 'visualScene1'], readLooseText(asRecord(ideaRecord.hook), ['visual', 'script']));
     let visualScene2 = readLooseText(ideaRecord, ['visual_scene_2', 'visualScene2'], readLooseText(asRecord(ideaRecord.body), ['visual', 'script']));
     let visualScene3 = readLooseText(ideaRecord, ['visual_scene_3', 'visualScene3'], readLooseText(asRecord(ideaRecord.cta), ['visual', 'script']));
@@ -2232,11 +2264,15 @@ function normalizeLeanCreativeOutput(
     }
 
     const hookText = trimWordsLocal(rawHookText, 8);
-    const hookVo = trimWordsLocal(rawHookVo, 12);
+    let hookVo = trimWordsLocal(rawHookVo, 12);
     const ctaText = trimWordsLocal(rawCtaText, 6);
     visualScene1 = enforceSelectedVisualFormatInScene(visualScene1, defaults.visualType);
     visualScene2 = enforceSelectedVisualFormatInScene(visualScene2, defaults.visualType);
     visualScene3 = enforceSelectedVisualFormatInScene(visualScene3, defaults.visualType);
+    if (isMotionGraphicVisual(defaults.visualType) && hookCharacterSpeech) {
+      hookVo = hookVo || trimWordsLocal(stripRoleLabelsForVoiceover(hookCharacterSpeech), 12);
+      hookCharacterSpeech = '';
+    }
     const scriptVo = readLooseText(ideaRecord, ['script_vo', 'scriptVo'], [hookVo, readLooseText(asRecord(ideaRecord.body), ['voice', 'voiceover'], ''), ctaText].filter(Boolean).join(' '));
     const overlayRecords = readLooseArray(ideaRecord.text_overlays ?? ideaRecord.textOverlays);
     const overlays = overlayRecords
