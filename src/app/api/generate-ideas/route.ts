@@ -2266,6 +2266,7 @@ function normalizeLeanCreativeOutput(
     startIndex: number;
     hookDurationSeconds?: number;
     visualType?: string;
+    outputLanguage?: string;
   }
 ): Record<string, unknown>[] {
   const records = collectLeanIdeaRecords(input);
@@ -2280,6 +2281,11 @@ function normalizeLeanCreativeOutput(
     const rawHookText = readLooseText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'hook_primary', 'hookPrimary']);
     const rawHookVo = readLooseText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover']);
     let hookCharacterSpeech = readLooseText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'characterSpeech'], '');
+    let hookVoiceVi = readLooseText(
+      ideaRecord,
+      ['hook_voice_vi', 'hookVoiceVi', 'hook_vi_translation', 'hookViTranslation', 'vi_translation', 'viTranslation'],
+      readLooseText(asRecord(ideaRecord.hook), ['hookVoiceVi', 'hook_voice_vi', 'viTranslation', 'vi_translation'])
+    );
     let visualScene1 = readLooseText(ideaRecord, ['visual_scene_1', 'visualScene1'], readLooseText(asRecord(ideaRecord.hook), ['visual', 'script']));
     let visualScene2 = readLooseText(ideaRecord, ['visual_scene_2', 'visualScene2'], readLooseText(asRecord(ideaRecord.body), ['visual', 'script']));
     let visualScene3 = readLooseText(ideaRecord, ['visual_scene_3', 'visualScene3'], readLooseText(asRecord(ideaRecord.cta), ['visual', 'script']));
@@ -2301,6 +2307,12 @@ function normalizeLeanCreativeOutput(
     if (isMotionGraphicVisual(defaults.visualType) && hookCharacterSpeech) {
       hookVo = hookVo || trimWordsLocal(stripRoleLabelsForVoiceover(hookCharacterSpeech), 12);
       hookCharacterSpeech = '';
+    }
+    if (!hookVoiceVi && /^vietnamese$/i.test(defaults.outputLanguage || '')) {
+      hookVoiceVi = [hookCharacterSpeech, hookVo, hookText].filter(Boolean).join(' / ');
+    }
+    if (hookVoiceVi && !hasVietnameseCopyCue(hookVoiceVi)) {
+      hookVoiceVi = '';
     }
     const scriptVo = readLooseText(ideaRecord, ['script_vo', 'scriptVo'], [hookVo, readLooseText(asRecord(ideaRecord.body), ['voice', 'voiceover'], ''), ctaText].filter(Boolean).join(' '));
     const overlayRecords = readLooseArray(ideaRecord.text_overlays ?? ideaRecord.textOverlays);
@@ -2365,6 +2377,7 @@ function normalizeLeanCreativeOutput(
         textOverlay: hookText,
         text: hookText,
         script: visualScene1,
+        viTranslation: hookVoiceVi,
       },
       body: {
         visual: visualScene2,
@@ -2479,6 +2492,7 @@ Operator note priority:
 User-facing copy language rule:
 - title/script name MUST be written in Vietnamese for the internal Idea tool UI.
 - hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be written in ${input.outputLanguage}.
+- hook_voice_vi MUST be Vietnamese. It translates hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay.
 - The selected market/core user decides this copy language. Example: US -> English, LATAM/Mexico/Spain -> Spanish, Brazil -> Portuguese, Germany -> German.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
 - Inside visual_scene_1, keep the production prose Vietnamese, but any quoted Text hien / Voiceover / CHARACTER SPEECH lines MUST be translated into ${input.outputLanguage}.
@@ -2537,6 +2551,7 @@ Use this compact schema:
             "hook_text_overlay": "max 8 words",
             "hook_vo": "max 12 words, different from text",
             "hook_character_speech": "",
+            "hook_voice_vi": "Vietnamese translation of hook voice/speech",
             "hook_archetype": "taxonomy label",
             "hook_alt_1_text": "short alt hook",
             "hook_alt_1_vo": "short alt VO",
@@ -2940,7 +2955,7 @@ Hard requirements:
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
-- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
+- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
         const frameworkInjection = buildFrameworkInjection({
@@ -3017,13 +3032,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Follow PROMPT_SYSTEM_BUILDER_HTML_V1 exactly.
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
-- Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
+- Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. In visual_scene rows, only quoted Text hien / Voiceover / CHARACTER SPEECH uses ${outputLanguage}. Target market affects local setting and vibe only.
+- hook_voice_vi must be Vietnamese translation of hook_vo + hook_character_speech; if both are empty, translate hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
-- Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
+- Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
 - visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in the selected copy language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Duration: ${duration}
@@ -3180,6 +3196,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             startIndex: requestStartIndex + plan.batchStartIndex,
             hookDurationSeconds: requestedHookDuration,
             visualType,
+            outputLanguage,
           }).map(item => sanitizeMedicalClaimsInIdea(item)).filter((item, lenientIndex) => {
             const metricErrors = [
               ...validateHealthMetricLockOutput(item, metricLock, appName),
@@ -3721,7 +3738,7 @@ Hard requirements:
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
+- title/script name MUST be Vietnamese. hook_text_overlay, hook_vo, hook_character_speech, text_overlays.text, script_vo, and cta_text MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese. visual_scene prose stays Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}.
 - visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
 
     const outputSpec = buildCreativeBriefOutputSpec({
@@ -3751,13 +3768,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Follow PROMPT_SYSTEM_BUILDER_HTML_V1 exactly.
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
-- Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
+- Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - User-facing copy must be ${outputLanguage}; visual scenes and production notes must be Vietnamese. In visual_scene rows, only quoted Text hien / Voiceover / CHARACTER SPEECH uses ${outputLanguage}. Target market affects local setting and vibe only.
+- hook_voice_vi must be Vietnamese translation of hook_vo + hook_character_speech; if both are empty, translate hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
-- Return hook_text_overlay, hook_vo, hook_character_speech, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
+- Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
 - visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in the selected copy language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.

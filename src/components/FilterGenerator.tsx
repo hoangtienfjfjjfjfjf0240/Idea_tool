@@ -369,6 +369,12 @@ type IdeaApiSection = {
   text?: string;
   textOverlay?: string;
   text_overlay?: string;
+  viTranslation?: string;
+  vi_translation?: string;
+  hookVoiceVi?: string;
+  hook_voice_vi?: string;
+  vietnameseTranslation?: string;
+  vietnamese_translation?: string;
   endCard?: string;
   end_card?: string;
 };
@@ -2091,6 +2097,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const bodyVisual = content.body?.visual || content.body?.script || '';
     const ctaVisual = content.cta?.visual || content.cta?.script || '';
     const hookText = content.hook?.textOverlay || content.hook?.text || meta.hookPrimary || '';
+    const hookVoiceVi = getSectionViTranslation(content.hook);
     const bodyText = content.body?.textOverlay || content.body?.text || '';
     const ctaText = content.cta?.textOverlay || content.cta?.text || content.cta?.voice || '';
     const angleName = String(meta.angleName || meta.referencePattern || 'Góc khai thác');
@@ -2135,6 +2142,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       hookText && !hookVisualIncludesCopy ? `Text hiện: "${hookText}"` : '',
       hookSpeech.characterSpeech ? `Lời nhân vật: "${hookSpeech.characterSpeech}"` : '',
       hookSpeech.voiceover && !hookVisualIncludesCopy ? `Voiceover: "${hookSpeech.voiceover}"` : '',
+      hookVoiceVi ? `Hook voice VI: "${hookVoiceVi}"` : '',
       hookVariants ? `Biến thể hook:\n${hookVariants}` : '',
       '',
       bodyVisual ? `Diễn biến (Body): ${bodyVisual}` : 'Diễn biến (Body):',
@@ -2258,16 +2266,23 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const getResultInputChips = (idea: GeneratedIdea, content: Partial<IdeaContent> | Record<string, unknown>) => {
     const framework = ((content as IdeaContent).framework || {}) as Partial<IdeaContent['framework']>;
+    const meta = ((content as IdeaContent).meta || {}) as NonNullable<IdeaContent['meta']> & Record<string, unknown>;
     const snapshot = idea.filters_snapshot || null;
+    const angleFallback = Array.from(new Set([
+      meta.angleName,
+      meta.angleDesc,
+      meta.referencePattern,
+      meta.angleType,
+    ].map(value => cleanPreviewText(value)).filter(Boolean))).join(' - ');
     const chips = [
-      { key: 'coreUser', label: 'Người xem', values: listFilterValues(snapshot, 'coreUser', framework.coreUser), className: 'bg-blue-50 text-blue-600' },
-      { key: 'emotion', label: 'Cảm xúc', values: listFilterValues(snapshot, 'emotion', framework.emotion), className: 'bg-rose-50 text-rose-600' },
+      { key: 'coreUser', label: 'Viewer', values: listFilterValues(snapshot, 'coreUser', framework.coreUser), className: 'bg-blue-50 text-blue-600' },
+      { key: 'emotion', label: 'Emotion', values: listFilterValues(snapshot, 'emotion', framework.emotion), className: 'bg-rose-50 text-rose-600' },
       { key: 'visualType', label: 'Visual', values: listFilterValues(snapshot, 'visualType', (content as IdeaContent).creativeType), className: 'bg-indigo-50 text-indigo-600' },
       { key: 'painPoint', label: 'Pain', values: listFilterValues(snapshot, 'painPoint', framework.painpoint), className: 'bg-red-50 text-red-600' },
       { key: 'solution', label: 'PSP', values: shouldHidePspForApp(app) ? [] : listFilterValues(snapshot, 'solution', framework.psp), className: 'bg-emerald-50 text-emerald-600' },
       { key: 'videoStructure', label: 'Structure', values: listFilterValues(snapshot, 'videoStructure'), className: 'bg-violet-50 text-violet-600' },
       { key: 'targetMarket', label: 'Market', values: listFilterValues(snapshot, 'targetMarket'), className: 'bg-sky-50 text-sky-600' },
-      { key: 'angle', label: 'Angle', values: listFilterValues(snapshot, 'angle'), className: 'bg-teal-50 text-teal-600' },
+      { key: 'angle', label: 'Angle', values: listFilterValues(snapshot, 'angle', angleFallback), className: 'bg-teal-50 text-teal-600' },
     ];
 
     return chips
@@ -2294,6 +2309,43 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const characterSpeech = getSectionCharacterSpeech(raw);
     const voiceover = getSectionVoiceover(raw);
     return voice && voice !== characterSpeech && voice !== voiceover ? voice : '';
+  };
+
+  const isProbablyEnglishHookLine = (value: string) => {
+    const normalized = normalizeCompareText(value);
+    const englishTokens = normalized.match(/\b(?:i|im|my|me|you|your|the|this|that|with|without|because|every|again|just|why|what|when|where|how|does|did|was|were|from|into|while|before|after|thought|started|changed|checked|check|phone|heart|rate|blood|pressure|number|scary|calm|alone|nervous)\b/g) || [];
+    const vietnameseTokens = normalized.match(/\b(?:toi|minh|ban|nguoi|khong|co|la|nay|do|voi|vi|luc|khi|da|kiem|tra|huyet|ap|nhip|tim|con|so|lo|lang|dang|so|binh|tinh|dien|thoai)\b/g) || [];
+    return englishTokens.length >= 3 && englishTokens.length > vietnameseTokens.length;
+  };
+
+  const isProbablyVietnameseHookLine = (value: string) => {
+    const normalized = normalizeCompareText(value);
+    const vietnameseTokens = normalized.match(/\b(?:toi|minh|ban|nguoi|khong|co|la|nay|do|voi|vi|luc|khi|da|kiem|tra|huyet|ap|nhip|tim|con|so|lo|lang|dang|so|binh|tinh|dien|thoai|ngay|mot|minh|cam|thay|kiem|tra)\b/g) || [];
+    return vietnameseTokens.length >= 2;
+  };
+
+  const getSectionViTranslation = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
+    const raw = (section || {}) as Record<string, unknown> & IdeaApiSection;
+    const text = cleanPreviewText(
+      raw.hookVoiceVi
+      ?? raw.hook_voice_vi
+      ?? raw.viTranslation
+      ?? raw.vi_translation
+      ?? raw.vietnameseTranslation
+      ?? raw.vietnamese_translation
+    );
+    if (!text) return '';
+
+    const spokenSource = [
+      getSectionCharacterSpeech(raw),
+      getSectionVoiceover(raw),
+      getSectionLegacyVoice(raw),
+    ].filter(Boolean).join(' / ');
+    if (spokenSource && normalizeCompareText(text) === normalizeCompareText(spokenSource)) return '';
+    if (isProbablyEnglishHookLine(text)) return '';
+    if (!isProbablyVietnameseHookLine(text)) return '';
+
+    return text;
   };
 
   const getSectionSpokenLines = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined) => {
@@ -3545,6 +3597,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const hookDuration = isBuilderIdea ? 3 : getHookDurationSeconds(hookData);
             const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
+            const hookVoiceVi = getSectionViTranslation(hookData);
             const primaryHook = c?.meta?.hookPrimary || '';
             const hookPreviewIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
             const showPrimaryHookLine = cleanPreviewText(primaryHook).toLowerCase() !== cleanPreviewText(hookText).toLowerCase();
@@ -3598,7 +3651,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
                   {selectedInputChips.length > 0 && (
                     <div className="mb-3 rounded-lg border border-gray-100 bg-gray-50/70 p-2.5">
-                      <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Cáº¥u hÃ¬nh input</div>
+                      <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Input config</div>
                       <div className="flex flex-wrap gap-1.5">
                         {selectedInputChips.map(chip => (
                           <span
@@ -3658,6 +3711,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
                         {hookSpeech.voiceover && !hookPreviewIncludesCopy && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
                         {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
+                        {hookVoiceVi && <p className="text-gray-800 whitespace-pre-line">[HOOK VOICE VI] {hookVoiceVi}</p>}
                         {hookText && !hookPreviewIncludesCopy && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>

@@ -219,7 +219,10 @@ function normalizeSection(
     voice: legacyVoice || voiceover || characterSpeech,
     textOverlay: readText(section.textOverlay, readText(section.text_overlay, readText(section.text))),
     text: readText(section.text, readText(section.textOverlay, readText(section.text_overlay))),
-    viTranslation: readText(section.viTranslation, readText(section.vi_translation)),
+    viTranslation: readText(
+      section.viTranslation,
+      readText(section.vi_translation, readText(section.hookVoiceVi, readText(section.hook_voice_vi)))
+    ),
     script: readText(section.script, buildScript(section)),
   };
 
@@ -570,7 +573,8 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "visual": "Detailed opening visual in Vietnamese, 2-3 dense production sentences covering camera, location, exact blocker, and visible painpoint clue. ${visualAnchorClause} ${pacingClause}",
     "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
-    "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point"
+    "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point",
+    "viTranslation": "Vietnamese translation of hook characterSpeech + voiceover only; if both are empty, translate textOverlay"
   },
   "body": {
     "visual": "Detailed body visual in Vietnamese, 2-3 dense production sentences covering the transition from blocker to demo, the exact product action, and the visible proof beat. ${visualAnchorClause} ${pacingClause}",
@@ -592,7 +596,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point",
-    "viTranslation": "Optional English recap of hook speech/voiceover + text",
+    "viTranslation": "Vietnamese translation of hook characterSpeech + voiceover only; if both are empty, translate textOverlay",
     "viewerProfile": "${options.language} description of who stops scrolling",
     "viewerEmotion": "${options.language} description of what the viewer feels",
     "painpointImpact": "${options.language} description of why this pain lands",
@@ -604,7 +608,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short body text in ${options.language}",
-    "viTranslation": "Optional English recap of body speech/voiceover + text"
+    "viTranslation": "Optional Vietnamese recap of body speech/voiceover + text"
   },
   "cta": {
     "visual": "Detailed CTA visual in Vietnamese, pure visual only. ${visualAnchorClause} ${pacingClause}",
@@ -612,17 +616,18 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short CTA text in ${options.language}",
-    "viTranslation": "Optional English recap of CTA speech/voiceover + text",
+    "viTranslation": "Optional Vietnamese recap of CTA speech/voiceover + text",
     "endCard": "${options.appName} + short tagline"
   }`;
   const compactOutputRules = compact
     ? `- Fill every field listed above.
-- Do not add server-derived legacy fields such as hook.voice, hook.text, viTranslation, viewerProfile, viewerEmotion, painpointImpact, whyTheyStopScrolling, or analogous body/cta legacy fields.
+- Do not add server-derived legacy fields such as hook.voice, hook.text, viewerProfile, viewerEmotion, painpointImpact, whyTheyStopScrolling, or analogous body/cta legacy fields.
 - Keep explanation to 1 short sentence.
 - Keep hook.visual dense and specific: usually 2-3 sentences. Body should normally be 2-3 dense sentences, and CTA should still be concrete enough for production without follow-up questions.
 - hook.durationSeconds must be an integer estimate of the opening hook beat, normally 3 seconds for prompt-builder style output.
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
-- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it concise enough for the 0-3s hook beat.`
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it concise enough for the 0-3s hook beat.
+- hook.viTranslation must be a Vietnamese translation for the hook voice/speech shown on the card.`
     : `- Fill every field. Use "N/A" only when genuinely not applicable.
 - hook.durationSeconds must be an integer estimate of the opening hook beat, normally 3 seconds for prompt-builder style output.
 - hook/body/cta.visual must stay visual-only. Do not mix voice, characterSpeech, voiceover, or textOverlay into visual.
@@ -630,7 +635,8 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
 - If the creative type is UGC, POV, Reaction, Interview, or any real-person format, put the on-camera person's spoken line in characterSpeech and only use voiceover for off-camera narration/video VO.
 - Do not place [VOICE], [TEXT OVERLAY], [CHARACTER SPEECH], or [VOICEOVER] markers inside visual/script fields.
 - hook.characterSpeech or hook.voiceover and hook.textOverlay must preserve the same stop-scroll thesis as meta.hookPrimary.
-- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it concise enough for the 0-3s hook beat.`;
+- hook.characterSpeech or hook.voiceover should be a natural spoken hook, not a keyword fragment. Keep it concise enough for the 0-3s hook beat.
+- hook.viTranslation must be a Vietnamese translation for the hook voice/speech shown on the card.`;
 
   return `## OUTPUT SPECIFICATION
 
@@ -697,6 +703,7 @@ Return exactly 1 top-level pillar object for this API call, exactly 1 angle obje
 User-facing copy must be in ${options.language}: hook_text_overlay, hook_vo, hook alternatives, hook_character_speech, script_vo, and cta_text.
 Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
 Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
+Every idea must also include hook_voice_vi as a Vietnamese translation of hook_vo + hook_character_speech for internal output cards.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
 ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.${options.visualType === 'Motion Graphic' ? ' Motion Graphic must be 2D motion graphics: animated typography, flat shapes/icons/charts/UI panels/data callouts. Do not use podcast, interview, host/guest, Speaker 1/Speaker 2, live-action, 3D, or full character animation.' : ''}` : ''}
@@ -717,6 +724,7 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
             "hook_text_overlay": "Max 8 words in ${options.language}; on-screen hook text inside Scene 1 or Scene 2",
             "hook_vo": "Max 12 words in ${options.language}; off-camera narrator/video VO only; empty when the visible character is the one speaking; must differ from hook_text_overlay",
             "hook_character_speech": "On-camera character line in ${options.language} if a visible character speaks in the hook. For 2-person dialogue/podcast/interview, use short role-labelled lines like Speaker 1: ... / Speaker 2: ... Empty string only if no visible speaker",
+            "hook_voice_vi": "Vietnamese translation of hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay",
             "hook_archetype": "Stat Shock|Body Signal Question|Whisper Secret|POV Narrative|Counter-intuitive|Social Proof|Zoom Problem|Before After Demo|Question Accusation|Speed Ease Claim|Tutorial Opener|Trend Jack|Result First|Demo-Magic|Identity Personal|Challenge Dare",
             "hook_alt_1_text": "Alternative hook text overlay in ${options.language}, different archetype",
             "hook_alt_1_vo": "Alternative hook voice/video line in ${options.language}",
@@ -759,6 +767,7 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
 3. hook_text_overlay must be max 8 words.
 4. hook_vo must be max 12 words and must differ from hook_text_overlay.
 5. hook_character_speech must be empty unless visual_scene_1 clearly identifies a visible speaker. If the hook shows a person speaking, asking, replying, reacting to camera, or a 2-person dialogue/podcast/interview, fill the exact on-camera line(s) here with speaker labels.
+5a. hook_voice_vi must be Vietnamese. It translates hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay.
 6. Primary + alt_1 + alt_2 must use 3 different hook_archetype values.
 7. visual_scene_1 must obey pacing: for a 5s hook use max 2 timestamp rows, normally 0-2.5s and 2.5-5s. Never use 3+ scenes/camera angles for 5s.
 8. visual_scene_1 Scene 1 must depict the selected Pain Point situation.
@@ -787,6 +796,7 @@ Return exactly 1 top-level pillar object for this API call, exactly 1 angle obje
 Title/script name must always be Vietnamese for the internal Idea tool UI. Hook lines, on-camera character speech, voice/video voiceover, text overlay, script_vo, and CTA must be in ${options.language}.
 Visual shooting descriptions and production notes must be Vietnamese for the internal team.
 Only audience-facing copy snippets inside visual scenes, such as quoted Text hien / Voiceover / CHARACTER SPEECH, may use ${options.language}.
+Every idea must include hook_voice_vi as a Vietnamese translation of the hook voice/speech for internal output cards.
 The selected market controls setting, culture, behavior, and vibe only. Do not switch production prose away from Vietnamese.
 
 [
@@ -808,6 +818,7 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
             "hook_character_speech": "On-camera character speech in ${options.language}. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Optional voice/video narrator line in ${options.language}. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text in ${options.language}, max 12 words.",
+            "hook_voice_vi": "Vietnamese translation of hook_voiceover + hook_character_speech only; if both are empty, translate hook_text_overlay",
             "visual_scene_1": "Second 0-3 only: Exact Vietnamese visual description. Who, where, doing what. Never write 0-8s. ${visualAnchorClause}",
             "visual_scene_2": "Second 3-15: Core demonstration or storytelling visual in Vietnamese. ${visualAnchorClause}",
             "visual_scene_3": "Second 15-25: Reveal or proof visual in Vietnamese. ${visualAnchorClause}",
@@ -836,7 +847,7 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
 7. id must follow format exactly: P0-A0-I0, zero-indexed.
 8. angle_type must be one of the allowed values.
 9. Tracks: A = no real person needed | B = real person/UGC | C = motion/animation.
-10. User-facing copy fields title/hook_primary/hook_alt_1/hook_alt_2/hook_character_speech/hook_voiceover/hook_text_overlay/script_vo/cta_text must be in ${options.language}. Internal visual and production notes must be Vietnamese.
+10. User-facing copy fields title/hook_primary/hook_alt_1/hook_alt_2/hook_character_speech/hook_voiceover/hook_text_overlay/script_vo/cta_text must be in ${options.language}. hook_voice_vi and internal visual/production notes must be Vietnamese.
 11. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required and hook_voiceover must not carry that on-camera line.
 12. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 13. Apply Rule 4 pacing: 0-3s hook-only visual_scene_1 uses 1 scene/camera angle; never cram 2+ cuts into 3 seconds.`;
@@ -852,6 +863,7 @@ Return exactly 1 top-level pillar object for this API call, exactly 1 angle obje
 
 Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7.
 Title/script name must always be Vietnamese for the internal Idea tool UI. Hook lines, character speech, voice/video narrator, text overlay, script_vo, and CTA must be in ${options.language}. Visual scenes and production notes must be Vietnamese. The selected market controls behavior, setting, social context, and vibe only.
+Every idea must include hook_voice_vi as a Vietnamese translation of the hook voice/speech for internal output cards.
 
 [
   {
@@ -873,6 +885,7 @@ Title/script name must always be Vietnamese for the internal Idea tool UI. Hook 
             "hook_character_speech": "Concise on-camera character speech in ${options.language}. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Concise voice/video narrator line in ${options.language}. Use a direct statement, not a rhetorical question. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text in ${options.language}. A direct statement, not old word-count filler.",
+            "hook_voice_vi": "Vietnamese translation of hook_voiceover + hook_character_speech only; if both are empty, translate hook_text_overlay",
             "reference_pattern": "V7 pattern name, e.g. UGC, 3D Scan, News Leak, Magic Feature, Real Disaster, Reaction Interruption",
             "interrupt_mechanism": "Specific action/image that shocks or creates curiosity at second 0.1",
             "first_frame_asset": "First-frame asset: talent, ethnicity, outfit, location, pose, expression, prop, or phone screen",
@@ -906,7 +919,7 @@ Title/script name must always be Vietnamese for the internal Idea tool UI. Hook 
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
 5. visual_scene_1 must be specific enough for a creator or AI video tool to execute exactly.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
-7. Title/script name must be Vietnamese. User-facing copy must be in ${options.language}: character speech, text on screen, voice-over/video voice, script_vo, and CTA. Visual and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
+7. Title/script name must be Vietnamese. User-facing copy must be in ${options.language}: character speech, text on screen, voice-over/video voice, script_vo, and CTA. hook_voice_vi, visual notes, and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
 8. Speech, behavior, setting, props, social relationship, and vibe must feel native to the selected market. Describe the visual execution in Vietnamese.
 9. If the idea has a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required. If 2+ people communicate, keep the exchange simple, natural, role-accurate, and include only the necessary dialogue.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
@@ -944,6 +957,7 @@ The array must follow this exact structure:
             "hook_character_speech": "Concise on-camera line in ${options.language} for the selected hook duration. Required when visual_scene_1 shows a visible person speaking, asking, replying, reacting to camera, or being asked a question. Empty string only for silent visuals or pure off-camera narration.",
             "hook_voiceover": "Concise off-camera narrator/video voice in ${options.language} for the selected hook duration. Do not duplicate hook_primary or hook_text_overlay exactly. Empty string if no narrator.",
             "hook_text_overlay": "On-screen hook text, 6-14 words, punchy and readable. This can match hook_primary, but not hook_voiceover.",
+            "hook_voice_vi": "Vietnamese translation of hook_voiceover + hook_character_speech only; if both are empty, translate hook_text_overlay",
             "reference_pattern": "Named video structure cue. Can be a proven cue, hybrid, or custom pattern, e.g. Siri Bridge, Shock Object, Phone Demo Proof, Transformation Demo, Comment Reply, Split-Screen Choice, Problem-Solution Handheld, or a new pattern name",
             "interrupt_mechanism": "Why the first frame stops scroll: visual oddity, sharp question, contradiction, proof object, social tension, or transformation gap",
             "first_frame_asset": "Exact first-frame asset/object/person/action visible before any explanation",
@@ -985,7 +999,7 @@ The array must follow this exact structure:
 12. angle_type must be one of the allowed values and should be different from other angles in the same pillar.
 13. track: A = no real person needed, B = real person / UGC, C = motion / animation.
 14. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
-15. title must be Vietnamese. User-facing copy fields hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, script_vo, and cta_text must be in ${options.language}. Visual_scene_1/2/3 production prose and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
+15. title must be Vietnamese. User-facing copy fields hook_primary, hook_alt_1, hook_alt_2, hook_character_speech, hook_voiceover, hook_text_overlay, script_vo, and cta_text must be in ${options.language}. hook_voice_vi, visual_scene_1/2/3 production prose, and production notes must be Vietnamese; only quoted Text hien / Voiceover / CHARACTER SPEECH snippets inside visual scenes use ${options.language}.
 16. Do not make prohibited claims or before/after health outcome framing.
 17. If returning more than 1 idea, no two ideas may use the same hook_primary, the same opening scene family, or the same first visible pain object unless explicitly requested. Reusing a reference_pattern is allowed only when the execution, first-frame asset, and proof object are clearly different.
 18. Do not collapse the pain point into a broad symptom. The hook and visual_scene_1 must expose the exact trigger/context/cause from the selected pain point.
@@ -1271,11 +1285,11 @@ function looksVietnamese(text: string): boolean {
   if (!normalized) return false;
 
   const hasVietnameseDiacritics = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(text);
-  const vietnameseCueTokens = normalized.match(/\b(?:toi|ban|minh|nguoi|phu|nu|dan|ong|nha|phong|khach|trong|tron|noi|that|thiet|ke|chi|phi|bao|gia|sua|du|toan|anh|dep|mau|khong|chua|muon|roi|mat|nhin|chon|truoc|sau|luc|nay|thay|biet|bat|dau|kho|mo|ho|them|tren|man|hinh|goi|thang|dung|khoanh|khac|cat|sang|tinh|nang|theo|doi|don|gian|cho|nhu|mot|buoc|xu|ly|van|de|vua|lo|ra|giu|bang|chuyen|tao|lai|toan|bo)\b/g) || [];
+  const vietnameseCueTokens = normalized.match(/\b(?:toi|ban|minh|nguoi|phu|nu|dan|ong|nha|phong|khach|trong|tron|noi|that|thiet|ke|chi|phi|bao|gia|sua|du|toan|anh|dep|mau|khong|chua|muon|roi|mat|nhin|chon|truoc|sau|luc|nay|thay|biet|bat|dau|kho|mo|ho|them|tren|man|hinh|goi|thang|dung|khoanh|khac|cat|sang|tinh|nang|theo|doi|don|gian|cho|nhu|mot|buoc|xu|ly|van|de|vua|lo|ra|giu|bang|chuyen|tao|lai|toan|bo|huyet|ap|nhip|tim|suc|khoe|kiem|tra|dien|thoai|con|so|lo|lang|binh|tinh|ngay)\b/g) || [];
   const englishTokens = normalized.match(/\b(?:the|this|that|with|without|because|every|again|just|why|what|when|where|how|your|you|does|did|was|were|from|into|while|before|after|thought|started|changed|room|living|empty|blank|app|style|decorating|design|first|problem|camera|screen|phone|upload|choose|tap|shows|final|find|try|save|saved)\b/g) || [];
 
   if (hasVietnameseDiacritics && vietnameseCueTokens.length >= 1) return true;
-  return vietnameseCueTokens.length >= 6 && vietnameseCueTokens.length > englishTokens.length;
+  return vietnameseCueTokens.length >= 2 && vietnameseCueTokens.length >= englishTokens.length;
 }
 
 function stripAudienceCopyFromVisualScene(text: string): string {
@@ -1946,6 +1960,7 @@ export function normalizeCreativeBriefOutput(
         let hookCharacterSpeech = readSpeechText(readFirstText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'character_speech', 'characterSpeech']));
         let hookVoiceover = readSpeechText(readFirstText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover', 'voice_over']));
         let hookTextOverlay = readFirstText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'text_overlay', 'textOverlay']);
+        let hookVoiceVi = readFirstText(ideaRecord, ['hook_voice_vi', 'hookVoiceVi', 'hook_vi_translation', 'hookViTranslation', 'vi_translation', 'viTranslation']);
         let visualScene1 = readFirstText(ideaRecord, ['visual_scene_1', 'visualScene1']);
         let visualScene2 = readFirstText(ideaRecord, ['visual_scene_2', 'visualScene2']);
         let visualScene3 = readFirstText(ideaRecord, ['visual_scene_3', 'visualScene3']);
@@ -1983,6 +1998,7 @@ export function normalizeCreativeBriefOutput(
         hookCharacterSpeech = sanitizeHealthClaimText(hookCharacterSpeech);
         hookVoiceover = sanitizeHealthClaimText(hookVoiceover);
         hookTextOverlay = sanitizeHealthClaimText(hookTextOverlay);
+        hookVoiceVi = sanitizeHealthClaimText(hookVoiceVi);
         pspBridge = sanitizeHealthClaimText(pspBridge);
         visualScene1 = sanitizeHealthClaimText(visualScene1);
         visualScene2 = sanitizeHealthClaimText(visualScene2);
@@ -2031,6 +2047,12 @@ export function normalizeCreativeBriefOutput(
           hookCharacterSpeech,
           hookVoiceover
         ));
+        if (!hookVoiceVi && /^vietnamese$/i.test(defaults.language || '')) {
+          hookVoiceVi = [hookCharacterSpeech, hookVoiceover, hookTextOverlay || hookPrimary].filter(Boolean).join(' / ');
+        }
+        if (hookVoiceVi && !looksVietnamese(hookVoiceVi)) {
+          hookVoiceVi = '';
+        }
         if (!pspBridge) {
           pspBridge = `Luc nay ${defaults.appName} la buoc xu ly dung van de vua lo ra.`;
         }
@@ -2182,7 +2204,7 @@ export function normalizeCreativeBriefOutput(
             voice: hookVoiceover || hookCharacterSpeech,
             textOverlay: hookTextOverlay || hookPrimary,
             text: hookTextOverlay || hookPrimary,
-            viTranslation: [hookCharacterSpeech, hookVoiceover, hookTextOverlay || hookPrimary].filter(Boolean).join(' / '),
+            viTranslation: hookVoiceVi,
             viewerProfile: defaults.coreUser || '',
             viewerEmotion: defaults.emotion || '',
             painpointImpact: pillar,
@@ -2246,7 +2268,7 @@ Return ${quantityLabel} objects in this exact schema:
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line in ${options.language}: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Readable on-screen text in ${options.language}, around 6-16 words, aligned with meta.hookPrimary",
-    "viTranslation": "Optional recap of hook speech/voiceover + text",
+    "viTranslation": "Vietnamese translation of hook speech/voiceover + text",
     "viewerEmotion": "${options.language} description of what the viewer feels",
     "painpointImpact": "${options.language} description of why this pain lands",
     "whyTheyStopScrolling": "1 ${options.language} sentence explaining the stop-scroll reason"
