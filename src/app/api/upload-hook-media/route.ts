@@ -7,6 +7,43 @@ import {
   maxUploadBytes,
 } from '@/lib/apiGuards';
 
+const EXTRA_HOOK_MEDIA_MIME_TYPES = [
+  'video/x-m4v',
+  'video/mov',
+  'video/avi',
+  'video/x-msvideo',
+  'video/x-ms-wmv',
+  'image/gif',
+];
+
+function inferMimeTypeFromName(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    m4v: 'video/x-m4v',
+    avi: 'video/x-msvideo',
+    wmv: 'video/x-ms-wmv',
+    mpeg: 'video/mpeg',
+    mpg: 'video/mpeg',
+  };
+  return map[ext] || '';
+}
+
+function normalizeUploadMimeType(file: File) {
+  return file.type || inferMimeTypeFromName(file.name);
+}
+
+function isAllowedMediaMimeType(mimeType: string) {
+  return HOOK_MEDIA_MIME_TYPES.includes(mimeType) || EXTRA_HOOK_MEDIA_MIME_TYPES.includes(mimeType);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const guard = await guardApiRequest(request, { key: 'upload-hook-media', max: 20, windowMs: 10 * 60 * 1000 });
@@ -25,8 +62,9 @@ export async function POST(request: NextRequest) {
       if (file.size > maxUploadBytes()) {
         return NextResponse.json({ error: 'File quá lớn để upload.' }, { status: 413 });
       }
-      if (!HOOK_MEDIA_MIME_TYPES.includes(file.type)) {
-        return NextResponse.json({ error: 'Định dạng file không được hỗ trợ.' }, { status: 415 });
+      const mimeType = normalizeUploadMimeType(file);
+      if (!isAllowedMediaMimeType(mimeType)) {
+        return NextResponse.json({ error: `Định dạng file không được hỗ trợ (${file.type || 'unknown'}).` }, { status: 415 });
       }
 
       const ext = file.name.split('.').pop() || 'bin';
@@ -36,9 +74,9 @@ export async function POST(request: NextRequest) {
       const { error } = await supabase.storage
         .from('hook-media')
         .upload(path, buffer, { 
-          contentType: file.type, 
-          cacheControl: '3600', 
-          upsert: false 
+          contentType: mimeType,
+          cacheControl: '3600',
+          upsert: false
         });
 
       if (error) {
@@ -49,7 +87,7 @@ export async function POST(request: NextRequest) {
       const { data: urlData } = supabase.storage.from('hook-media').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl || null;
 
-      if (file.type.startsWith('video')) {
+      if (mimeType.startsWith('video/')) {
         videoUrl = publicUrl;
       } else {
         imageUrl = publicUrl;
@@ -62,7 +100,7 @@ export async function POST(request: NextRequest) {
       if (match) {
         const mimeType = match[1];
         const rawData = match[2];
-        if (!HOOK_MEDIA_MIME_TYPES.includes(mimeType)) {
+        if (!isAllowedMediaMimeType(mimeType)) {
           return NextResponse.json({ error: 'Định dạng thumbnail không được hỗ trợ.' }, { status: 415 });
         }
         if (Buffer.byteLength(rawData, 'base64') > maxThumbBytes()) {
@@ -78,9 +116,9 @@ export async function POST(request: NextRequest) {
         const { error: thumbError } = await supabase.storage
           .from('hook-media')
           .upload(thumbPath, byteArray, { 
-            contentType: mimeType, 
-            cacheControl: '3600', 
-            upsert: false 
+            contentType: mimeType,
+            cacheControl: '3600',
+            upsert: false
           });
 
         if (!thumbError) {

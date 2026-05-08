@@ -1463,6 +1463,11 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     setIsEditModalOpen(true);
   };
 
+  const isVideoUploadFile = (file: File) => (
+    file.type.startsWith('video/')
+    || /\.(?:mp4|webm|mov|m4v|avi|wmv|mpeg|mpg)$/i.test(file.name)
+  );
+
   const handleSaveHook = async () => {
     if (!editingHookData.title) return;
     setIsSaving(true);
@@ -1472,10 +1477,17 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
 
       // Upload via server API route (uses service role key, no RLS issues)
       if (pendingFileRef.current) {
+        const pendingFile = pendingFileRef.current;
+        const isVideoFile = isVideoUploadFile(pendingFile);
         const formData = new FormData();
-        formData.append('file', pendingFileRef.current);
-        if (pendingFileRef.current.type.startsWith('video') && pendingThumbRef.current) {
-          formData.append('thumbBase64', pendingThumbRef.current);
+        formData.append('file', pendingFile);
+        const thumbnailBase64 = pendingThumbRef.current || (
+          isVideoFile && editingHookData.localImageUrl?.startsWith('data:image/')
+            ? editingHookData.localImageUrl
+            : ''
+        );
+        if (isVideoFile && thumbnailBase64) {
+          formData.append('thumbBase64', thumbnailBase64);
         }
 
         try {
@@ -1483,15 +1495,28 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
             method: 'POST',
             body: formData,
           });
-          const uploadResult = await uploadRes.json();
-          if (uploadRes.ok && uploadResult.success) {
+          const uploadResult = await uploadRes.json().catch(() => null) as {
+            success?: boolean;
+            videoUrl?: string;
+            imageUrl?: string;
+            error?: string;
+          } | null;
+          if (uploadRes.ok && uploadResult?.success) {
             if (uploadResult.videoUrl) videoUrl = uploadResult.videoUrl;
             if (uploadResult.imageUrl) imageUrl = uploadResult.imageUrl;
+            if (isVideoFile && !videoUrl) {
+              throw new Error('Upload video xong nhưng server không trả video URL.');
+            }
+            if (!isVideoFile && !imageUrl) {
+              throw new Error('Upload ảnh xong nhưng server không trả image URL.');
+            }
           } else {
-            console.error('Upload failed:', uploadResult.error);
+            throw new Error(uploadResult?.error || `Upload media thất bại (HTTP ${uploadRes.status}).`);
           }
         } catch (uploadErr) {
           console.error('Upload request failed:', uploadErr);
+          alert(uploadErr instanceof Error ? uploadErr.message : 'Upload media thất bại. Hook chưa được lưu.');
+          return;
         }
 
         pendingFileRef.current = null;
@@ -1540,7 +1565,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
   const extractVideoAssets = (file: File): Promise<{ thumbnail: string; analysisImage: string }> => {
     return new Promise((resolve) => {
       const video = document.createElement('video');
-      video.preload = 'metadata';
+      video.preload = 'auto';
       video.muted = true;
       video.playsInline = true;
 
@@ -1550,7 +1575,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       };
 
       const captureFrame = (time: number) => new Promise<string>((frameResolve) => {
-        const handleSeeked = () => {
+        let resolved = false;
+        const finish = () => {
+          if (resolved) return;
+          resolved = true;
           const canvas = document.createElement('canvas');
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
@@ -1563,8 +1591,23 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           frameResolve(canvas.toDataURL('image/jpeg', 0.78));
         };
 
-        video.onseeked = handleSeeked;
-        video.currentTime = Math.max(0, Math.min(time, Math.max(video.duration - 0.05, 0)));
+        if (!video.videoWidth || !video.videoHeight) {
+          frameResolve('');
+          return;
+        }
+
+        const timeout = window.setTimeout(finish, 1200);
+        video.onseeked = () => {
+          window.clearTimeout(timeout);
+          finish();
+        };
+        const targetTime = Math.max(0, Math.min(time, Math.max(video.duration - 0.05, 0)));
+        if (Math.abs(video.currentTime - targetTime) < 0.05) {
+          window.clearTimeout(timeout);
+          finish();
+          return;
+        }
+        video.currentTime = targetTime;
       });
 
       video.onloadedmetadata = async () => {
@@ -1644,6 +1687,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       };
 
       video.src = URL.createObjectURL(file);
+      video.load();
     });
   };
 
@@ -1700,7 +1744,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     pendingFileRef.current = file;
     setEditingHookData(prev => ({ ...prev, title: prev.title || file.name.replace(/\.[^/.]+$/, ''), subtitle: 'Đang phân tích bằng AI...' }));
 
-    if (file.type.startsWith('video')) {
+    if (isVideoUploadFile(file)) {
       const localUrl = URL.createObjectURL(file);
       const { thumbnail, analysisImage } = await extractVideoAssets(file);
       pendingThumbRef.current = thumbnail || null;

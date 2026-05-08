@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askAI, getLastAIErrorMessage } from '@/lib/aiClient';
 import {
-  buildHookOutputSpec,
   normalizeHookOutput,
   parseJsonLoose,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
-import {
-  buildFilterConsistencyPromptBlock,
-  detectTargetLanguageFromMarkets,
-} from '@/lib/filterConsistency';
+import { detectTargetLanguageFromMarkets } from '@/lib/filterConsistency';
 import { enrichHookWithFramework } from '@/lib/hookFramework';
 
 export const maxDuration = 60;
@@ -392,53 +388,64 @@ export async function POST(request: NextRequest) {
       readText(hook.coreUser),
       readText(hook.viewerProfile),
     ].filter(Boolean)) || 'English';
-    const filterConsistencyBlock = buildFilterConsistencyPromptBlock({
-      solutionValues: [readText(hook.hook_concept, readText(hook.description))].filter(Boolean),
-      angleValues: [readText(hook.title), readText(hook.description), readText(instruction)].filter(Boolean),
-      painPointValues: [readText(hook.painpoint)].filter(Boolean),
-    });
-
     const previousHooksBlock = readText(previousHooks)
-      ? `\n## PREVIOUS MODIFIED HOOKS - DO NOT REPEAT\n${readText(previousHooks)}\n`
+      ? `\nPreviously generated hooks to avoid repeating:\n${readText(previousHooks)}\n`
       : '';
 
-    const prompt = `You are a senior performance creative strategist for mobile app ads.
-Create hook-only variations for a winning hook. This is not a full idea and must stay fast.
+    const prompt = `Use the analyzed hook insight and the user's extra brief to create ${requestedQuantity} modified hook variations.
+Return JSON array only. No markdown. No explanation outside JSON.
 
-## WINNING HOOK DNA
+Analyzed hook:
 - App: ${appName || 'N/A'}
 - Category: ${appCategory || 'N/A'}
-- Title: "${hook.title}"
-- Description: ${hook.description || 'N/A'}
-- Hook concept: ${hook.hook_concept || 'N/A'}
-- Creative type: ${hook.creative_type || hook.subtitle || 'N/A'}
-- Original visual: ${hook.visual_detail || 'N/A'}
-- Core user: ${hook.core_user || 'N/A'}
-- Painpoint: ${hook.painpoint || 'N/A'}
-- Viewer emotion target: ${hook.emotion || 'N/A'}
-- Target market/localization: ${targetMarketValues.join(', ') || 'same as the winning hook'}
-${filterConsistencyBlock || ''}
+- Title: ${readText(hook.title, 'N/A')}
+- Format: ${readText(hook.creative_type, readText(hook.subtitle, 'N/A'))}
+- Description: ${readText(hook.description, 'N/A')}
+- Hook concept: ${readText(hook.hook_concept, 'N/A')}
+- Visual analysis: ${readText(hook.visual_detail, 'N/A')}
+- Core user: ${readText(hook.core_user, 'N/A')}
+- Painpoint: ${readText(hook.painpoint, 'N/A')}
+- Emotion: ${readText(hook.emotion, 'N/A')}
+- Target/localization: ${targetMarketValues.join(', ') || 'same as hook'}
 
-## USER MODIFY BRIEF
-"${instruction}"
+User extra brief:
+${readText(instruction, 'No extra brief')}
 ${previousHooksBlock}
 
-## TASK
-Create exactly ${requestedQuantity} hook-only variations.
-- Keep the winning DNA and same problem/emotion target.
-- Change the visual execution enough that each variation is distinct.
-- Preserve the interaction pattern and number of people when possible.
-- Each variation should differ from the original on at least 3 of these axes: situation, character, setting, blocker, mood.
-- hook.visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- Internal UI/production fields must be Vietnamese: title, explanation, meta.hookPrimary, hookAlt1, hookAlt2, visualRefNotes, talentProfile, dontDo, hook.visual, hook.textOverlay, viTranslation, viewerEmotion, painpointImpact, whyTheyStopScrolling.
-- Only hook.characterSpeech, hook.voiceover, and hook.voice follow ${targetLanguage}.
-- If a visible person speaks in the hook, put that line in hook.characterSpeech with time + speaker (example: 0-3s - Creator: line) and leave hook.voiceover empty. Do not return both for the same spoken line.
-- Do not put Voiceover, CHARACTER SPEECH, Text hien, Text hiện, or TEXT OVERLAY snippets inside hook.visual.
-- No two variations may use the same title, first visible subject/object, first physical action, setting, or hook structure.
-- Target market controls local behavior, setting, culture, props, and vibe only. Do not switch production prose away from Vietnamese.
-- Output compact JSON only. No markdown fences. No full Body or CTA.
+Rules:
+- Treat the analyzed hook as the reference hook DNA.
+- Keep the same hook mechanism, viewer emotion, core painpoint, and creative pattern from the reference hook.
+- Modify it into similar hooks in different but related contexts, settings, people, and situations.
+- Combine the user's extra brief as the new direction layered on top of the reference hook. Do not replace the reference hook with an unrelated idea.
+- Each variation must answer: "same kind of hook, but in what new scenario?"
+- Make each variation visually different from the reference hook and from the other variations.
+- Vietnamese for title, explanation, hook.visual, hook.textOverlay, viTranslation.
+- ${targetLanguage} only for hook.characterSpeech, hook.voiceover, hook.voice.
+- If an on-camera person speaks, fill hook.characterSpeech as "0-3s - speaker: line" and leave hook.voiceover empty.
+- If no on-camera person speaks, use hook.voiceover and leave hook.characterSpeech empty.
+- Do not put voice/text labels inside hook.visual.
 
-${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })}`;
+Schema:
+[
+  {
+    "title": "Tên hook tiếng Việt",
+    "explanation": "Vì sao biến thể này khác và dùng được",
+    "meta": {
+      "hookPrimary": "Hook text tiếng Việt",
+      "hookAlt1": "Alt hook tiếng Việt",
+      "hookAlt2": "Alt hook tiếng Việt"
+    },
+    "hook": {
+      "durationSeconds": 3,
+      "visual": "Mô tả cảnh hook bằng tiếng Việt, cụ thể bối cảnh mới/tình huống mới/ai/ở đâu/làm gì/camera nhìn gì",
+      "textOverlay": "Text trên màn hình tiếng Việt",
+      "characterSpeech": "",
+      "voiceover": "Câu voice nếu có",
+      "voice": "Giống characterSpeech hoặc voiceover",
+      "viTranslation": "Dịch tiếng Việt của câu nói/voice"
+    }
+  }
+]`;
 
     const candidateModels = resolveHookModels();
     const routeStartedAt = Date.now();
@@ -461,8 +468,8 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       const modelTimeoutMs = Math.min(HOOK_MODEL_TIMEOUT_MS, remainingMs);
       const text = await askAI(prompt, {
         model,
-        temperature: 0.75,
-        max_tokens: Math.max(2400, requestedQuantity * 900),
+        temperature: 0.55,
+        max_tokens: Math.max(1200, requestedQuantity * 520),
         useCreativePersona: false,
         priority: 'high',
         timeoutMs: modelTimeoutMs,
@@ -484,7 +491,7 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
       }
 
       const arr = Array.isArray(parsed) ? parsed : [parsed];
-      const validItems = dedupeHookVariations(arr.map((item: unknown, i: number) => {
+      const validItems = arr.map((item: unknown, i: number) => {
         const normalized = normalizeHookOutput(item);
         const normalizedHook = (normalized.hook || {}) as Record<string, unknown>;
         const characterSpeech = readText(normalizedHook.characterSpeech);
@@ -510,7 +517,17 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
             whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',
           },
         };
-      }).filter(item => isUsableHookVariation(item, readText(instruction), hook)));
+      }).filter(item => {
+        const hookSection = item.hook as Record<string, unknown>;
+        return Boolean(
+          readText(item.title)
+          || readText(hookSection.visual)
+          || readText(hookSection.textOverlay)
+          || readText(hookSection.characterSpeech)
+          || readText(hookSection.voiceover)
+          || readText(hookSection.voice)
+        );
+      });
 
       const data = validItems.slice(0, requestedQuantity);
       if (data.length > bestValidItems.length) {
@@ -521,32 +538,19 @@ ${buildHookOutputSpec({ quantity: requestedQuantity, language: targetLanguage })
         return NextResponse.json({ success: true, data, modelUsed: model });
       }
 
-      lastError = `Model ${model} chỉ tạo được ${data.length}/${requestedQuantity} hook hợp lệ.`;
-      console.warn('[generate-hooks] insufficient valid hooks', { model, count: data.length, requestedQuantity });
-    }
+      if (data.length > 0) {
+        console.log('[generate-hooks] partial success', { model, count: data.length, requestedQuantity });
+        return NextResponse.json({
+          success: true,
+          data,
+          modelUsed: model,
+          warning: `Gemini 3 returned ${data.length}/${requestedQuantity} usable hooks.`,
+          meta: { requestedQuantity, aiCount: data.length },
+        });
+      }
 
-    const allowLocalRefill = targetLanguage === 'English';
-    const refillCount = allowLocalRefill ? Math.max(0, requestedQuantity - bestValidItems.length) : 0;
-    const refillItems = refillCount > 0
-      ? buildBetterFallbackHookVariations(hook, readText(instruction), refillCount, bestValidItems.length)
-        .filter(item => isUsableHookVariation(item, readText(instruction), hook))
-      : [];
-    const data = dedupeHookVariations([...bestValidItems, ...refillItems]).slice(0, requestedQuantity);
-
-    if (data.length > 0) {
-      console.log('[generate-hooks] partial success', { count: data.length, bestValidCount: bestValidItems.length });
-      return NextResponse.json({
-        success: true,
-        data,
-        modelUsed: bestValidItems.length > 0 ? 'partial-ai-with-local-refill' : 'local-refill',
-        warning: `${lastError} Returned ${bestValidItems.length} clean AI hook(s) and ${Math.max(0, data.length - bestValidItems.length)} local refill hook(s).`,
-        meta: {
-          aiCount: bestValidItems.length,
-          refillCount: Math.max(0, data.length - bestValidItems.length),
-          localRefillSkippedForLanguage: !allowLocalRefill && bestValidItems.length < requestedQuantity,
-          requestedQuantity,
-        },
-      });
+      lastError = `Model ${model} không tạo được hook có nội dung.`;
+      console.warn('[generate-hooks] no usable hooks', { model, requestedQuantity });
     }
 
     console.warn('[generate-hooks] failed', { lastError, requestedQuantity, bestValidCount: bestValidItems.length });
