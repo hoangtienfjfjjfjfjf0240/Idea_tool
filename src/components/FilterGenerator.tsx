@@ -10,6 +10,7 @@ import { authenticatedFetch } from '@/lib/authFetch';
 import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
 import { isInvalidStrategyIdea } from '@/lib/ideaStructure';
 import { formatHealthMetricConflictMessage, getHealthMetricConflict } from '@/lib/filterConsistency';
+import { isPinnedHealthWebFunnelApp } from '@/lib/appDisplay';
 import {
   buildStrategyCodeLookup,
   formatStrategyCodeForFilterGroups,
@@ -146,10 +147,7 @@ function normalizeCompareText(value: unknown) {
 }
 
 function shouldHidePspForApp(app: AppProject) {
-  const normalized = normalizeCompareText(app.name);
-  const isCalorieFunnel = /\b(?:ikcal|calori|calorie\s+counter)\b/.test(normalized);
-  const isHeartFunnel = /\b(?:icardiac|heart\s+health\s+monitor|heart\s+rate)\b/.test(normalized);
-  return isCalorieFunnel || isHeartFunnel;
+  return isPinnedHealthWebFunnelApp(app);
 }
 
 function vietnamesePainpointCue(value: string) {
