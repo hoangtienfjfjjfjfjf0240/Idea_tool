@@ -2270,21 +2270,28 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const framework = ((content as IdeaContent).framework || {}) as Partial<IdeaContent['framework']>;
     const meta = ((content as IdeaContent).meta || {}) as NonNullable<IdeaContent['meta']> & Record<string, unknown>;
     const snapshot = idea.filters_snapshot || null;
+    const strategyCodeMapRows = Array.isArray(meta.strategyCodeMap)
+      ? meta.strategyCodeMap.map(item => cleanPreviewText(item)).filter(Boolean)
+      : [];
+    const mappedAngle = strategyCodeMapRows
+      .find(row => /^\s*F\d+\s*=/.test(row))
+      ?.replace(/^\s*F\d+\s*=\s*Angle:\s*/i, '');
     const angleFallback = Array.from(new Set([
       meta.angleName,
       meta.angleDesc,
       meta.referencePattern,
       meta.angleType,
+      mappedAngle,
     ].map(value => cleanPreviewText(value)).filter(Boolean))).join(' - ');
     const chips = [
       { key: 'coreUser', label: 'Viewer', values: listFilterValues(snapshot, 'coreUser', framework.coreUser), className: 'bg-blue-50 text-blue-600' },
+      { key: 'angle', label: 'Angle', values: listFilterValues(snapshot, 'angle', angleFallback), className: 'bg-teal-50 text-teal-600' },
       { key: 'emotion', label: 'Emotion', values: listFilterValues(snapshot, 'emotion', framework.emotion), className: 'bg-rose-50 text-rose-600' },
       { key: 'visualType', label: 'Visual', values: listFilterValues(snapshot, 'visualType', (content as IdeaContent).creativeType), className: 'bg-indigo-50 text-indigo-600' },
       { key: 'painPoint', label: 'Pain', values: listFilterValues(snapshot, 'painPoint', framework.painpoint), className: 'bg-red-50 text-red-600' },
       { key: 'solution', label: 'PSP', values: shouldHidePspForApp(app) ? [] : listFilterValues(snapshot, 'solution', framework.psp), className: 'bg-emerald-50 text-emerald-600' },
       { key: 'videoStructure', label: 'Structure', values: listFilterValues(snapshot, 'videoStructure'), className: 'bg-violet-50 text-violet-600' },
       { key: 'targetMarket', label: 'Market', values: listFilterValues(snapshot, 'targetMarket'), className: 'bg-sky-50 text-sky-600' },
-      { key: 'angle', label: 'Angle', values: listFilterValues(snapshot, 'angle', angleFallback), className: 'bg-teal-50 text-teal-600' },
     ];
 
     return chips

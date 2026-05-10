@@ -407,6 +407,101 @@ function normalizeWorkflowKeyPart(value: string) {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
 }
 
+function normalizeWorkflowSearchText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[Ä‘Ä]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function cleanAngleDisplayText(value: unknown) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripAngleInstructionText(value: unknown) {
+  let text = cleanAngleDisplayText(value)
+    .replace(/^\s*F\d+\s*=\s*Angle:\s*/i, '')
+    .replace(/^ANGLE\s+TYPE\s+([^:]+):\s*/i, '$1: ')
+    .replace(/^Góc\s+(\d+\/\d+)\s*-\s*angle_type\s+bắt buộc:\s*([^.]+)\.\s*/i, '$2: ')
+    .replace(/^Góc\s+([^:]+):\s*/i, '$1: ');
+
+  text = text
+    .replace(/\s*Phải khác rõ các góc còn lại.*$/i, '')
+    .replace(/\s*This angle must look visually different.*$/i, '')
+    .replace(/\s*Yêu cầu thêm:.*$/i, '')
+    .replace(/\s*App:\s*.*$/i, '')
+    .replace(/\s*Chọn một góc [^.]+\.?\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text;
+}
+
+function getAngleTypeFromText(...values: unknown[]) {
+  const allowed = ['Comparison', 'Demo', 'Tutorial', 'Fact', 'POV', 'Social', 'Curiosity', 'Relief', 'Challenge', 'Trend', 'Fear'];
+  const haystack = values.map(value => cleanAngleDisplayText(value)).join(' ');
+  const normalizedHaystack = normalizeWorkflowSearchText(haystack);
+  return allowed.find(type => normalizedHaystack.includes(normalizeWorkflowSearchText(type))) || '';
+}
+
+function isInstructionalAngleLabel(value: unknown) {
+  const normalized = normalizeWorkflowSearchText(value);
+  return /\bangle type bat buoc\b/.test(normalized)
+    || /\bthis angle must look visually different\b/.test(normalized)
+    || /\bphai khac ro\b/.test(normalized)
+    || /\bye?u cau them\b/.test(normalized)
+    || /\bchon mot goc\b/.test(normalized)
+    || /\bapp phone cleaner\b/.test(normalized);
+}
+
+function isGenericAngleLabel(value: unknown) {
+  const normalized = normalizeWorkflowSearchText(value);
+  return !normalized
+    || /^(?:comparison|demo|tutorial|fact|pov|social|curiosity|relief|challenge|trend|fear)$/.test(normalized)
+    || /^goc \d+ \d+/.test(normalized);
+}
+
+function shortenAngleLabel(value: string, maxLength = 72) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trim()}…`;
+}
+
+function getIdeaAngleDisplayLabel(idea: GeneratedIdea, rawAngle: string, filters: Partial<FilterState>) {
+  const meta = idea.content?.meta || {};
+  const metaName = stripAngleInstructionText(meta.angleName);
+  const rawLabel = stripAngleInstructionText(rawAngle);
+  const type = getAngleTypeFromText(meta.angleType, metaName, rawAngle);
+
+  if (metaName && !isInstructionalAngleLabel(metaName) && !isGenericAngleLabel(metaName)) {
+    return shortenAngleLabel(type && !normalizeWorkflowSearchText(metaName).includes(normalizeWorkflowSearchText(type))
+      ? `${type}: ${metaName}`
+      : metaName);
+  }
+
+  if (rawLabel && !isInstructionalAngleLabel(rawLabel) && !isGenericAngleLabel(rawLabel)) {
+    return shortenAngleLabel(rawLabel);
+  }
+
+  const painPoint = cleanAngleDisplayText(filters.painPoint?.[0]);
+  if (type && painPoint) return shortenAngleLabel(`${type}: ${painPoint}`);
+  if (painPoint) return shortenAngleLabel(`Angle: ${painPoint}`);
+  return type ? `${type} angle` : 'Angle';
+}
+
+function shouldReplaceAngleNodeLabel(currentLabel: string, nextLabel: string) {
+  const currentBad = isInstructionalAngleLabel(currentLabel) || isGenericAngleLabel(currentLabel);
+  const nextBad = isInstructionalAngleLabel(nextLabel) || isGenericAngleLabel(nextLabel);
+  if (!currentLabel) return true;
+  if (currentBad && !nextBad) return true;
+  if (currentBad && nextLabel.length < currentLabel.length) return true;
+  return false;
+}
+
 function getWorkflowNodeCanonicalKey(node: WorkflowNode): string | null {
   if (node.level === 'root') return 'root';
 
@@ -673,6 +768,20 @@ function filterFavoriteSessions(appId: string, sessions: IdeaSession[], favorite
     .filter((session): session is IdeaSession => Boolean(session));
 }
 
+async function loadStrategyMapSessions(appId: string): Promise<IdeaSession[]> {
+  try {
+    const response = await authenticatedFetch(`/api/strategy-map-sessions?appId=${encodeURIComponent(appId)}`);
+    const payload = await response.json().catch(() => null) as { success?: boolean; sessions?: IdeaSession[] } | null;
+    if (response.ok && payload?.success && Array.isArray(payload.sessions)) {
+      return payload.sessions;
+    }
+  } catch (error) {
+    console.warn('Strategy map server session load failed, falling back to client Supabase:', error);
+  }
+
+  return getIdeaSessions(appId);
+}
+
 // ===== Week helpers =====
 function toLocalNoonDate(input: string | Date): Date {
   const source = input instanceof Date ? input : new Date(input);
@@ -825,6 +934,55 @@ function collectTreeNodeIdeas(node: TreeNode | null | undefined): GeneratedIdea[
   return ideas;
 }
 
+function getIdeaStrategyCodes(idea: GeneratedIdea): string[] {
+  const meta = idea.content?.meta;
+  const rawCodes = [
+    meta?.strategyCode,
+    ...(Array.isArray(meta?.strategyCodes)
+      ? meta.strategyCodes.filter(code => /^(?:[A-F]\d+){2,}$/i.test(code))
+      : []),
+    ...(typeof idea.title === 'string' ? idea.title.match(/[A-F]\d+(?:[A-F]\d+)*/g) || [] : []),
+  ];
+
+  return Array.from(
+    new Set(
+      rawCodes
+        .map(code => (typeof code === 'string' ? code.trim() : ''))
+        .filter(Boolean)
+    )
+  );
+}
+
+function getIdeaStrategySearchText(idea: GeneratedIdea): string {
+  const meta = idea.content?.meta;
+  return [
+    idea.title,
+    ...getIdeaStrategyCodes(idea),
+    ...(Array.isArray(meta?.strategyCodeMap) ? meta.strategyCodeMap : []),
+    meta?.angleName,
+    meta?.angleType,
+    meta?.angleDesc,
+    meta?.referencePattern,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join(' ');
+}
+
+function getDirectNodeIdeas(node: WorkflowNode | null | undefined): GeneratedIdea[] {
+  return node && isTreeNode(node) ? node.ideas : [];
+}
+
+function getNodeSavedStrategyCodes(node: WorkflowNode | null | undefined): string[] {
+  return Array.from(
+    new Set(
+      getDirectNodeIdeas(node)
+        .flatMap(getIdeaStrategyCodes)
+        .map(code => code.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 function hydrateCustomNodes(savedNodes: StrategyMapCustomNodeState[] | undefined): CustomWorkflowNode[] {
   return (savedNodes || []).map(node => ({
     ...node,
@@ -854,7 +1012,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [ideaResults, setIdeaResults] = useState<Record<string, ResultType>>({});
   const [ideaDetailCache, setIdeaDetailCache] = useState<Record<string, GeneratedIdea>>({});
   const [loadingIdeaDetails, setLoadingIdeaDetails] = useState(false);
-  const [selectedWeek, setSelectedWeek] = useState<string>(() => getWeekKey(new Date()));
+  const [selectedWeek, setSelectedWeek] = useState<string>('all');
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [containerWidth, setContainerWidth] = useState(900);
   const [storedOptionValues, setStoredOptionValues] = useState<Record<WorkflowLevel, string[]>>(() => createEmptyWorkflowOptionValues());
@@ -877,7 +1035,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [strategyStateHydrated, setStrategyStateHydrated] = useState(false);
   const [strategyStateStatus, setStrategyStateStatus] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
   const [showOnlyUngenerated, setShowOnlyUngenerated] = useState(false);
+  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const [activeSearchDetailQuery, setActiveSearchDetailQuery] = useState('');
   const treeContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -908,7 +1068,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       setIdeaDetailCache({});
       setLoadingIdeaDetails(false);
       const [data, savedOptionMap] = await Promise.all([
-        getIdeaSessions(app.id),
+        loadStrategyMapSessions(app.id),
         getFilterOptions(app),
       ]);
       if (cancelled) return;
@@ -1076,15 +1236,27 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     () => filterFavoriteSessions(app.id, sessions, favoriteIdeaKeys),
     [app.id, favoriteIdeaKeys, sessions]
   );
+  const favoriteIdeaCount = useMemo(
+    () => favoriteSessions.reduce((sum, session) => sum + session.ideas.length, 0),
+    [favoriteSessions]
+  );
+  const strategySourceSessions = useMemo(
+    () => showOnlyFavorites ? favoriteSessions : sessions,
+    [favoriteSessions, sessions, showOnlyFavorites]
+  );
+  const strategySourceIdeaCount = useMemo(
+    () => strategySourceSessions.reduce((sum, session) => sum + session.ideas.length, 0),
+    [strategySourceSessions]
+  );
 
   const weekIdeaCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    favoriteSessions.forEach(s => {
+    strategySourceSessions.forEach(s => {
       const wk = getWeekKey(s.createdAt);
       counts.set(wk, (counts.get(wk) || 0) + s.ideas.length);
     });
     return counts;
-  }, [favoriteSessions]);
+  }, [strategySourceSessions]);
 
   // ===== Full weekly timeline: history weeks + current week → year end =====
   const allWeeks = useMemo(() => generateWeekTimeline(Array.from(weekIdeaCounts.keys())), [weekIdeaCounts]);
@@ -1100,7 +1272,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       angle: new Set<string>(),
     };
 
-    favoriteSessions.forEach(session => {
+    strategySourceSessions.forEach(session => {
       session.ideas.forEach(idea => {
         const filters = normalizeFilterSnapshot(idea.filters_snapshot || session.filters);
         (filters.coreUser || []).forEach(value => values.coreUser.add(value));
@@ -1118,7 +1290,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         return [level, mergeUniqueLabels(storedOptionValues[level], fromApp, FALLBACK_OPTIONS[level])];
       })
     ) as Record<WorkflowLevel, string[]>;
-  }, [favoriteSessions, storedOptionValues]);
+  }, [strategySourceSessions, storedOptionValues]);
 
   // Current week key for highlighting
   const currentWeekKey = useMemo(() => getWeekKey(new Date()), []);
@@ -1144,9 +1316,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
   // ===== Filter sessions by selected week =====
   const filteredSessions = useMemo(() => {
-    if (selectedWeek === 'all') return favoriteSessions;
-    return favoriteSessions.filter(s => getWeekKey(s.createdAt) === selectedWeek);
-  }, [favoriteSessions, selectedWeek]);
+    if (selectedWeek === 'all') return strategySourceSessions;
+    return strategySourceSessions.filter(s => getWeekKey(s.createdAt) === selectedWeek);
+  }, [strategySourceSessions, selectedWeek]);
 
   const strategyVisibleIdeaCount = useMemo(
     () => filteredSessions.reduce((sum, session) => sum + session.ideas.length, 0),
@@ -1313,12 +1485,16 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           angleVals.forEach(angle => {
             const anglePath = `${pathKey}|${angle}`;
             const nodeId = `angle:${anglePath}`;
+            const angleLabel = getIdeaAngleDisplayLabel(idea, angle, f);
             let angleNode = parent.children.find(c => c.id === nodeId);
             if (!angleNode) {
-              angleNode = mkNode(nodeId, angle, 'angle', f);
+              angleNode = mkNode(nodeId, angleLabel, 'angle', f);
               parent.children.push(angleNode);
             } else if (!angleNode.filters || Object.keys(angleNode.filters).length === 0) {
               angleNode.filters = f;
+            }
+            if (shouldReplaceAngleNodeLabel(angleNode.label, angleLabel)) {
+              angleNode.label = angleLabel;
             }
             addIdeaToNode(angleNode);
           });
@@ -1826,6 +2002,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       const searchable = [
         getNodeStrategyCode(node),
         getNodeOwnStrategyCode(node),
+        getNodeSavedStrategyCodes(node).join(' '),
+        getDirectNodeIdeas(node).map(getIdeaStrategySearchText).join(' '),
         node.label,
         node.level,
         node.filters?.coreUser?.join(' '),
@@ -1839,6 +2017,23 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     });
   }, [flatNodes, getNodeOwnStrategyCode, getNodeStrategyCode, normalizedMapSearchQuery]);
   const searchMatchNodeIds = useMemo(() => new Set(searchMatches.map(({ node }) => node.id)), [searchMatches]);
+  const searchMatchedIdeas = useMemo(() => {
+    if (!normalizedMapSearchQuery) return [];
+
+    const seen = new Set<string>();
+    const ideas: GeneratedIdea[] = [];
+
+    searchMatches.forEach(({ node }) => {
+      if (!isTreeNode(node)) return;
+      collectTreeNodeIdeas(node).forEach(idea => {
+        if (seen.has(idea.id)) return;
+        seen.add(idea.id);
+        ideas.push(idea);
+      });
+    });
+
+    return ideas;
+  }, [normalizedMapSearchQuery, searchMatches]);
 
   const handleViewportWheelAt = useCallback((clientX: number, clientY: number, deltaY: number) => {
     autoFitPendingRef.current = false;
@@ -1978,8 +2173,9 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     };
   }, [draggedCustomNodeId, viewScale]);
 
-  // Click node → highlight path + show ideas for painpoint
+  // Click node → highlight path + show ideas for the selected branch.
   const handleNodeClick = (node: TreeNode) => {
+    setActiveSearchDetailQuery('');
     if (node.level === 'root') { setActivePath([]); setSelectedNode(null); return; }
     const findPath = (current: TreeNode, target: string, path: string[]): string[] | null => {
       const np = [...path, current.id];
@@ -1994,19 +2190,14 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     setSelectedNode(node);
   };
 
-  const openWorkflowNode = (nodeId: string) => {
-    focusWorkflowNode(nodeId);
-    const node = workflowNodeById.get(nodeId);
-    if (!node) return;
-
-    if (isTreeNode(node)) {
-      setSelectedCustomNodeId(null);
-      handleNodeClick(node);
-    } else {
-      setSelectedCustomNodeId(node.id);
-      setSelectedNode(null);
-    }
-  };
+  const handleOpenSearchResults = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    setActiveSearchDetailQuery(mapSearchQuery.trim());
+    setSelectedNode(null);
+    setSelectedCustomNodeId(null);
+    setActivePath([]);
+    focusWorkflowNode(searchMatches[0].node.id);
+  }, [focusWorkflowNode, mapSearchQuery, searchMatches]);
 
   const getWorkflowNodeFilters = useCallback((nodeId: string | null | undefined) => {
     if (!nodeId) return {};
@@ -2285,17 +2476,21 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     () => collectTreeNodeIdeas(selectedNode),
     [selectedNode]
   );
+  const isSearchDetailOpen = Boolean(activeSearchDetailQuery && normalizedMapSearchQuery);
+  const detailSourceIdeas = isSearchDetailOpen ? searchMatchedIdeas : selectedNodeIdeas;
   const selectedIdeaIds = useMemo(
-    () => selectedNodeIdeas.map(idea => idea.id).filter(Boolean),
-    [selectedNodeIdeas]
+    () => detailSourceIdeas.map(idea => idea.id).filter(Boolean),
+    [detailSourceIdeas]
   );
   const selectedIdeaIdsKey = selectedIdeaIds.join('|');
   const detailIdeas = useMemo(
-    () => selectedNodeIdeas.map(idea => ideaDetailCache[idea.id] || idea),
-    [ideaDetailCache, selectedNodeIdeas]
+    () => detailSourceIdeas.map(idea => ideaDetailCache[idea.id] || idea),
+    [detailSourceIdeas, ideaDetailCache]
   );
-  const detailLabel = selectedNode?.label || '';
-  const detailIdeaCount = selectedNode?.ideaCount || detailIdeas.length;
+  const detailLabel = isSearchDetailOpen
+    ? `Kết quả tìm kiếm: ${activeSearchDetailQuery}`
+    : selectedNode?.label || '';
+  const detailIdeaCount = detailIdeas.length;
   const selectedBranchNodeId = selectedCustomNodeId || selectedNode?.id || null;
   const selectedBranchNode = selectedCustomNode || selectedNode;
   const selectedBranchStatus = selectedBranchNodeId
@@ -2326,7 +2521,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         : { label: 'Đã lưu vào DB', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 
   useEffect(() => {
-    if (!selectedNode || selectedIdeaIds.length === 0) {
+    if (selectedIdeaIds.length === 0) {
       setLoadingIdeaDetails(false);
       return;
     }
@@ -2357,7 +2552,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     return () => {
       cancelled = true;
     };
-  }, [app.id, ideaDetailCache, selectedIdeaIds, selectedIdeaIdsKey, selectedNode]);
+  }, [app.id, ideaDetailCache, selectedIdeaIds, selectedIdeaIdsKey]);
 
   const handleHideSelectedBranch = useCallback(() => {
     if (!selectedBranchNodeId || selectedBranchNodeId === 'root') return;
@@ -2447,7 +2642,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
             🗺️ Strategy Map
             {!inline && <span className="text-sm font-medium text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{app.name}</span>}
           </h2>
-          <p className="text-xs text-gray-400 mt-1">Core User → PSP → Emotion → Visual → Painpoint · Click painpoint để xem ideas</p>
+          <p className="text-xs text-gray-400 mt-1">Core User → PSP → Emotion → Visual → Painpoint → Angle · Click angle để xem ideas</p>
         </div>
       </div>
 
@@ -2484,8 +2679,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                       <span>{q.icon}</span>
                       {q.label}
                       {selectedWeek === q.key && <span className="ml-auto text-indigo-500">✓</span>}
-                      {q.key !== 'all' && (weekIdeaCounts.get(q.key) || 0) > 0 && (
-                        <span className="ml-auto text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">{weekIdeaCounts.get(q.key)}</span>
+                      {((q.key === 'all' ? strategySourceIdeaCount : weekIdeaCounts.get(q.key) || 0) > 0) && (
+                        <span className="ml-auto text-[10px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full font-bold">
+                          {q.key === 'all' ? strategySourceIdeaCount : weekIdeaCounts.get(q.key)}
+                        </span>
                       )}
                     </button>
                   ))}
@@ -2549,8 +2746,26 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           {strategyStateBadge.label}
         </span>
         <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-bold text-rose-600">
-          Map idea đã thả tim ({strategyVisibleIdeaCount})
+          {showOnlyFavorites ? 'Map idea đã thả tim' : 'Map tất cả idea'} ({strategyVisibleIdeaCount})
         </span>
+        <button
+          onClick={() => {
+            autoFitPendingRef.current = true;
+            setShowOnlyFavorites(prev => !prev);
+            setSelectedNode(null);
+            setActivePath([]);
+          }}
+          className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
+            showOnlyFavorites
+              ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          {showOnlyFavorites ? 'Hiện tất cả idea' : 'Chỉ idea đã thả tim'}
+          <span className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">
+            {favoriteIdeaCount}
+          </span>
+        </button>
         <button
           onClick={() => {
             autoFitPendingRef.current = true;
@@ -2722,10 +2937,13 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
             <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={mapSearchQuery}
-              onChange={(event) => setMapSearchQuery(event.target.value)}
+              onChange={(event) => {
+                setMapSearchQuery(event.target.value);
+                setActiveSearchDetailQuery('');
+              }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && searchMatches[0]) {
-                  openWorkflowNode(searchMatches[0].node.id);
+                if (event.key === 'Enter' && searchMatches.length > 0) {
+                  handleOpenSearchResults();
                 }
               }}
               placeholder="Tìm mã A1B1, painpoint, angle..."
@@ -2733,7 +2951,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
             />
             {mapSearchQuery && (
               <button
-                onClick={() => setMapSearchQuery('')}
+                onClick={() => {
+                  setMapSearchQuery('');
+                  setActiveSearchDetailQuery('');
+                }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                 title="Xóa tìm kiếm"
               >
@@ -2743,11 +2964,11 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
           </div>
           {mapSearchQuery && (
             <button
-              onClick={() => searchMatches[0] && openWorkflowNode(searchMatches[0].node.id)}
+              onClick={handleOpenSearchResults}
               disabled={searchMatches.length === 0}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {searchMatches.length > 0 ? `${searchMatches.length} kết quả` : '0 kết quả'}
+              {searchMatches.length > 0 ? `${searchMatches.length} nhánh • ${searchMatchedIdeas.length} ideas` : '0 kết quả'}
             </button>
           )}
           {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as WorkflowLevel[]).map(level => {
@@ -2926,7 +3147,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 })}
                 {flatNodes.map(({ node, absX, absY }) => {
                   if (node.level !== 'angle') return null;
-                  const formulaCode = getNodeStrategyCode(node);
+                  const savedFormulaCodes = getNodeSavedStrategyCodes(node);
+                  const formulaCode = savedFormulaCodes.length > 0
+                    ? savedFormulaCodes.slice(0, 3).join(', ')
+                    : getNodeStrategyCode(node);
                   if (!formulaCode) return null;
                   const style = LEVEL_COLORS[node.level];
                   const isSearchMatched = searchMatchNodeIds.has(node.id);
@@ -3002,8 +3226,13 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 const isSearchMatched = searchMatchNodeIds.has(node.id);
                 const isDimmed = hasFocusedBranch && !highlighted && !isSearchMatched;
                 const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
-                const strategyCode = getNodeOwnStrategyCode(node);
-                const strategyCodeRows = getNodeOwnStrategyCodeRows(node);
+                const savedStrategyCodes = getNodeSavedStrategyCodes(node);
+                const savedStrategyCode = savedStrategyCodes.length > 0 ? savedStrategyCodes.slice(0, 3).join(', ') : '';
+                const strategyCode = node.level === 'angle' && savedStrategyCode ? savedStrategyCode : getNodeOwnStrategyCode(node);
+                const savedStrategyCodeRows = getDirectNodeIdeas(node)
+                  .flatMap(idea => Array.isArray(idea.content?.meta?.strategyCodeMap) ? idea.content.meta.strategyCodeMap : [])
+                  .filter((row, index, rows) => rows.indexOf(row) === index);
+                const strategyCodeRows = savedStrategyCodeRows.length > 0 ? savedStrategyCodeRows : getNodeOwnStrategyCodeRows(node);
                 const branchStatus = branchStatusByNodeId.get(node.id) || 'ungenerated';
                 const branchTheme = BRANCH_STATUS_THEME[branchStatus];
                 const canHideNode = node.id !== 'root';
@@ -3083,7 +3312,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                         </div>
                         {strategyCode && (
                           <span
-                            className="mb-1 rounded-full bg-slate-900 px-2 py-0.5 font-mono text-[9px] font-black text-white"
+                            className="mb-1 max-w-full truncate rounded-full bg-slate-900 px-2 py-0.5 font-mono text-[9px] font-black text-white"
                             title={strategyCodeRows.join(' | ')}
                           >
                             {strategyCode}
@@ -3149,7 +3378,10 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               })}
               {flatNodes.map(({ node, absX, absY }) => {
                 if (node.level !== 'angle') return null;
-                const formulaCode = getNodeStrategyCode(node);
+                const savedFormulaCodes = getNodeSavedStrategyCodes(node);
+                const formulaCode = savedFormulaCodes.length > 0
+                  ? savedFormulaCodes.slice(0, 3).join(', ')
+                  : getNodeStrategyCode(node);
                 if (!formulaCode) return null;
                 const style = LEVEL_COLORS[node.level];
                 const isSearchMatched = searchMatchNodeIds.has(node.id);
@@ -3347,7 +3579,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               🧭 {detailLabel}
               <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">{detailIdeaCount} ideas</span>
             </h3>
-            <button onClick={() => { setSelectedNode(null); setActivePath([]); }}
+            <button onClick={() => { setSelectedNode(null); setActiveSearchDetailQuery(''); setActivePath([]); }}
               className="text-gray-400 hover:text-gray-600 text-sm font-medium px-3 py-1 hover:bg-gray-100 rounded-lg transition-colors">
               Đóng ✕
             </button>
