@@ -28,6 +28,7 @@ import {
   type HealthMetricKey,
 } from '@/lib/filterConsistency';
 
+export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 function parseJson(text: string) {
@@ -86,15 +87,16 @@ function booleanEnv(name: string, fallback: boolean) {
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 60000);
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 180000);
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 2);
-const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 220000);
+const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 1);
+const GEMINI3_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_GEMINI3_BATCH_CONCURRENCY', 2);
+const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 285000);
 const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
-const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', true);
+const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', false);
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
@@ -3157,6 +3159,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
               useCreativePersona: false,
               priority: 'high',
               timeoutMs: getBudgetedTimeoutMs(candidateTimeoutMs),
+              queueTimeoutMs: model.includes('gemini-3-pro') ? 60000 : undefined,
             });
           }
 
@@ -3448,12 +3451,15 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL;
       const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP;
 
-      for (const plan of batchPlans) {
+      const runBatchPlanWithRecovery = async (
+        plan: IdeaBatchPlan,
+        priorGeneratedIdeas: Record<string, unknown>[]
+      ) => {
         try {
           if (!hasAiBudget()) {
             throw new Error('AI request time budget was exhausted before this batch.');
           }
-          const batchIdeas = await runGenerationBatch(plan, aggregatedIdeas);
+          const batchIdeas = await runGenerationBatch(plan, priorGeneratedIdeas);
           if (batchIdeas.length < plan.batchQuantity) {
             const missingCount = plan.batchQuantity - batchIdeas.length;
             const shouldRecoverShortBatch = shouldUseAiRefill && !batchErrors.some(isNonRecoverableAIGenerationError);
@@ -3461,7 +3467,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               ? await refillIdeasOneByOne(
                   missingCount,
                   plan.batchStartIndex + batchIdeas.length,
-                  [...aggregatedIdeas, ...batchIdeas],
+                  [...priorGeneratedIdeas, ...batchIdeas],
                   `batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} returned too few ideas`
                 )
               : [];
@@ -3480,8 +3486,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
                 startIndex: requestStartIndex + plan.batchStartIndex + batchIdeas.length,
                 angleIndex,
                 ideaDescription,
-                hookDurationSeconds: requestedHookDuration,
-              });
+              hookDurationSeconds: requestedHookDuration,
+            });
               batchIdeas.push(...fallbackIdeas);
               fallbackAdded = fallbackIdeas.length;
               fallbackCount += fallbackIdeas.length;
@@ -3491,7 +3497,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} was short; AI refill added ${recoveredIdeas.length}, fallback added ${fallbackAdded}.`
             );
           }
-          aggregatedIdeas.push(...batchIdeas.slice(0, plan.batchQuantity));
+          return batchIdeas.slice(0, plan.batchQuantity);
         } catch (batchError) {
           const rangeLabel = `${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}`;
           console.error(`[generate-ideas] Batch ${rangeLabel} failed:`, batchError);
@@ -3503,11 +3509,10 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
             ? await refillIdeasOneByOne(
                 plan.batchQuantity,
                 plan.batchStartIndex,
-                aggregatedIdeas,
+                priorGeneratedIdeas,
                 rangeLabel
               )
             : [];
-          aggregatedIdeas.push(...recoveredIdeas);
 
           const stillMissing = plan.batchQuantity - recoveredIdeas.length;
           let fallbackAdded = 0;
@@ -3522,9 +3527,9 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
               startIndex: requestStartIndex + plan.batchStartIndex + recoveredIdeas.length,
               angleIndex,
               ideaDescription,
-              hookDurationSeconds: requestedHookDuration,
-            });
-            aggregatedIdeas.push(...fallbackIdeas);
+                hookDurationSeconds: requestedHookDuration,
+              });
+            recoveredIdeas.push(...fallbackIdeas);
             fallbackAdded = fallbackIdeas.length;
             fallbackCount += fallbackIdeas.length;
           }
@@ -3532,7 +3537,53 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
           batchErrors.push(
             `${rangeLabel}: ${batchErrorMessage}. AI refill added ${recoveredIdeas.length}, fallback added ${fallbackAdded}.`
           );
+          return recoveredIdeas.slice(0, plan.batchQuantity);
         }
+      };
+
+      const batchConcurrency = isGemini3Ideas
+        ? Math.max(1, Math.min(GEMINI3_IDEA_BATCH_CONCURRENCY, 3, batchPlans.length))
+        : 1;
+      if (batchConcurrency > 1) {
+        console.log('[generate-ideas] Gemini batch concurrency:', batchConcurrency, 'plans:', batchPlans.length);
+      }
+
+      for (let planIndex = 0; planIndex < batchPlans.length; planIndex += batchConcurrency) {
+        const plansInFlight = batchPlans.slice(planIndex, planIndex + batchConcurrency);
+        if (plansInFlight.length === 1) {
+          const batchIdeas = await runBatchPlanWithRecovery(plansInFlight[0], aggregatedIdeas);
+          aggregatedIdeas.push(...batchIdeas);
+          continue;
+        }
+
+        const priorIdeasForChunk = [...aggregatedIdeas];
+        const settledPlans = await Promise.allSettled(
+          plansInFlight.map(plan => runBatchPlanWithRecovery(plan, priorIdeasForChunk))
+        );
+        const chunkIdeas: Record<string, unknown>[] = [];
+        for (const [chunkIndex, settledPlan] of settledPlans.entries()) {
+          const plan = plansInFlight[chunkIndex];
+          if (settledPlan.status === 'fulfilled') {
+            const uniquePlanIdeas = dedupeIdeas(
+              settledPlan.value,
+              [...aggregatedIdeas, ...chunkIdeas]
+            ).slice(0, plan.batchQuantity);
+            if (uniquePlanIdeas.length < Math.min(settledPlan.value.length, plan.batchQuantity)) {
+              batchErrors.push(
+                `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} had duplicate ideas after parallel merge.`
+              );
+            }
+            chunkIdeas.push(...uniquePlanIdeas);
+          } else {
+            const message = settledPlan.reason instanceof Error
+              ? settledPlan.reason.message
+              : 'Unknown batch error';
+            batchErrors.push(
+              `${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity}/${requestedQuantity}: ${message}`
+            );
+          }
+        }
+        aggregatedIdeas.push(...chunkIdeas);
       }
 
       if (aggregatedIdeas.length < requestedQuantity) {

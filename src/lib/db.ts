@@ -77,7 +77,7 @@ const GLOBAL_VISUAL_TYPES = [
 
 const STRATEGY_MAP_STATE_CATEGORY_PREFIX = '__strategy_map_state__:';
 const STRATEGY_MAP_STATE_VERSION = 1;
-const STRATEGY_WORKFLOW_LEVELS: StrategyWorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'];
+const STRATEGY_WORKFLOW_LEVELS: StrategyWorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle', 'structure'];
 
 function getStrategyMapStateCategory(weekKey: string) {
   return `${STRATEGY_MAP_STATE_CATEGORY_PREFIX}${weekKey}`;
@@ -951,4 +951,3 @@ export async function deleteFilterOptionByValue(appId: string, category: string,
 }
 
 export { CATEGORY_SEEDS, GLOBAL_EMOTION_OPTIONS, GLOBAL_VIDEO_STRUCTURE, GLOBAL_VISUAL_TYPES };
-

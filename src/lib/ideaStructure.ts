@@ -53,6 +53,28 @@ export function isHookLibraryIdeaLike(idea: Pick<GeneratedIdea, 'content' | 'fil
   return angleValues.some(value => value.startsWith('Winning Hook:') || value.startsWith('Modified Hook:'));
 }
 
+function isLocalFallbackStrategyIdeaLike(idea: Pick<GeneratedIdea, 'content'>) {
+  const meta = idea.content?.meta;
+  const builderVersion = String(meta?.builderVersion || '').toLowerCase();
+
+  if (
+    builderVersion.includes('fallback')
+    || builderVersion.includes('local_backup')
+    || builderVersion.includes('local backup')
+    || builderVersion.includes('template')
+  ) {
+    return true;
+  }
+
+  const contentText = JSON.stringify(idea.content || {}).toLowerCase();
+  return contentText.includes('[hook_character_speech]')
+    || contentText.includes('[hook_text_overlay]')
+    || contentText.includes('structured fallback because the ai batch returned too few valid ideas')
+    || contentText.includes('why does this keep happening every time?')
+    || contentText.includes('guessing keeps you stuck');
+}
+
 export function isInvalidStrategyIdea(idea: Pick<GeneratedIdea, 'content' | 'filters_snapshot'>) {
-  return !isHookLibraryIdeaLike(idea) && !hasCompleteStrategyFilters(idea.filters_snapshot);
+  if (isHookLibraryIdeaLike(idea)) return false;
+  return isLocalFallbackStrategyIdeaLike(idea) || !hasCompleteStrategyFilters(idea.filters_snapshot);
 }

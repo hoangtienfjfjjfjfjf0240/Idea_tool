@@ -13,7 +13,7 @@ type ResultType = 'win' | 'failed' | 'monitoring' | null;
 interface TreeNode {
   id: string;
   label: string;
-  level: 'root' | 'coreUser' | 'psp' | 'emotion' | 'visual' | 'painPoint' | 'angle';
+  level: WorkflowLevel;
   filters?: Partial<FilterState>;
   children: TreeNode[];
   ideas: GeneratedIdea[];
@@ -26,9 +26,6 @@ interface TreeNode {
 // ===== Layout constants =====
 const NODE_W = 220;
 const NODE_H = 84;
-const FORMULA_NODE_W = 190;
-const FORMULA_NODE_H = 30;
-const FORMULA_NODE_GAP = 26;
 const ROW_GAP = 42;
 const LEVEL_LABEL_W = 170;
 const VIEWPORT_HEIGHT = 720;
@@ -219,9 +216,10 @@ const LEVEL_COLORS: Record<string, { bg: string; border: string; accent: string;
   visual: { bg: '#fffbeb', border: '#fcd34d', accent: '#f59e0b', gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', icon: '🎨', label: 'Visual/Theme', textBg: '#fef3c7' },
   painPoint: { bg: '#fff1f2', border: '#fda4af', accent: '#f43f5e', gradient: 'linear-gradient(135deg, #f43f5e, #e11d48)', icon: '🔥', label: 'Nỗi đau', textBg: '#ffe4e6' },
   angle: { bg: '#f0fdfa', border: '#5eead4', accent: '#14b8a6', gradient: 'linear-gradient(135deg, #14b8a6, #0d9488)', icon: '🧭', label: 'Angle', textBg: '#ccfbf1' },
+  structure: { bg: '#eef2ff', border: '#a5b4fc', accent: '#6366f1', gradient: 'linear-gradient(135deg, #6366f1, #4f46e5)', icon: '▦', label: 'Structure', textBg: '#e0e7ff' },
 };
 
-const LEVEL_ORDER: WorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'];
+const LEVEL_ORDER: WorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle', 'structure'];
 const LEVEL_AXIS_LABELS: Record<WorkflowLevel, string> = {
   root: 'ROOT',
   coreUser: 'CORE USER',
@@ -230,6 +228,7 @@ const LEVEL_AXIS_LABELS: Record<WorkflowLevel, string> = {
   visual: 'VISUAL',
   painPoint: 'PAINPOINT',
   angle: 'ANGLE',
+  structure: 'STRUCTURE',
 };
 
 const BRANCH_FILTER_FIELDS: Array<{ key: keyof FilterState; label: string; level: WorkflowLevel }> = [
@@ -239,6 +238,7 @@ const BRANCH_FILTER_FIELDS: Array<{ key: keyof FilterState; label: string; level
   { key: 'visualType', label: 'Visual', level: 'visual' },
   { key: 'painPoint', label: 'Painpoint', level: 'painPoint' },
   { key: 'angle', label: 'Angle', level: 'angle' },
+  { key: 'videoStructure', label: 'Structure', level: 'structure' },
 ];
 
 const FALLBACK_OPTIONS: Record<WorkflowLevel, string[]> = {
@@ -249,6 +249,7 @@ const FALLBACK_OPTIONS: Record<WorkflowLevel, string[]> = {
   visual: ['UGC at home', 'Doctor demo', 'Morning routine'],
   painPoint: ['Có tiền sử BP cao nhưng không có máy ở nhà', 'Không biết số đo khi chóng mặt', 'Quên đo buổi sáng'],
   angle: ['Tủ thuốc trống', 'Vợ hỏi máy đo đâu?', 'Chỉ cần mở app'],
+  structure: ['POV handheld', 'Hidden danger', 'Before/After demo'],
 };
 
 const LEVEL_TO_FILTER_KEY: Partial<Record<WorkflowLevel, keyof FilterState>> = {
@@ -258,6 +259,7 @@ const LEVEL_TO_FILTER_KEY: Partial<Record<WorkflowLevel, keyof FilterState>> = {
   visual: 'visualType',
   painPoint: 'painPoint',
   angle: 'angle',
+  structure: 'videoStructure',
 };
 
 const LEVEL_TO_STRATEGY_PREFIX: Partial<Record<WorkflowLevel, string>> = {
@@ -276,6 +278,7 @@ const LEVEL_TO_OPTION_CATEGORY: Partial<Record<WorkflowLevel, string>> = {
   visual: 'visualType',
   painPoint: 'painPoint',
   angle: 'angle',
+  structure: 'videoStructure',
 };
 
 function createEmptyWorkflowOptionValues(): Record<WorkflowLevel, string[]> {
@@ -287,6 +290,7 @@ function createEmptyWorkflowOptionValues(): Record<WorkflowLevel, string[]> {
     visual: [],
     painPoint: [],
     angle: [],
+    structure: [],
   };
 }
 
@@ -339,6 +343,7 @@ function mapFilterOptionsToWorkflowLevels(optionMap: Record<string, string[]>): 
     visual: optionMap.visualType || [],
     painPoint: optionMap.painPoint || [],
     angle: optionMap.angle || [],
+    structure: optionMap.videoStructure || [],
   };
 }
 
@@ -405,6 +410,47 @@ function withLevelFilter(filters: Partial<FilterState> | null | undefined, level
 
 function normalizeWorkflowKeyPart(value: string) {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+}
+
+function getStrategyCodeLabelKey(level: WorkflowLevel, value: string) {
+  const normalizedSearch = normalizeWorkflowSearchText(value);
+
+  if (level === 'visual') {
+    if (/\b(?:3d|3 d|three d|cgi|render)\b/.test(normalizedSearch)) return 'visual:3d-animation';
+    if (/\b(?:2d|2 d|two d|cartoon|vector|hoat hinh|minh hoa)\b/.test(normalizedSearch)) return 'visual:2d-animation';
+    if (/\b(?:motion graphic|motion|kinetic typography|animated ui|infographic|data visual)\b/.test(normalizedSearch)) return 'visual:motion-graphic';
+    if (/\bugc\b/.test(normalizedSearch)) return 'visual:ugc';
+    if (/\bpov\b/.test(normalizedSearch)) return 'visual:pov';
+  }
+
+  return normalizeWorkflowKeyPart(value);
+}
+
+function getNodeStrategyLabel(node: WorkflowNode) {
+  const filterKey = LEVEL_TO_FILTER_KEY[node.level];
+  const filterValues = filterKey && Array.isArray(node.filters?.[filterKey])
+    ? node.filters?.[filterKey]
+    : [];
+  const firstFilterValue = filterValues?.find(value => typeof value === 'string' && value.trim().length > 0);
+  return firstFilterValue || node.label;
+}
+
+function normalizeStrategyCode(value: unknown) {
+  const matches = String(value || '').toUpperCase().match(/[A-F]\d+/g) || [];
+  return matches.join('');
+}
+
+function getStrategyCodeTerminalLevel(code: string): WorkflowLevel | null {
+  const matches = code.match(/[A-F]\d+/g) || [];
+  const last = matches[matches.length - 1]?.[0];
+
+  if (last === 'A') return 'coreUser';
+  if (last === 'B') return 'psp';
+  if (last === 'C') return 'emotion';
+  if (last === 'D') return 'visual';
+  if (last === 'E') return 'painPoint';
+  if (last === 'F') return 'angle';
+  return null;
 }
 
 function normalizeWorkflowSearchText(value: unknown) {
@@ -477,20 +523,49 @@ function getIdeaAngleDisplayLabel(idea: GeneratedIdea, rawAngle: string, filters
   const rawLabel = stripAngleInstructionText(rawAngle);
   const type = getAngleTypeFromText(meta.angleType, metaName, rawAngle);
 
+  if (rawLabel && !isInstructionalAngleLabel(rawLabel) && !isGenericAngleLabel(rawLabel)) {
+    return shortenAngleLabel(rawLabel);
+  }
+
   if (metaName && !isInstructionalAngleLabel(metaName) && !isGenericAngleLabel(metaName)) {
     return shortenAngleLabel(type && !normalizeWorkflowSearchText(metaName).includes(normalizeWorkflowSearchText(type))
       ? `${type}: ${metaName}`
       : metaName);
   }
 
-  if (rawLabel && !isInstructionalAngleLabel(rawLabel) && !isGenericAngleLabel(rawLabel)) {
-    return shortenAngleLabel(rawLabel);
-  }
-
   const painPoint = cleanAngleDisplayText(filters.painPoint?.[0]);
   if (type && painPoint) return shortenAngleLabel(`${type}: ${painPoint}`);
   if (painPoint) return shortenAngleLabel(`Angle: ${painPoint}`);
   return type ? `${type} angle` : 'Angle';
+}
+
+function cleanStructureDisplayText(value: unknown) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isGenericStructureLabel(value: unknown) {
+  const normalized = normalizeWorkflowSearchText(value);
+  return !normalized
+    || /^(?:hook library|modified hook|hook only|full idea)$/i.test(String(value || '').trim())
+    || /^(?:basic|default|none|null)$/i.test(String(value || '').trim());
+}
+
+function getIdeaStructureDisplayLabels(idea: GeneratedIdea, filters: Partial<FilterState>): string[] {
+  const meta = idea.content?.meta || {};
+  return mergeUniqueLabels(
+    filters.videoStructure,
+    [
+      meta.referencePattern,
+      meta.hookArchetype,
+    ]
+      .map(cleanStructureDisplayText)
+      .filter(value => !isGenericStructureLabel(value))
+  )
+    .map(cleanStructureDisplayText)
+    .filter(value => !isGenericStructureLabel(value))
+    .map(value => value.length > 56 ? `${value.slice(0, 55).trim()}…` : value);
 }
 
 function shouldReplaceAngleNodeLabel(currentLabel: string, nextLabel: string) {
@@ -749,7 +824,7 @@ function buildVerticalWorkflowLayout(
     flatNodes,
     flatLines,
     canvasW,
-    canvasH: 24 + LEVEL_ORDER.length * NODE_H + (LEVEL_ORDER.length - 1) * ROW_GAP + FORMULA_NODE_GAP + FORMULA_NODE_H + 48,
+    canvasH: 24 + LEVEL_ORDER.length * NODE_H + (LEVEL_ORDER.length - 1) * ROW_GAP + 48,
   };
 }
 
@@ -934,6 +1009,24 @@ function collectTreeNodeIdeas(node: TreeNode | null | undefined): GeneratedIdea[
   return ideas;
 }
 
+function findTreeNodePath(current: TreeNode, target: string, path: string[] = []): string[] | null {
+  const nextPath = [...path, current.id];
+  if (current.id === target) return nextPath;
+  for (const child of current.children) {
+    const found = findTreeNodePath(child, target, nextPath);
+    if (found) return found;
+  }
+  return null;
+}
+
+function collectTreeNodeDescendantIds(node: TreeNode): string[] {
+  let ids = [node.id];
+  node.children.forEach(child => {
+    ids = ids.concat(collectTreeNodeDescendantIds(child));
+  });
+  return ids;
+}
+
 function getIdeaStrategyCodes(idea: GeneratedIdea): string[] {
   const meta = idea.content?.meta;
   const rawCodes = [
@@ -1012,7 +1105,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [ideaResults, setIdeaResults] = useState<Record<string, ResultType>>({});
   const [ideaDetailCache, setIdeaDetailCache] = useState<Record<string, GeneratedIdea>>({});
   const [loadingIdeaDetails, setLoadingIdeaDetails] = useState(false);
-  const [selectedWeek, setSelectedWeek] = useState<string>('all');
+  const [selectedWeek, setSelectedWeek] = useState<string>(() => getWeekKey(new Date()));
   const [showWeekDropdown, setShowWeekDropdown] = useState(false);
   const [containerWidth, setContainerWidth] = useState(900);
   const [storedOptionValues, setStoredOptionValues] = useState<Record<WorkflowLevel, string[]>>(() => createEmptyWorkflowOptionValues());
@@ -1035,7 +1128,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const [strategyStateHydrated, setStrategyStateHydrated] = useState(false);
   const [strategyStateStatus, setStrategyStateStatus] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
   const [showOnlyUngenerated, setShowOnlyUngenerated] = useState(false);
-  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   const [mapSearchQuery, setMapSearchQuery] = useState('');
   const [activeSearchDetailQuery, setActiveSearchDetailQuery] = useState('');
   const treeContainerRef = useRef<HTMLDivElement>(null);
@@ -1241,8 +1333,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     [favoriteSessions]
   );
   const strategySourceSessions = useMemo(
-    () => showOnlyFavorites ? favoriteSessions : sessions,
-    [favoriteSessions, sessions, showOnlyFavorites]
+    () => favoriteSessions,
+    [favoriteSessions]
   );
   const strategySourceIdeaCount = useMemo(
     () => strategySourceSessions.reduce((sum, session) => sum + session.ideas.length, 0),
@@ -1270,6 +1362,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
       visual: new Set<string>(),
       painPoint: new Set<string>(),
       angle: new Set<string>(),
+      structure: new Set<string>(),
     };
 
     strategySourceSessions.forEach(session => {
@@ -1281,6 +1374,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         (filters.visualType || []).forEach(value => values.visual.add(value));
         (filters.painPoint || []).forEach(value => values.painPoint.add(value));
         (filters.angle || []).forEach(value => values.angle.add(value));
+        getIdeaStructureDisplayLabels(idea, filters).forEach(value => values.structure.add(value));
       });
     });
 
@@ -1412,7 +1506,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     };
   }, [app.id, selectedWeek, strategyStateHydrated]);
 
-  // Build tree: root → coreUser → psp → emotion → visual → painPoint → angle
+  // Build tree: root -> coreUser -> psp -> emotion -> visual -> painPoint -> angle -> structure
   // Skip levels where filter value is empty (no "Chung" nodes)
   const tree = useMemo((): TreeNode => {
     const root: TreeNode = { id: 'root', label: app.name, level: 'root', children: [], ideas: [], ideaCount: 0, wins: 0, fails: 0, monitoring: 0 };
@@ -1440,6 +1534,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         const visVals = (f.visualType || []) as string[];
         const ppVals = (f.painPoint || []) as string[];
         const angleVals = (f.angle || []) as string[];
+        const structureVals = getIdeaStructureDisplayLabels(idea, f);
 
         const result = ideaResults[idea.id] || toResultType(idea.result);
         const findAncestors = (node: TreeNode, target: string, path: TreeNode[]): TreeNode[] | null => {
@@ -1483,20 +1578,53 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
         if (angleVals.length > 0) {
           angleVals.forEach(angle => {
-            const anglePath = `${pathKey}|${angle}`;
-            const nodeId = `angle:${anglePath}`;
             const angleLabel = getIdeaAngleDisplayLabel(idea, angle, f);
+            const angleKey = normalizeWorkflowKeyPart(angleLabel || angle);
+            const anglePath = `${pathKey}|${angleKey}`;
+            const nodeId = `angle:${anglePath}`;
+            const angleFilters = withLevelFilter(f, 'angle', angleLabel);
             let angleNode = parent.children.find(c => c.id === nodeId);
             if (!angleNode) {
-              angleNode = mkNode(nodeId, angleLabel, 'angle', f);
+              angleNode = mkNode(nodeId, angleLabel, 'angle', angleFilters);
               parent.children.push(angleNode);
             } else if (!angleNode.filters || Object.keys(angleNode.filters).length === 0) {
-              angleNode.filters = f;
+              angleNode.filters = angleFilters;
             }
             if (shouldReplaceAngleNodeLabel(angleNode.label, angleLabel)) {
               angleNode.label = angleLabel;
             }
-            addIdeaToNode(angleNode);
+            if (structureVals.length > 0) {
+              structureVals.forEach(structure => {
+                const structureKey = normalizeWorkflowKeyPart(structure);
+                const structurePath = `${anglePath}|${structureKey}`;
+                const structureNodeId = `structure:${structurePath}`;
+                const structureFilters = withLevelFilter(angleFilters, 'structure', structure);
+                let structureNode = angleNode.children.find(c => c.id === structureNodeId);
+                if (!structureNode) {
+                  structureNode = mkNode(structureNodeId, structure, 'structure', structureFilters);
+                  angleNode.children.push(structureNode);
+                } else if (!structureNode.filters || Object.keys(structureNode.filters).length === 0) {
+                  structureNode.filters = structureFilters;
+                }
+                addIdeaToNode(structureNode);
+              });
+            } else {
+              addIdeaToNode(angleNode);
+            }
+          });
+        } else if (structureVals.length > 0) {
+          structureVals.forEach(structure => {
+            const structurePath = `${pathKey}|${normalizeWorkflowKeyPart(structure)}`;
+            const structureNodeId = `structure:${structurePath}`;
+            const structureFilters = withLevelFilter(f, 'structure', structure);
+            let structureNode = parent.children.find(c => c.id === structureNodeId);
+            if (!structureNode) {
+              structureNode = mkNode(structureNodeId, structure, 'structure', structureFilters);
+              parent.children.push(structureNode);
+            } else if (!structureNode.filters || Object.keys(structureNode.filters).length === 0) {
+              structureNode.filters = structureFilters;
+            }
+            addIdeaToNode(structureNode);
           });
         } else {
           addIdeaToNode(parent);
@@ -1669,9 +1797,34 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   }, [selectedCustomNodeId, selectedNode, workflowNodeById]);
 
   const nodeOwnStrategyCodeById = useMemo(() => {
-    const counters: Partial<Record<WorkflowLevel, number>> = {};
     const map = new Map<string, string>();
     const registryItems = Array.from(workflowNodeRegistry.values()).map((node, index) => ({ node, index }));
+    const codeByLevelAndLabel = new Map<WorkflowLevel, Map<string, string>>();
+
+    const getLevelCodeMap = (level: WorkflowLevel) => {
+      let levelMap = codeByLevelAndLabel.get(level);
+      if (!levelMap) {
+        levelMap = new Map<string, string>();
+        codeByLevelAndLabel.set(level, levelMap);
+      }
+      return levelMap;
+    };
+
+    const registerLabelCode = (level: WorkflowLevel, label: string) => {
+      if (level === 'root') return;
+      const prefix = LEVEL_TO_STRATEGY_PREFIX[level];
+      if (!prefix) return;
+      const key = getStrategyCodeLabelKey(level, label);
+      if (!key) return;
+      const levelMap = getLevelCodeMap(level);
+      if (levelMap.has(key)) return;
+      levelMap.set(key, `${prefix}${levelMap.size + 1}`);
+    };
+
+    LEVEL_ORDER.forEach(level => {
+      if (level === 'root') return;
+      (optionValuesByLevel[level] || []).forEach(label => registerLabelCode(level, label));
+    });
 
     registryItems
       .filter(({ node }) => node.level !== 'root')
@@ -1680,15 +1833,19 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         return levelDiff || a.index - b.index;
       })
       .forEach(({ node }) => {
-        const prefix = LEVEL_TO_STRATEGY_PREFIX[node.level];
-        if (!prefix) return;
+        registerLabelCode(node.level, getNodeStrategyLabel(node));
+      });
 
-        counters[node.level] = (counters[node.level] || 0) + 1;
-        map.set(node.id, `${prefix}${counters[node.level]}`);
+    registryItems
+      .filter(({ node }) => node.level !== 'root')
+      .forEach(({ node }) => {
+        const key = getStrategyCodeLabelKey(node.level, getNodeStrategyLabel(node));
+        const code = codeByLevelAndLabel.get(node.level)?.get(key);
+        if (code) map.set(node.id, code);
       });
 
     return map;
-  }, [workflowNodeRegistry]);
+  }, [optionValuesByLevel, workflowNodeRegistry]);
 
   const nodePathStrategyCodeById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1731,6 +1888,24 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     return [`${code} = ${field?.label || node.level}: ${node.label}`];
   }, [getNodeOwnStrategyCode]);
 
+  const getNodeStrategyCodeRows = useCallback((node: WorkflowNode | null | undefined) => {
+    if (!node || node.level === 'root') return [];
+
+    const chain: WorkflowNode[] = [];
+    const seen = new Set<string>();
+    let current: WorkflowNode | null = node;
+
+    while (current && current.level !== 'root' && !seen.has(current.id)) {
+      seen.add(current.id);
+      chain.unshift(current);
+      const parentIds: string[] = Array.from(workflowParentAdjacency.get(current.id) ?? new Set<string>());
+      const parentId: string | null = parentIds[0] || null;
+      current = parentId ? workflowNodeRegistry.get(parentId) || null : null;
+    }
+
+    return chain.flatMap(item => getNodeOwnStrategyCodeRows(item));
+  }, [getNodeOwnStrategyCodeRows, workflowNodeRegistry, workflowParentAdjacency]);
+
   const workflowFlatNodeById = useMemo(() => {
     return new Map(flatNodes.map(item => [item.node.id, item] as const));
   }, [flatNodes]);
@@ -1748,8 +1923,8 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     }
 
     const maxRight = Math.max(...flatNodes.map(({ absX }) => absX + NODE_W / 2), LEVEL_LABEL_W - 12) + 24;
-    const maxBottom = Math.max(...flatNodes.map(({ node, absY }) => (
-      absY + NODE_H + (node.level === 'angle' ? FORMULA_NODE_GAP + FORMULA_NODE_H : 0)
+    const maxBottom = Math.max(...flatNodes.map(({ absY }) => (
+      absY + NODE_H
     ))) + 24;
     const minX = 12;
     const minY = 16;
@@ -1996,8 +2171,41 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   }, [clampPanToViewport, viewScale, viewportHeight, viewportWidth, workflowFlatNodeById]);
 
   const normalizedMapSearchQuery = useMemo(() => normalizeWorkflowKeyPart(mapSearchQuery), [mapSearchQuery]);
+  const normalizedStrategyCodeQuery = useMemo(() => normalizeStrategyCode(mapSearchQuery), [mapSearchQuery]);
+  const strategyCodeQueryLevel = useMemo(
+    () => getStrategyCodeTerminalLevel(normalizedStrategyCodeQuery),
+    [normalizedStrategyCodeQuery]
+  );
   const searchMatches = useMemo(() => {
     if (!normalizedMapSearchQuery) return [];
+    if (normalizedStrategyCodeQuery) {
+      const exactOwnerMatches = flatNodes.filter(({ node }) => {
+        if (node.level === 'root') return false;
+        if (strategyCodeQueryLevel && node.level !== strategyCodeQueryLevel) return false;
+
+        const pathCode = normalizeStrategyCode(getNodeStrategyCode(node));
+        const ownCode = normalizeStrategyCode(getNodeOwnStrategyCode(node));
+        return pathCode === normalizedStrategyCodeQuery || ownCode === normalizedStrategyCodeQuery;
+      });
+      if (exactOwnerMatches.length > 0) return exactOwnerMatches;
+
+      const exactPathMatches = flatNodes.filter(({ node }) => (
+        node.level !== 'root'
+        && normalizeStrategyCode(getNodeStrategyCode(node)) === normalizedStrategyCodeQuery
+      ));
+      if (exactPathMatches.length > 0) {
+        const shallowestLevelIndex = Math.min(...exactPathMatches.map(({ node }) => LEVEL_ORDER.indexOf(node.level)));
+        return exactPathMatches.filter(({ node }) => LEVEL_ORDER.indexOf(node.level) === shallowestLevelIndex);
+      }
+
+      return flatNodes.filter(({ node }) => {
+        if (node.level === 'root') return false;
+        const pathCode = normalizeStrategyCode(getNodeStrategyCode(node));
+        const ownCode = normalizeStrategyCode(getNodeOwnStrategyCode(node));
+        return pathCode.startsWith(normalizedStrategyCodeQuery) || ownCode.startsWith(normalizedStrategyCodeQuery);
+      });
+    }
+
     return flatNodes.filter(({ node }) => {
       const searchable = [
         getNodeStrategyCode(node),
@@ -2012,10 +2220,11 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         node.filters?.visualType?.join(' '),
         node.filters?.painPoint?.join(' '),
         node.filters?.angle?.join(' '),
+        node.filters?.videoStructure?.join(' '),
       ].filter(Boolean).join(' ');
       return normalizeWorkflowKeyPart(searchable).includes(normalizedMapSearchQuery);
     });
-  }, [flatNodes, getNodeOwnStrategyCode, getNodeStrategyCode, normalizedMapSearchQuery]);
+  }, [flatNodes, getNodeOwnStrategyCode, getNodeStrategyCode, normalizedMapSearchQuery, normalizedStrategyCodeQuery, strategyCodeQueryLevel]);
   const searchMatchNodeIds = useMemo(() => new Set(searchMatches.map(({ node }) => node.id)), [searchMatches]);
   const searchMatchedIdeas = useMemo(() => {
     if (!normalizedMapSearchQuery) return [];
@@ -2177,27 +2386,27 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const handleNodeClick = (node: TreeNode) => {
     setActiveSearchDetailQuery('');
     if (node.level === 'root') { setActivePath([]); setSelectedNode(null); return; }
-    const findPath = (current: TreeNode, target: string, path: string[]): string[] | null => {
-      const np = [...path, current.id];
-      if (current.id === target) return np;
-      for (const child of current.children) { const f = findPath(child, target, np); if (f) return f; }
-      return null;
-    };
-    const fullPath = findPath(tree, node.id, []) || [];
+    const fullPath = findTreeNodePath(tree, node.id) || [];
     if (activePath.join('/') === fullPath.join('/')) { setActivePath([]); setSelectedNode(null); return; }
-    const collectDesc = (n: TreeNode): string[] => { let ids = [n.id]; n.children.forEach(c => { ids = ids.concat(collectDesc(c)); }); return ids; };
-    setActivePath([...fullPath, ...collectDesc(node).slice(1)]);
+    setActivePath([...fullPath, ...collectTreeNodeDescendantIds(node).slice(1)]);
     setSelectedNode(node);
   };
 
   const handleOpenSearchResults = useCallback(() => {
     if (searchMatches.length === 0) return;
+    const firstTreeNode = searchMatches.map(({ node }) => node).find(isTreeNode) || null;
     setActiveSearchDetailQuery(mapSearchQuery.trim());
-    setSelectedNode(null);
     setSelectedCustomNodeId(null);
-    setActivePath([]);
+    if (firstTreeNode) {
+      const fullPath = findTreeNodePath(tree, firstTreeNode.id) || [];
+      setSelectedNode(firstTreeNode);
+      setActivePath([...fullPath, ...collectTreeNodeDescendantIds(firstTreeNode).slice(1)]);
+    } else {
+      setSelectedNode(null);
+      setActivePath([]);
+    }
     focusWorkflowNode(searchMatches[0].node.id);
-  }, [focusWorkflowNode, mapSearchQuery, searchMatches]);
+  }, [focusWorkflowNode, mapSearchQuery, searchMatches, tree]);
 
   const getWorkflowNodeFilters = useCallback((nodeId: string | null | undefined) => {
     if (!nodeId) return {};
@@ -2498,8 +2707,12 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     : null;
   const selectedBranchStatusTheme = selectedBranchStatus ? BRANCH_STATUS_THEME[selectedBranchStatus] : null;
   const selectedBranchLevelTheme = selectedBranchNode ? LEVEL_COLORS[selectedBranchNode.level] : null;
-  const selectedBranchStrategyCode = getNodeOwnStrategyCode(selectedBranchNode);
-  const selectedBranchStrategyCodeRows = getNodeOwnStrategyCodeRows(selectedBranchNode);
+  const selectedBranchStrategyCode = selectedBranchNode?.level === 'structure'
+    ? getNodeStrategyCode(selectedBranchNode)
+    : getNodeOwnStrategyCode(selectedBranchNode);
+  const selectedBranchStrategyCodeRows = selectedBranchNode?.level === 'structure'
+    ? getNodeStrategyCodeRows(selectedBranchNode)
+    : getNodeOwnStrategyCodeRows(selectedBranchNode);
   const selectedBranchFilterRows = BRANCH_FILTER_FIELDS.map(field => {
     const values = activeCreateFilters?.[field.key];
     const cleanValues = Array.isArray(values)
@@ -2642,7 +2855,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
             🗺️ Strategy Map
             {!inline && <span className="text-sm font-medium text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{app.name}</span>}
           </h2>
-          <p className="text-xs text-gray-400 mt-1">Core User → PSP → Emotion → Visual → Painpoint → Angle · Click angle để xem ideas</p>
+          <p className="text-xs text-gray-400 mt-1">Core User → PSP → Emotion → Visual → Painpoint → Angle → Structure · Click node để xem ideas</p>
         </div>
       </div>
 
@@ -2745,27 +2958,12 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold ${strategyStateBadge.className}`}>
           {strategyStateBadge.label}
         </span>
-        <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-bold text-rose-600">
-          {showOnlyFavorites ? 'Map idea đã thả tim' : 'Map tất cả idea'} ({strategyVisibleIdeaCount})
-        </span>
-        <button
-          onClick={() => {
-            autoFitPendingRef.current = true;
-            setShowOnlyFavorites(prev => !prev);
-            setSelectedNode(null);
-            setActivePath([]);
-          }}
-          className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
-            showOnlyFavorites
-              ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          {showOnlyFavorites ? 'Hiện tất cả idea' : 'Chỉ idea đã thả tim'}
+        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-bold text-rose-600">
+          Map idea đã thả tim ({strategyVisibleIdeaCount})
           <span className="rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500">
             {favoriteIdeaCount}
           </span>
-        </button>
+        </span>
         <button
           onClick={() => {
             autoFitPendingRef.current = true;
@@ -2916,7 +3114,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
 
       {/* Legend */}
       <div className="hidden">
-        {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as const).map(key => {
+        {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle', 'structure'] as const).map(key => {
           const s = LEVEL_COLORS[key];
           return (
             <div key={key} className="flex items-center">
@@ -2971,7 +3169,7 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
               {searchMatches.length > 0 ? `${searchMatches.length} nhánh • ${searchMatchedIdeas.length} ideas` : '0 kết quả'}
             </button>
           )}
-          {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'] as WorkflowLevel[]).map(level => {
+          {(['coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle', 'structure'] as WorkflowLevel[]).map(level => {
             const style = LEVEL_COLORS[level];
             return (
               <button
@@ -3145,33 +3343,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                     </g>
                   );
                 })}
-                {flatNodes.map(({ node, absX, absY }) => {
-                  if (node.level !== 'angle') return null;
-                  const savedFormulaCodes = getNodeSavedStrategyCodes(node);
-                  const formulaCode = savedFormulaCodes.length > 0
-                    ? savedFormulaCodes.slice(0, 3).join(', ')
-                    : getNodeStrategyCode(node);
-                  if (!formulaCode) return null;
-                  const style = LEVEL_COLORS[node.level];
-                  const isSearchMatched = searchMatchNodeIds.has(node.id);
-                  const highlighted = isHigh(node.id) || isSearchMatched;
-                  const y1 = absY + NODE_H + 8;
-                  const y2 = absY + NODE_H + FORMULA_NODE_GAP;
-
-                  return (
-                    <g key={`formula-edge-${node.id}`}>
-                      <path
-                        d={`M ${absX} ${y1} L ${absX} ${y2}`}
-                        fill="none"
-                        stroke={style.accent}
-                        strokeWidth={highlighted ? 2.8 : 1.4}
-                        strokeLinecap="round"
-                        opacity={highlighted ? 0.8 : 0.1}
-                      />
-                      <circle cx={absX} cy={y2} r={highlighted ? 3.8 : 2.5} fill={style.accent} opacity={highlighted ? 0.88 : 0.14} />
-                    </g>
-                  );
-                })}
                 {dragConnection && (
                   <>
                     <path
@@ -3226,13 +3397,14 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 const isSearchMatched = searchMatchNodeIds.has(node.id);
                 const isDimmed = hasFocusedBranch && !highlighted && !isSearchMatched;
                 const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
-                const savedStrategyCodes = getNodeSavedStrategyCodes(node);
-                const savedStrategyCode = savedStrategyCodes.length > 0 ? savedStrategyCodes.slice(0, 3).join(', ') : '';
-                const strategyCode = node.level === 'angle' && savedStrategyCode ? savedStrategyCode : getNodeOwnStrategyCode(node);
-                const savedStrategyCodeRows = getDirectNodeIdeas(node)
-                  .flatMap(idea => Array.isArray(idea.content?.meta?.strategyCodeMap) ? idea.content.meta.strategyCodeMap : [])
-                  .filter((row, index, rows) => rows.indexOf(row) === index);
-                const strategyCodeRows = savedStrategyCodeRows.length > 0 ? savedStrategyCodeRows : getNodeOwnStrategyCodeRows(node);
+                const strategyCode = node.level === 'structure'
+                  ? getNodeStrategyCode(node)
+                  : getNodeOwnStrategyCode(node);
+                const strategyCodeRows = node.level === 'structure'
+                  ? getNodeStrategyCodeRows(node)
+                  : getNodeOwnStrategyCodeRows(node);
+                const showStructureCodeOnly = node.level === 'structure' && !!strategyCode;
+                const strategyCodeTitle = strategyCodeRows.join(' | ') || strategyCode;
                 const branchStatus = branchStatusByNodeId.get(node.id) || 'ungenerated';
                 const branchTheme = BRANCH_STATUS_THEME[branchStatus];
                 const canHideNode = node.id !== 'root';
@@ -3304,16 +3476,36 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                         >
                           {branchTheme.icon}
                         </span>
-                        <div className="flex items-center gap-1.5 w-full justify-center mb-1">
-                          <span className="text-[11px] flex-shrink-0">{style.icon}</span>
-                          <span className="text-[11px] font-bold text-gray-800 truncate leading-tight" title={node.label}>
-                            {displayLabel}
+                        <div className={`flex items-center gap-1.5 w-full justify-center ${showStructureCodeOnly ? 'mb-2 mt-1' : 'mb-1'}`}>
+                          {!showStructureCodeOnly && <span className="text-[11px] flex-shrink-0">{style.icon}</span>}
+                          <span
+                            className={`truncate leading-tight ${
+                              showStructureCodeOnly
+                                ? 'max-w-[150px] font-mono text-[11px] font-black text-slate-900'
+                                : 'text-[11px] font-bold text-gray-800'
+                            }`}
+                            title={showStructureCodeOnly ? strategyCodeTitle : node.label}
+                          >
+                            {showStructureCodeOnly ? strategyCode : displayLabel}
                           </span>
+                          {showStructureCodeOnly && strategyCode && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void navigator.clipboard?.writeText(strategyCode);
+                              }}
+                              data-node-action="true"
+                              className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-slate-500 shadow-sm transition-colors hover:border-indigo-200 hover:text-indigo-600"
+                              title="Copy mã công thức"
+                            >
+                              <Copy size={10} />
+                            </button>
+                          )}
                         </div>
-                        {strategyCode && (
+                        {strategyCode && !showStructureCodeOnly && (
                           <span
                             className="mb-1 max-w-full truncate rounded-full bg-slate-900 px-2 py-0.5 font-mono text-[9px] font-black text-white"
-                            title={strategyCodeRows.join(' | ')}
+                            title={strategyCodeTitle}
                           >
                             {strategyCode}
                           </span>
@@ -3373,47 +3565,6 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                     >
                       {dragConnection?.fromId === node.id && <Link2 size={8} className="text-white" />}
                     </button>
-                  </div>
-                );
-              })}
-              {flatNodes.map(({ node, absX, absY }) => {
-                if (node.level !== 'angle') return null;
-                const savedFormulaCodes = getNodeSavedStrategyCodes(node);
-                const formulaCode = savedFormulaCodes.length > 0
-                  ? savedFormulaCodes.slice(0, 3).join(', ')
-                  : getNodeStrategyCode(node);
-                if (!formulaCode) return null;
-                const style = LEVEL_COLORS[node.level];
-                const isSearchMatched = searchMatchNodeIds.has(node.id);
-                const isSelected = selectedNode?.id === node.id || selectedCustomNodeId === node.id;
-                const highlighted = isHigh(node.id) || isSearchMatched;
-                const isDimmed = hasFocusedBranch && !highlighted;
-
-                return (
-                  <div
-                    key={`formula-card-${node.id}`}
-                    className="absolute flex flex-col items-center justify-center rounded-xl border bg-white px-3 shadow-sm transition-all duration-300"
-                    style={{
-                      left: absX - FORMULA_NODE_W / 2,
-                      top: absY + NODE_H + FORMULA_NODE_GAP,
-                      width: FORMULA_NODE_W,
-                      height: FORMULA_NODE_H,
-                      borderColor: isSelected || isSearchMatched ? style.accent : style.border,
-                      boxShadow: isSelected || isSearchMatched
-                        ? `0 0 0 3px ${style.accent}20, 0 8px 18px ${style.accent}18`
-                        : '0 2px 8px rgba(15, 23, 42, 0.08)',
-                      zIndex: isSelected || isSearchMatched ? 19 : 8,
-                      opacity: isDimmed ? 0.22 : 1,
-                      filter: isDimmed ? 'grayscale(0.6) saturate(0.55)' : 'none',
-                    }}
-                    title={`Công thức nhánh: ${formulaCode}`}
-                  >
-                    <span className="text-[7px] font-black uppercase tracking-[0.14em] text-slate-400 leading-none">
-                      Công thức nhánh
-                    </span>
-                    <span className="mt-1 max-w-full truncate font-mono text-[10px] font-black text-slate-900 leading-none">
-                      {formulaCode}
-                    </span>
                   </div>
                 );
               })}

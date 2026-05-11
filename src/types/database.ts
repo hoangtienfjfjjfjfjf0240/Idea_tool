@@ -180,6 +180,7 @@ export type StrategyWorkflowLevel =
   | 'emotion'
   | 'visual'
   | 'painPoint'
+  | 'structure'
   | 'angle';
 
 export interface StrategyMapCustomNodeState {
