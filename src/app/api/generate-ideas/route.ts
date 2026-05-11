@@ -87,22 +87,23 @@ function booleanEnv(name: string, fallback: boolean) {
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 180000);
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 60000);
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 1);
+const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 3);
 const GEMINI3_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_GEMINI3_BATCH_CONCURRENCY', 2);
-const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 285000);
-const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
-const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', false);
+const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 90000);
+const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', false);
+const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', true);
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
 const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
 const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
-const DIRECT_GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+const USE_DIRECT_GEMINI = booleanEnv('IDEA_USE_DIRECT_GEMINI', false);
+const DIRECT_GEMINI_API_KEY = USE_DIRECT_GEMINI ? (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '') : '';
 let directGeminiClient: GoogleGenAI | null = null;
 
 const CREATIVE_ADS_GENERATION_RULES_V7 = `CREATIVE ADS GENERATION RULES (VERSION 7.0)
@@ -219,6 +220,109 @@ function sanitizeMedicalClaimsInValue(value: unknown): unknown {
 
 function sanitizeMedicalClaimsInIdea(item: Record<string, unknown>): Record<string, unknown> {
   return asRecord(sanitizeMedicalClaimsInValue(item));
+}
+
+const HEALTH_METRIC_TEXT_PATTERNS: Record<HealthMetricKey, RegExp[]> = {
+  heartRate: [
+    /\bheart\s*rate\b/gi,
+    /\bpulse\b/gi,
+    /\bbpm\b/gi,
+    /\bheartbeat\b/gi,
+    /\bnhip\s*tim\b/gi,
+    /nhịp\s*tim/gi,
+    /\btim\s*mach\b/gi,
+    /tim\s*mạch/gi,
+  ],
+  bloodPressure: [
+    /\bblood\s*pressure\b/gi,
+    /\bhuyet\s*ap\b/gi,
+    /huyết\s*áp/gi,
+    /\bdo\s*huyet\s*ap\b/gi,
+    /đo\s*huyết\s*áp/gi,
+  ],
+  bloodGlucose: [
+    /\bblood\s*glucose\b/gi,
+    /\bglucose\b/gi,
+    /\bdiabetes\b/gi,
+    /\bduong\s*huyet\b/gi,
+    /đường\s*huyết/gi,
+    /tiểu\s*đường/gi,
+  ],
+};
+
+function getMetricReplacementText(metric: HealthMetricKey): string {
+  if (metric === 'bloodPressure') return 'blood pressure / huyết áp';
+  if (metric === 'bloodGlucose') return 'blood glucose / đường huyết';
+  return 'heart rate / nhịp tim';
+}
+
+function repairHealthMetricLockText(text: string, metricLock: HealthMetricKey | null | undefined): string {
+  if (!metricLock || !text.trim()) return text;
+  const replacement = getMetricReplacementText(metricLock);
+  return (Object.keys(HEALTH_METRIC_TEXT_PATTERNS) as HealthMetricKey[])
+    .filter(metric => metric !== metricLock)
+    .flatMap(metric => HEALTH_METRIC_TEXT_PATTERNS[metric])
+    .reduce((next, pattern) => next.replace(pattern, replacement), text);
+}
+
+function trimWords(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text;
+  return words.slice(0, maxWords).join(' ');
+}
+
+function stripInlineSpeechLabels(text: string): string {
+  return text
+    .replace(/\s*(?:\||\/)?\s*(?:Voiceover|Voice over|VO|Character speech|CHARACTER SPEECH|VOICEOVER|Text\s+(?:hien|hiện))\s*:\s*"[^"]*"/gi, '')
+    .replace(/\s*(?:\||\/)?\s*(?:Voiceover|Voice over|VO|Character speech|CHARACTER SPEECH|VOICEOVER|Text\s+(?:hien|hiện))\s*:\s*[^|.\n;]+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function repairGeneratedIdeaValue(
+  value: unknown,
+  context: { metricLock?: HealthMetricKey | null; parentKey?: string; inHook?: boolean }
+): unknown {
+  const key = (context.parentKey || '').toLowerCase();
+  if (key === 'id' || key === 'duration' || key === 'endcard') return value;
+
+  if (typeof value === 'string') {
+    let next = repairHealthMetricLockText(value, context.metricLock);
+    if (key === 'script_vo' || key === 'scriptvo') next = trimWords(next, 60);
+    if (key === 'hook_character_speech' || key === 'hookcharacterspeech' || key === 'character_speech' || key === 'characterspeech') {
+      next = trimWords(next, 36);
+    }
+    if (context.inHook && (key === 'visual' || key === 'script')) {
+      next = stripInlineSpeechLabels(next);
+    }
+    return next;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => repairGeneratedIdeaValue(item, context));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        repairGeneratedIdeaValue(childValue, {
+          metricLock: context.metricLock,
+          parentKey: childKey,
+          inHook: context.inHook || key === 'hook',
+        }),
+      ])
+    );
+  }
+
+  return value;
+}
+
+function repairGeneratedIdeaForValidation(
+  item: Record<string, unknown>,
+  metricLock?: HealthMetricKey | null
+): Record<string, unknown> {
+  return asRecord(repairGeneratedIdeaValue(item, { metricLock }));
 }
 
 function normalizeFrameworkVisualFormat(value: string): string {
@@ -744,7 +848,7 @@ function normalizeAndValidateIdeas(
   const invalidReasons: string[] = [];
 
   items.forEach((item, ideaIndex) => {
-    const normalized = syncHookDurationFromTimeline(repairIdeaTrackingFields(
+    const normalized = repairGeneratedIdeaForValidation(syncHookDurationFromTimeline(repairIdeaTrackingFields(
       normalizeIdeaOutput(item, {
         duration: context.duration,
         appName: context.appName,
@@ -755,7 +859,7 @@ function normalizeAndValidateIdeas(
         psp: asText(context.psp),
       }),
       { angleIndex: context.angleIndex, ideaIndex: (context.ideaStartIndex || 0) + ideaIndex, pillar: context.pillar }
-    ), context.hookDurationSeconds);
+    ), context.hookDurationSeconds), context.metricLock);
     const errors = [
       ...validateIdeaOutput(normalized),
       ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
@@ -910,7 +1014,11 @@ async function callDirectGemini(
 }
 
 function resolveIdeaModels(selected?: string): string[] {
-  return [resolveModel(selected)];
+  const primary = resolveModel(selected || 'gemini-3-pro');
+  if (primary.includes('gemini-3-pro')) {
+    return [primary, 'gemini/gemini-2.5-flash'];
+  }
+  return [primary];
 }
 
 function clampPromptContext(value: unknown, maxLength: number) {
@@ -3238,7 +3346,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             hookDurationSeconds: requestedHookDuration,
             visualType,
             outputLanguage,
-          }).map(item => sanitizeMedicalClaimsInIdea(item)).filter((item, lenientIndex) => {
+          }).map(item => repairGeneratedIdeaForValidation(sanitizeMedicalClaimsInIdea(item), metricLock)).filter((item, lenientIndex) => {
             const metricErrors = [
               ...validateHealthMetricLockOutput(item, metricLock, appName),
               ...validateHealthMetricDirectHookOutput(item, metricLock),
@@ -3448,7 +3556,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL;
+      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL && !isGemini3Ideas;
       const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP;
 
       const runBatchPlanWithRecovery = async (
@@ -3641,20 +3749,32 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
         }, { status: 502 });
       }
 
-      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity).map((idea, index) => syncHookDurationFromTimeline(repairIdeaTrackingFields(
+      const finalIdeas = aggregatedIdeas.slice(0, requestedQuantity).map((idea, index) => repairGeneratedIdeaForValidation(syncHookDurationFromTimeline(repairIdeaTrackingFields(
         idea,
         {
           angleIndex: Math.max(angleIndex - 1, 0),
           ideaIndex: requestStartIndex + index,
           pillar: primaryPillar,
         }
-      ), requestedHookDuration));
+      ), requestedHookDuration), metricLock));
+      const generationMs = Date.now() - aiBudgetStartedAt;
+      console.log(
+        '[generate-ideas] Completed',
+        `${finalIdeas.length}/${requestedQuantity}`,
+        'ideas in',
+        `${generationMs}ms`,
+        'model:',
+        primaryModel,
+        'batches:',
+        batchPlans.length
+      );
       return NextResponse.json({
         success: true,
         data: finalIdeas,
         meta: {
           requestedQuantity,
           generatedQuantity: finalIdeas.length,
+          generationMs,
           batchCount: batchPlans.length,
           partial: finalIdeas.length < requestedQuantity,
           fallbackCount,

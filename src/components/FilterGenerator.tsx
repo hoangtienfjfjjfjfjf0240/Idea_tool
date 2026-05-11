@@ -15,7 +15,6 @@ import {
   buildStrategyCodeLookup,
   formatStrategyCodeForFilterGroups,
   formatStrategyValueGroup,
-  getStrategyCodeMapRows,
   getStrategyGroupCodeMapRows,
 } from '@/lib/strategyCodes';
 
@@ -1630,17 +1629,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
           : [formatStrategyValueGroup(sanitizedFilters.angle)].filter(Boolean),
       };
       const strategyCodeLookup = buildStrategyCodeLookup(strategyCodeSource);
-      const strategyCodePromptRows = getStrategyCodeMapRows(strategyCodeSource, strategyCodeLookup);
-      const ideaDescriptionWithStrategyCodes = [
-        ideaDescription,
-        strategyCodePromptRows.length > 0
-          ? [
-              'STRATEGY CODE MAP (for metadata and output reference)',
-              ...strategyCodePromptRows,
-              'Use the matching continuous code like A1B1C1D1E1F1 for each idea.',
-            ].join('\n')
-          : '',
-      ].filter(Boolean).join('\n\n');
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(effectiveQuantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
@@ -1660,7 +1648,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = () => selectedModel || '';
-      const maxAttemptsPerAngle = getAttemptModel() === 'gemini-3-pro' ? 2 : 1;
+      const maxAttemptsPerAngle = 1;
       const maxConcurrent = Math.min(3, generationTasks.length);
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
@@ -1733,7 +1721,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                 config: {
                   quantity: missingQuantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
-                  ideaDescription: ideaDescriptionWithStrategyCodes,
+                  ideaDescription,
                   visualType: sanitizeVisualTypes(task.filtersSnapshot.visualType || [])[0] || 'UGC',
                   seasonalVisualContext,
                   totalVariations: effectiveQuantity,

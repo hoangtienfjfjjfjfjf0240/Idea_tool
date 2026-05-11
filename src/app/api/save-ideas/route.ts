@@ -15,6 +15,7 @@ function readRecord(value: unknown): Record<string, unknown> {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   try {
     const guard = await guardApiRequest(request, { key: 'save-ideas', max: 30, windowMs: 10 * 60 * 1000 });
     if (guard instanceof NextResponse) return guard;
@@ -61,6 +62,8 @@ export async function POST(request: NextRequest) {
       console.error('[save-ideas] Insert error:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
+
+    console.log('[save-ideas] Saved', `${data?.length || 0}/${rows.length}`, 'ideas in', `${Date.now() - startedAt}ms`);
 
     return NextResponse.json({
       success: true,
