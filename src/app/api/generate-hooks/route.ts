@@ -44,6 +44,38 @@ function readText(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+const VIETNAMESE_DIACRITICS_PATTERN = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
+
+function translateHookVoiceFallbackToVietnamese(sourceVoice: string, painpoint: string) {
+  const voice = sourceVoice.trim();
+  if (!voice) return '';
+  if (VIETNAMESE_DIACRITICS_PATTERN.test(voice)) return voice;
+
+  const normalized = normalizeCompareText(voice);
+  const pain = painpoint.trim() || 'điểm kẹt này';
+
+  if (/wait\b.*why\b.*simple\b.*move\b.*expose/.test(normalized)) {
+    return `Khoan, vì sao thao tác đơn giản này lại làm lộ rõ "${pain}"?`;
+  }
+  if (/same\b.*setup\b.*gesture\b.*blocker\b.*miss/.test(normalized)) {
+    return 'Cùng một setup, nhưng động tác này làm điểm kẹt hiện ra rõ hơn.';
+  }
+  if (/from\b.*angle\b.*problem\b.*hits\b.*instantly/.test(normalized)) {
+    return 'Nhìn từ góc này, vấn đề đập vào mắt ngay lập tức.';
+  }
+  if (/most\b.*people\b.*real\b.*trigger\b.*compare/.test(normalized)) {
+    return 'Hầu hết mọi người chỉ thấy nguyên nhân thật khi đặt nó cạnh nhau để so sánh.';
+  }
+  if (/keeps?\b.*happening\b.*check\b.*first/.test(normalized)) {
+    return 'Nếu chuyện này cứ lặp lại, hãy kiểm tra điểm này trước.';
+  }
+  if (/keep\b.*same\b.*pain\b.*point|reveal\b.*faster/.test(normalized)) {
+    return `Vẫn giữ đúng nỗi đau "${pain}", nhưng làm nó hiện ra nhanh hơn ngay giây đầu.`;
+  }
+
+  return `Câu hook nhấn thẳng vào "${pain}" để người xem chú ý ngay.`;
+}
+
 function readTextList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
@@ -279,7 +311,10 @@ function buildFallbackHookVariations(
         text: overlayBase,
         voice: `${overlayBase}: keep the same pain point, but reveal it faster in the first second.`,
         textOverlay: overlayBase,
-        viTranslation: `${overlayBase}: giữ đúng nỗi đau cũ, nhưng mở nhanh hơn ngay giây đầu tiên.`,
+        viTranslation: translateHookVoiceFallbackToVietnamese(
+          `${overlayBase}: keep the same pain point, but reveal it faster in the first second.`,
+          painpoint
+        ),
         viewerEmotion: emotion,
         painpointImpact: painpoint,
         whyTheyStopScrolling: `Visual đổi bối cảnh nhưng vẫn bám đúng nỗi đau "${painpoint}", nên người xem nhận ra vấn đề ngay.`,
@@ -362,7 +397,7 @@ function buildBetterFallbackHookVariations(
         text: pattern.overlay,
         voice: pattern.voice,
         textOverlay: pattern.overlay,
-        viTranslation: `Giữ đúng nỗi đau "${painpoint}", nhưng mở theo hướng "${instructionHint}" để người xem thấy vấn đề ngay giây đầu.`,
+        viTranslation: translateHookVoiceFallbackToVietnamese(pattern.voice, painpoint),
         viewerEmotion: emotion,
         painpointImpact: painpoint,
         whyTheyStopScrolling: `Visual đổi bối cảnh nhưng vẫn bám đúng nỗi đau "${painpoint}", nên người xem nhận ra vấn đề ngay.`,
@@ -433,7 +468,8 @@ Rules:
 - Combine the user's extra brief as the new direction layered on top of the reference hook. Do not replace the reference hook with an unrelated idea.
 - Each variation must answer: "same kind of hook, but in what new scenario?"
 - Make each variation visually different from the reference hook and from the other variations.
-- Vietnamese for title, explanation, hook.visual, hook.textOverlay, viTranslation.
+- Vietnamese for title, explanation, hook.visual, and viTranslation.
+- hook.textOverlay is actual on-video text and must include BOTH Vietnamese and ${targetLanguage} when ${targetLanguage} is not Vietnamese, separated with " / ". If ${targetLanguage} is Vietnamese, one Vietnamese line is enough.
 - ${targetLanguage} only for hook.characterSpeech, hook.voiceover, hook.voice.
 - If an on-camera person speaks, fill hook.characterSpeech as "0-3s - speaker: line" and leave hook.voiceover empty.
 - If no on-camera person speaks, use hook.voiceover and leave hook.characterSpeech empty.
@@ -452,7 +488,7 @@ Schema:
     "hook": {
       "durationSeconds": 3,
       "visual": "Mô tả cảnh hook bằng tiếng Việt, cụ thể bối cảnh mới/tình huống mới/ai/ở đâu/làm gì/camera nhìn gì",
-      "textOverlay": "Text trên màn hình tiếng Việt",
+      "textOverlay": "Text trên màn hình song ngữ: tiếng Việt / ${targetLanguage}",
       "characterSpeech": "",
       "voiceover": "Câu voice nếu có",
       "voice": "Giống characterSpeech hoặc voiceover",
@@ -525,7 +561,10 @@ Schema:
             characterSpeech,
             voiceover,
             voice,
-            viTranslation: normalizedHook.viTranslation || '',
+            viTranslation: readText(
+              normalizedHook.viTranslation,
+              translateHookVoiceFallbackToVietnamese(characterSpeech || voiceover || voice, readText(hook.painpoint, ''))
+            ),
             viewerEmotion: normalizedHook.viewerEmotion || '',
             painpointImpact: normalizedHook.painpointImpact || '',
             whyTheyStopScrolling: normalizedHook.whyTheyStopScrolling || '',

@@ -209,12 +209,12 @@ function sanitizeComplianceText(text: string): string {
     .replace(/\btreat(?:ment|ing)?\b/gi, 'support')
     .replace(/\bcure\b/gi, 'support')
     .replace(/\bheal(?:ed|ing)?\b/gi, 'improve')
-    .replace(/cháº©n Ä‘oÃ¡n/gi, 'theo dÃµi')
-    .replace(/Ä‘iá»u trá»‹/gi, 'há»— trá»£')
-    .replace(/chá»¯a(?: khá»i)?/gi, 'há»— trá»£')
-    .replace(/phÃ¡t hiá»‡n bá»‡nh/gi, 'nháº­n tháº¥y dáº¥u hiá»‡u')
-    .replace(/thay tháº¿ bÃ¡c sÄ©/gi, 'há»— trá»£ thá»›i quen cá»§a báº¡n')
-    .replace(/káº¿t quáº£ y táº¿ chÃ­nh xÃ¡c/gi, 'thÃ´ng tin tham kháº£o');
+    .replace(/chẩn đoán/gi, 'theo dõi')
+    .replace(/điều trị/gi, 'hỗ trợ')
+    .replace(/chữa(?: khỏi)?/gi, 'hỗ trợ')
+    .replace(/phát hiện bệnh/gi, 'nhận thấy dấu hiệu')
+    .replace(/thay thế bác sĩ/gi, 'hỗ trợ thói quen của bạn')
+    .replace(/kết quả y tế chính xác/gi, 'thông tin tham khảo');
 }
 
 function sanitizeComplianceTextStrict(text: string): string {
@@ -271,6 +271,10 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   const hookCharacterSpeech = asText(hook.characterSpeech);
   const hookVoiceover = asText(hook.voiceover);
   const hookVoice = [hookCharacterSpeech, hookVoiceover, asText(hook.voice)].filter(Boolean).join(' ');
+  const hookVoiceVi = asText(hook.viTranslation)
+    || asText(hook.vi_translation)
+    || asText(hook.hookVoiceVi)
+    || asText(hook.hook_voice_vi);
   const hookTextOverlay = asText(hook.textOverlay) || asText(hook.text);
   const bodyVisual = asText(body.visual) || asText(body.script);
   const bodyVoice = [asText(body.characterSpeech), asText(body.voiceover), asText(body.voice)].filter(Boolean).join(' ');
@@ -290,6 +294,11 @@ function validateIdeaOutput(item: Record<string, unknown>): string[] {
   if (hookCharacterSpeech && hookVoiceover) errors.push('hook must use either characterSpeech or voiceover, not both');
   if (hookCharacterSpeech && !/^\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*s\s*[-:]\s*[^:]{2,80}:/m.test(hookCharacterSpeech)) {
     errors.push('hook characterSpeech must include time + speaker label');
+  }
+  if (!hookVoiceVi) {
+    errors.push('hook.viTranslation is required');
+  } else if (!isUsableVietnameseHookVoiceTranslation(hookVoiceVi, hookVoice || hookTextOverlay)) {
+    errors.push('hook.viTranslation must be a Vietnamese translation of hook speech/voice, not a painpoint explanation');
   }
   if (/\b(?:Voiceover|Voice over|VO|Character speech|CHARACTER SPEECH|VOICEOVER|VOICE|Text\s+(?:hien|hi[eệ]n))\s*:/i.test(hookVisual)) {
     errors.push('hook visual must not contain inline Voiceover, Character speech, or Text hien labels');
@@ -440,16 +449,17 @@ Each object must use this exact flat schema:
     },
     "hook": {
       "durationSeconds": 5,
-      "visual": "Hook timing format. Example: 0-2.5s: ...\\n2.5-5s: Text hien: ... | Voiceover: ... | curiosity gap. Max 2 scenes/camera angles for 5s.",
-      "textOverlay": "short on-screen hook",
+      "visual": "Hook timing format with visual action only. Example: 0-2.5s: first frame action...\\n2.5-5s: second visual beat / curiosity gap. Max 2 scenes/camera angles for 5s.",
+      "textOverlay": "bilingual on-screen hook: Vietnamese / ${options.language}",
       "characterSpeech": "on-camera speech if visible talent talks, otherwise empty",
       "voiceover": "off-camera voice/video voice",
       "voice": "same as voiceover if no characterSpeech",
+      "viTranslation": "Vietnamese translation of characterSpeech + voiceover only",
       "script": "same hook timing text"
     },
     "body": {
       "visual": "Diễn biến (Body): production-ready body scene with tension and app proof",
-      "textOverlay": "body support text",
+      "textOverlay": "bilingual body support text: Vietnamese / ${options.language}",
       "characterSpeech": "",
       "voiceover": "body voiceover line",
       "voice": "body voiceover line",
@@ -457,7 +467,7 @@ Each object must use this exact flat schema:
     },
     "cta": {
       "visual": "CTA visual with app/download/action visible",
-      "textOverlay": "CTA text",
+      "textOverlay": "bilingual CTA text: Vietnamese / ${options.language}",
       "characterSpeech": "",
       "voiceover": "CTA voice line",
       "voice": "CTA voice line",
@@ -470,8 +480,11 @@ Each object must use this exact flat schema:
 
 Rules:
 - Use plain English title prefixes: "Script 1.1:", "Script 1.2:", "Script 1.3:" and so on. Do not copy schema example text.
-- User-facing copy fields must be in ${options.language}: title, hook text, speech, voiceover, CTA.
-- Visual descriptions and production notes must also be in ${options.language}.
+- Language matrix: title, framework fields, meta notes, endCard, explanation, visual descriptions, and production notes must be natural Vietnamese with full diacritics.
+- textOverlay fields are actual on-video text and must include BOTH Vietnamese and ${options.language} when ${options.language} is not Vietnamese, separated with " / ". If ${options.language} is Vietnamese, one Vietnamese line is enough.
+- Only hook.characterSpeech, hook.voiceover, hook.voice, body.characterSpeech, body.voiceover, body.voice, cta.characterSpeech, cta.voiceover, and cta.voice use ${options.language}.
+- hook.viTranslation is required and must be a Vietnamese translation of hook.characterSpeech + hook.voiceover only. If both are empty, translate hook.textOverlay. Do not explain the pain point there.
+- Keep hook.visual/body.visual/cta.visual as visual production prose only; do not put Text/Voiceover/Character Speech labels inside visual fields.
 - Every idea must have hook, body, CTA. Do not return hook-only objects.
 - Map the global V2.1 scene rules into this flat schema: visual_scene_1 = hook.visual, visual_scene_2 = body.visual, visual_scene_3 = cta.visual.
 - Apply Rule 4 pacing strictly: 1 scene/camera angle must last at least 2.5 seconds.
@@ -509,21 +522,26 @@ Required shape:
     },
     "hook": {
       "durationSeconds": 5,
-      "visual": "0-2.5s: ...\\n2.5-5s: Text appears: ... | Voiceover: ... | curiosity gap",
-      "textOverlay": "",
+      "visual": "0-2.5s: visual first frame action...\\n2.5-5s: visual second beat / curiosity gap",
+      "textOverlay": "Vietnamese / ${options.language}",
       "characterSpeech": "",
       "voiceover": "",
       "voice": "",
+      "viTranslation": "",
       "script": ""
     },
-    "body": { "visual": "", "textOverlay": "", "characterSpeech": "", "voiceover": "", "voice": "", "script": "" },
-    "cta": { "visual": "", "textOverlay": "", "characterSpeech": "", "voiceover": "", "voice": "", "endCard": "", "script": "" },
+    "body": { "visual": "", "textOverlay": "Vietnamese / ${options.language}", "characterSpeech": "", "voiceover": "", "voice": "", "script": "" },
+    "cta": { "visual": "", "textOverlay": "Vietnamese / ${options.language}", "characterSpeech": "", "voiceover": "", "voice": "", "endCard": "", "script": "" },
     "explanation": ""
   }
 ]
 
 Rules:
-- Every generated text field must be in ${options.language}, including title, visual notes, production notes, hook text, speech, voiceover, CTA, and endCard.
+- Language matrix: title, framework fields, meta notes, endCard, explanation, visual descriptions, and production notes must be natural Vietnamese with full diacritics.
+- textOverlay fields are actual on-video text and must include BOTH Vietnamese and ${options.language} when ${options.language} is not Vietnamese, separated with " / ". If ${options.language} is Vietnamese, one Vietnamese line is enough.
+- Only characterSpeech, voiceover, and voice fields use ${options.language}.
+- hook.viTranslation is required and must be a Vietnamese translation of hook.characterSpeech + hook.voiceover only. If both are empty, translate hook.textOverlay. Do not explain the pain point there.
+- Keep visual fields as visual production prose only; do not put Text/Voiceover/Character Speech labels inside visual fields.
 - Every idea must include non-empty hook.visual, hook voice/text, body.visual, body voice/text, cta.visual, cta voice/text, and cta.endCard.
 - Apply Rule 4 pacing strictly: 5s hooks/videos max 2 scenes/camera angles; 8-10s hooks/videos max 3-4 scenes/camera angles; each scene/camera angle must last at least 2.5 seconds.
 - hook.visual, body.visual, and cta.visual must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
@@ -718,7 +736,7 @@ function buildFallbackIdeasFromHook(
         visual: `${visualBase} Reframe the opening around ${pattern.angle} so "${directionHint}" is visible immediately in the first action.`,
         voice: pattern.hookVoice,
         textOverlay: pattern.hookPrimary,
-        viTranslation: `Giữ đúng nỗi đau "${painpoint}" nhưng mở theo hướng "${directionHint}" để người xem dừng lại ngay giây đầu.`,
+        viTranslation: translateKnownHookVoiceToVietnamese(pattern.hookVoice, { painpoint, appName: options.appName }),
         viewerProfile: `Người xem giống ${coreUser} và nhận ra đúng bối cảnh của họ.`,
         viewerEmotion: `Người xem thấy ${emotion.toLowerCase()} ngay khi blocker lộ ra.`,
         painpointImpact: `Pain point "${painpoint}" trở nên cụ thể vì blocker xuất hiện ngay khung đầu.`,
@@ -783,6 +801,123 @@ function readFirstAvailableText(...values: unknown[]) {
     if (text && !isJunkOutputText(text)) return text;
   }
   return '';
+}
+
+const VIETNAMESE_DIACRITICS_PATTERN = /[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i;
+const MOJIBAKE_PATTERN = /[ÃÄÆ]|á[º»]/;
+
+function hasVietnameseDiacritics(text: string): boolean {
+  return VIETNAMESE_DIACRITICS_PATTERN.test(text);
+}
+
+function looksLikeHookVoiceExplanation(text: string): boolean {
+  const normalized = normalizeCompareText(text);
+  return /^(?:giu dung|van giu|cho thay|keu goi|demo|mo theo huong)\b/.test(normalized)
+    || /\b(?:noi dau|painpoint|pain point)\b.*\b(?:mo theo huong|de nguoi xem|tro nen cu the)\b/.test(normalized);
+}
+
+function isUsableVietnameseHookVoiceTranslation(value: string, sourceVoice: string): boolean {
+  if (!value || MOJIBAKE_PATTERN.test(value) || !hasVietnameseDiacritics(value)) return false;
+  if (looksLikeHookVoiceExplanation(value)) return false;
+
+  const normalizedValue = normalizeCompareText(value);
+  const normalizedSource = normalizeCompareText(sourceVoice);
+  if (normalizedSource && normalizedValue === normalizedSource && !hasVietnameseDiacritics(sourceVoice)) return false;
+
+  return true;
+}
+
+function translateKnownHookVoiceToVietnamese(sourceVoice: string, context: { painpoint?: string; appName?: string }) {
+  const voice = sourceVoice.trim();
+  if (!voice) return '';
+  if (hasVietnameseDiacritics(voice) && !MOJIBAKE_PATTERN.test(voice)) return voice;
+
+  const normalized = normalizeCompareText(voice);
+  const painpoint = context.painpoint?.trim() || 'điểm kẹt này';
+  const appName = context.appName?.trim() || 'app';
+
+  if (/wait\b.*why\b.*simple\b.*move\b.*expose/.test(normalized)) {
+    return `Khoan, vì sao thao tác đơn giản này lại làm lộ rõ "${painpoint}"?`;
+  }
+  if (/most\b.*people\b.*miss\b.*detail\b.*first\b.*second/.test(normalized)) {
+    return 'Hầu hết người xem bỏ lỡ chi tiết này ngay trong giây đầu.';
+  }
+  if (/same\b.*pain\b.*point\b.*compare\b.*click/.test(normalized)) {
+    return 'Cùng một nỗi đau, nhưng cách so sánh này làm vấn đề rõ ngay lập tức.';
+  }
+  if (/only\b.*notice\b.*blocker\b.*too\b.*late/.test(normalized)) {
+    return 'Bạn chỉ nhận ra điểm kẹt khi mọi thứ đã quá muộn.';
+  }
+  if (/try\b.*spotting\b.*blocker\b.*reveal/.test(normalized)) {
+    return 'Thử tìm điểm kẹt trước khi phần reveal xuất hiện.';
+  }
+  if (/same\b.*setup\b.*gesture\b.*blocker\b.*miss/.test(normalized)) {
+    return 'Cùng một setup, nhưng động tác này làm điểm kẹt hiện ra rõ hơn.';
+  }
+  if (/from\b.*angle\b.*problem\b.*hits\b.*instantly/.test(normalized)) {
+    return 'Nhìn từ góc này, vấn đề đập vào mắt ngay lập tức.';
+  }
+  if (/most\b.*people\b.*real\b.*trigger\b.*compare/.test(normalized)) {
+    return 'Hầu hết mọi người chỉ thấy nguyên nhân thật khi đặt nó cạnh nhau để so sánh.';
+  }
+  if (/keeps?\b.*happening\b.*check\b.*first/.test(normalized)) {
+    return 'Nếu chuyện này cứ lặp lại, hãy kiểm tra điểm này trước.';
+  }
+  if (/one\b.*tap\b.*problem\b.*obvious/.test(normalized)) {
+    return 'Chỉ một lần chạm đã làm vấn đề hiện ra rõ ràng.';
+  }
+  if (/do\s+not\b.*capture\b.*keep\b.*guessing/.test(normalized)) {
+    return 'Nếu không ghi lại khoảnh khắc đó, bạn sẽ cứ phải đoán.';
+  }
+  if (/catch\b.*signal\b.*pointed\b.*out/.test(normalized)) {
+    return 'Bạn có kịp nhận ra tín hiệu đó trước khi tôi chỉ ra không?';
+  }
+  if (/only\b.*notice\b.*after\b.*repeats/.test(normalized)) {
+    return 'Nhiều người chỉ nhận ra điều này sau khi nó lặp lại quá nhiều lần.';
+  }
+  if (/feeling\b.*more\b.*annoying\b.*looks/.test(normalized)) {
+    return 'Đó là lý do cảm giác này khó chịu hơn vẻ ngoài của nó.';
+  }
+  if (/miss\b.*signal\b.*again/.test(normalized)) {
+    return 'Đừng bỏ lỡ tín hiệu này thêm lần nữa.';
+  }
+  if (/notice\b.*before\b.*became\b.*problem/.test(normalized)) {
+    return 'Bạn có nhận ra điều này trước khi nó thành vấn đề không?';
+  }
+  if (/shortcut\b.*starts\b.*moment\b.*skip/.test(normalized)) {
+    return 'Lối tắt bắt đầu ngay ở khoảnh khắc mà hầu hết mọi người bỏ qua.';
+  }
+  if (/still\b.*getting\b.*stuck\b.*step/.test(normalized)) {
+    return 'Bạn vẫn đang bị kẹt ở bước này à?';
+  }
+  if (/open\b.*test/.test(normalized)) {
+    return `Mở ${appName} và thử ngay góc này.`;
+  }
+
+  return `Câu hook nhấn thẳng vào "${painpoint}" để người xem chú ý ngay.`;
+}
+
+function resolveHookVoiceVietnameseTranslation(
+  hookSection: Record<string, unknown>,
+  rawIdea: Record<string, unknown>,
+  sourceVoice: string,
+  context: { painpoint?: string; appName?: string }
+) {
+  const existing = readFirstAvailableText(
+    hookSection.viTranslation,
+    hookSection.vi_translation,
+    hookSection.hookVoiceVi,
+    hookSection.hook_voice_vi,
+    rawIdea.hook_voice_vi,
+    rawIdea.hookVoiceVi,
+    rawIdea.hook_vi_translation,
+    rawIdea.hookViTranslation,
+    rawIdea.viTranslation,
+    rawIdea.vi_translation
+  );
+
+  if (isUsableVietnameseHookVoiceTranslation(existing, sourceVoice)) return existing;
+  return translateKnownHookVoiceToVietnamese(sourceVoice, context);
 }
 
 function cleanFullIdeaTitle(value: unknown, fallback: string) {
@@ -1027,6 +1162,7 @@ function parseGeminiJsonLikeFullIdeasText(text: string): Record<string, unknown>
           characterSpeech: readSafeString(hook, 'characterSpeech'),
           voiceover: readSafeString(hook, 'voiceover') || readSafeString(hook, 'voice') || hookPrimary,
           voice: readSafeString(hook, 'voice') || readSafeString(hook, 'voiceover') || hookPrimary,
+          viTranslation: readSafeString(hook, 'viTranslation') || readSafeString(hook, 'hookVoiceVi') || readSafeString(hook, 'hook_voice_vi'),
           script: readSafeString(hook, 'script') || readSafeString(hook, 'visual') || fallbackHookVisual,
         },
         body: {
@@ -1104,6 +1240,10 @@ function enrichFullIdeaFromHook(
     hookSection.characterSpeech,
     hookPrimary
   );
+  const hookVoiceVi = resolveHookVoiceVietnameseTranslation(hookSection, rawIdea, hookVoice, {
+    painpoint: hookPainpoint,
+    appName: options.appName,
+  });
   const ctaText = readFirstAvailableText(
     rawIdea.cta_text,
     rawIdea.ctaText,
@@ -1190,6 +1330,7 @@ function enrichFullIdeaFromHook(
       characterSpeech: readFirstAvailableText(hookSection.characterSpeech),
       voiceover: hookVoice,
       voice: hookVoice,
+      viTranslation: hookVoiceVi,
       textOverlay: readFirstAvailableText(hookSection.textOverlay, hookSection.text, hookPrimary),
       text: readFirstAvailableText(hookSection.text, hookSection.textOverlay, hookPrimary),
       viewerProfile: readFirstAvailableText(hookSection.viewerProfile, hookCoreUser),
@@ -1359,12 +1500,12 @@ Hard requirements:
         ],
         anglesPerPillar: 1,
         ideasPerAngle: plan.batchQuantity,
-        language: `Every generated idea field in ${targetLanguage}, including visual and production notes`,
+        language: `Vietnamese internal idea fields; only characterSpeech, voiceover, and voice use ${targetLanguage}. hook.viTranslation must translate the hook voice/speech back into Vietnamese.`,
         priority: 'A',
         extraContext: [
           'Task type: expand a proven winning hook into new full ideas.',
           'Keep the same strategic DNA, but change situation, character, setting, and opening approach enough to avoid clones.',
-          `Target market/localization: ${targetMarketValues.join(', ') || 'same as the winning hook'}. Use it for setting, culture, props, behavior, and vibe only; keep every generated field in ${targetLanguage}.`,
+          `Target market/localization: ${targetMarketValues.join(', ') || 'same as the winning hook'}. Use it for setting, culture, props, behavior, and vibe. It changes speech/voice language and supplies the second language in bilingual textOverlay, but visual notes stay Vietnamese.`,
           ideaDirection ? `User direction: ${ideaDirection}` : 'No additional user direction.',
         ],
       });
@@ -1406,6 +1547,10 @@ Create ${plan.batchQuantity} full ideas inspired by the winning hook for batch $
 - Hook must sell through to PSP with psp_bridge; Body is only the demo/proof continuation.
 - Each output must include hook, body, and CTA, but keep runtime flexible and social-first instead of forcing a fixed 15s/30s/60s bucket.
 - If the user provided an idea direction, prioritize it without breaking the winning DNA.
+- Language matrix: Vietnamese for title, framework, meta notes, hook/body/cta visual prose, endCard, and explanation. ${targetLanguage} only for characterSpeech, voiceover, and voice fields.
+- textOverlay is actual on-video text and must include BOTH Vietnamese and ${targetLanguage} when ${targetLanguage} is not Vietnamese, separated with " / ".
+- hook.viTranslation must be a direct Vietnamese translation of hook.characterSpeech + hook.voiceover only, not an explanation of the painpoint or why the hook works.
+- Do not place Text/Voiceover/Character Speech labels inside hook.visual, body.visual, or cta.visual.
 
 ${buildFullIdeasFromHookOutputSpec({
   quantity: plan.batchQuantity,
@@ -1572,7 +1717,9 @@ ${retryNotes}`, {
 [ALTERNATE MODEL RETRY - NEED CLEAN FULL BATCH]
 Return ${plan.batchQuantity} valid, unique ideas in the exact flat JSON schema.
 - Do not wrap inside pillar/angles.
-- User-facing copy must be ${targetLanguage}: title, hook text, character speech, voice/video voiceover, text overlay, and CTA.
+- Vietnamese for title, visual notes, CTA endCard, and production notes. ${targetLanguage} only for character speech and voice/video voiceover.
+- textOverlay is actual on-video text and must include BOTH Vietnamese and ${targetLanguage} when ${targetLanguage} is not Vietnamese, separated with " / ".
+- hook.viTranslation must translate the hook speech/voice back into Vietnamese and must not explain the painpoint.
 - No generic template or fallback.
 - No shallow paraphrase of existing ideas.
 - Hook, body, and CTA must stay tied to the winning hook context and selected pain point.`, {
@@ -1671,6 +1818,9 @@ Create exactly 1 additional full idea for slot Script 1.${slotIndex + 1}.
 - Keep the winning hook DNA, but change scene, first frame, hook line, proof object, and CTA wording.
 - Stay compliant: no diagnosis, treatment, cure, disease detection, doctor replacement, or medical-result promise.
 - Output a complete flat full idea with hook, body, and CTA.
+- Vietnamese for title, visual notes, CTA endCard, production notes, and hook.viTranslation. ${targetLanguage} only for characterSpeech, voiceover, and voice.
+- textOverlay is actual on-video text and must include BOTH Vietnamese and ${targetLanguage} when ${targetLanguage} is not Vietnamese, separated with " / ".
+- hook.viTranslation must be a direct Vietnamese translation of hook speech/voice, not a painpoint explanation.
 ${ideaDirection ? `- User direction: ${ideaDirection}` : ''}
 
 ${buildSingleFullIdeaFromHookOutputSpec({

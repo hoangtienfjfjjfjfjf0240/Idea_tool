@@ -265,7 +265,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         text: stripVariantSuffix(sourceHook.title),
         textOverlay: stripVariantSuffix(sourceHook.title),
         voice: `${stripVariantSuffix(sourceHook.title)} — biến thể ${startIndex + i + 1}. ${instruction}.`,
-        viTranslation: `${stripVariantSuffix(sourceHook.title)} — biến thể ${startIndex + i + 1}. ${instruction}.`,
+        viTranslation: translateLocalHookVoiceToVietnamese(
+          `${stripVariantSuffix(sourceHook.title)} — biến thể ${startIndex + i + 1}. ${instruction}.`,
+          sourceHook.painpoint || ''
+        ),
       },
     }));
 
@@ -274,6 +277,30 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     if (!text) return '';
     if (text.length <= limit) return text;
     return `${text.slice(0, limit).trim()}...`;
+  };
+
+  const translateLocalHookVoiceToVietnamese = (voice: string, painpoint: string) => {
+    const source = voice.trim();
+    if (!source) return '';
+    if (/[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(source)) return source;
+
+    const normalized = source
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const pain = painpoint.trim() || 'điểm kẹt này';
+
+    if (/tiny move.*explain.*whole problem/.test(normalized)) return `Một thao tác nhỏ này có thể giải thích toàn bộ "${pain}".`;
+    if (/same setup.*gesture.*blocker/.test(normalized)) return 'Cùng một setup, nhưng động tác này làm điểm kẹt hiện ra rõ hơn.';
+    if (/miss.*detail.*pov.*closer/.test(normalized)) return 'Bạn bỏ lỡ chi tiết này cho đến khi góc POV tiến lại gần hơn.';
+    if (/pain.*familiar.*compare.*click/.test(normalized)) return 'Nỗi đau nhìn rất quen, nhưng khung so sánh này làm nó rõ nhanh hơn.';
+    if (/keeps happening.*start.*check/.test(normalized)) return 'Nếu chuyện này cứ lặp lại, hãy bắt đầu bằng bước kiểm tra này.';
+    if (/keep.*same pain point|reveal it faster/.test(normalized)) return `Vẫn giữ đúng nỗi đau "${pain}", nhưng làm nó hiện ra nhanh hơn ngay giây đầu.`;
+
+    return `Câu hook nhấn thẳng vào "${pain}" để người xem chú ý ngay.`;
   };
 
   const extractModifyInstructionHint = (instruction: string, fallback: string) => {
@@ -337,7 +364,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           text: angle.overlay,
           textOverlay: angle.overlay,
           voice: angle.voice,
-          viTranslation: `Van giu noi dau "${painpoint}", nhung mo theo huong "${instructionHint}".`,
+          viTranslation: translateLocalHookVoiceToVietnamese(angle.voice, painpoint),
         },
       };
     });
@@ -860,7 +887,10 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
         ...normalizedHookBase,
         durationSeconds: hookDuration,
         characterSpeech: cleanFullIdeaText(rawHook.characterSpeech),
-        viTranslation: cleanFullIdeaText(rawHook.viTranslation),
+        viTranslation: cleanFullIdeaText(
+          rawHook.viTranslation,
+          translateLocalHookVoiceToVietnamese(cleanFullIdeaText(rawHook.characterSpeech, hookVoice), sourceHook.painpoint || '')
+        ),
         viewerProfile: cleanFullIdeaText(rawHook.viewerProfile),
         viewerEmotion: cleanFullIdeaText(rawHook.viewerEmotion),
         painpointImpact: cleanFullIdeaText(rawHook.painpointImpact),
@@ -1208,6 +1238,7 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
           text: variant.hookOverlay,
           textOverlay: variant.hookOverlay,
           voice: variant.hookVoice,
+          viTranslation: translateLocalHookVoiceToVietnamese(variant.hookVoice, painpoint),
         },
         body: {
           script: `[VISUAL] Push into a closer demo of the same problem, then show how ${psp} changes the situation.\n[VOICE] ${variant.bodyVoice}\n[TEXT OVERLAY] ${variant.bodyOverlay}`,

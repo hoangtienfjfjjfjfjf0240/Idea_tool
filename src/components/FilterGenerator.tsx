@@ -2333,6 +2333,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     return hasVietnameseDiacritics(value);
   };
 
+  const isPainpointExplanationInsteadOfVoiceTranslation = (value: string) => {
+    const normalized = normalizeCompareText(value);
+    return /^(?:giu dung|van giu|cho thay|demo|keu goi|mo theo huong)\b/.test(normalized)
+      || /\b(?:painpoint|pain point|noi dau)\b.*\b(?:angle|demo|giai quyet|nguoi xem|mo bang|tro nen cu the)\b/.test(normalized);
+  };
+
   const getSectionViTranslation = (section: Partial<IdeaContent['hook']> | Partial<IdeaContent['body']> | Partial<IdeaContent['cta']> | IdeaApiSection | Record<string, unknown> | undefined): string => {
     const raw = (section || {}) as Record<string, unknown> & IdeaApiSection;
     const candidates = [
@@ -2355,6 +2361,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       if (isProbablyCorruptHookLine(text)) continue;
       if (isProbablyEnglishHookLine(text)) continue;
       if (isProbablyUntranslatedHookLine(text)) continue;
+      if (isPainpointExplanationInsteadOfVoiceTranslation(text)) continue;
       if (!isProbablyVietnameseHookLine(text)) continue;
       return text;
     }
