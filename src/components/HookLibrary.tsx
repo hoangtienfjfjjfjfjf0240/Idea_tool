@@ -6,6 +6,7 @@ import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
 import { buildHookFrameworkFallback } from '@/lib/hookFramework';
+import { supabase } from '@/lib/supabase';
 
 interface HookLibraryProps {
   setScreen: (s: ScreenType) => void;
@@ -59,6 +60,14 @@ type ApiResult<T> = {
   fallback?: boolean;
   warning?: string;
   meta?: Record<string, unknown> & { warnings?: string[] };
+};
+
+type SignedHookMediaUpload = {
+  success?: boolean;
+  path?: string;
+  token?: string;
+  publicUrl?: string | null;
+  error?: string;
 };
 
 const FULL_IDEA_SECTIONS = [
@@ -1499,6 +1508,77 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
     || /\.(?:mp4|webm|mov|m4v|avi|wmv|mpeg|mpg)$/i.test(file.name)
   );
 
+  const inferUploadMimeType = (fileName: string, fileType?: string) => {
+    if (fileType) return fileType;
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const map: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      gif: 'image/gif',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      mov: 'video/quicktime',
+      m4v: 'video/x-m4v',
+      avi: 'video/x-msvideo',
+      wmv: 'video/x-ms-wmv',
+      mpeg: 'video/mpeg',
+      mpg: 'video/mpeg',
+    };
+    return map[ext] || 'application/octet-stream';
+  };
+
+  const dataUrlToBlob = (dataUrl: string) => {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    const mimeType = match[1];
+    const rawData = match[2];
+    const byteChars = atob(rawData);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i += 1) {
+      byteArray[i] = byteChars.charCodeAt(i);
+    }
+    return new Blob([byteArray], { type: mimeType });
+  };
+
+  const uploadHookMediaDirect = async (blob: Blob, fileName: string, kind: 'file' | 'thumb') => {
+    const mimeType = inferUploadMimeType(fileName, blob.type);
+    const signRes = await authenticatedFetch('/api/upload-hook-media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create-signed-upload',
+        fileName,
+        mimeType,
+        size: blob.size,
+        kind,
+      }),
+    });
+    const signResult = await signRes.json().catch(() => null) as SignedHookMediaUpload | null;
+    if (!signRes.ok || !signResult?.success || !signResult.path || !signResult.token) {
+      throw new Error(signResult?.error || `Không tạo được upload URL (HTTP ${signRes.status}).`);
+    }
+
+    const { error } = await supabase.storage
+      .from('hook-media')
+      .uploadToSignedUrl(signResult.path, signResult.token, blob, {
+        cacheControl: '3600',
+        contentType: mimeType,
+        upsert: false,
+      });
+    if (error) {
+      throw new Error(`Upload media thất bại: ${error.message}`);
+    }
+
+    const publicUrl = signResult.publicUrl
+      || supabase.storage.from('hook-media').getPublicUrl(signResult.path).data.publicUrl;
+    if (!publicUrl) {
+      throw new Error('Upload xong nhưng không lấy được public URL.');
+    }
+    return publicUrl;
+  };
+
   const handleSaveHook = async () => {
     if (!editingHookData.title) return;
     setIsSaving(true);
@@ -1506,43 +1586,33 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       let imageUrl = editingHookData.image_url || null;
       let videoUrl = editingHookData.video_url || null;
 
-      // Upload via server API route (uses service role key, no RLS issues)
+      // Use signed upload URLs so large videos go directly to Supabase Storage instead of through Vercel.
       if (pendingFileRef.current) {
         const pendingFile = pendingFileRef.current;
         const isVideoFile = isVideoUploadFile(pendingFile);
-        const formData = new FormData();
-        formData.append('file', pendingFile);
         const thumbnailBase64 = pendingThumbRef.current || (
           isVideoFile && editingHookData.localImageUrl?.startsWith('data:image/')
             ? editingHookData.localImageUrl
             : ''
         );
-        if (isVideoFile && thumbnailBase64) {
-          formData.append('thumbBase64', thumbnailBase64);
-        }
 
         try {
-          const uploadRes = await authenticatedFetch('/api/upload-hook-media', {
-            method: 'POST',
-            body: formData,
-          });
-          const uploadResult = await uploadRes.json().catch(() => null) as {
-            success?: boolean;
-            videoUrl?: string;
-            imageUrl?: string;
-            error?: string;
-          } | null;
-          if (uploadRes.ok && uploadResult?.success) {
-            if (uploadResult.videoUrl) videoUrl = uploadResult.videoUrl;
-            if (uploadResult.imageUrl) imageUrl = uploadResult.imageUrl;
-            if (isVideoFile && !videoUrl) {
-              throw new Error('Upload video xong nhưng server không trả video URL.');
-            }
-            if (!isVideoFile && !imageUrl) {
-              throw new Error('Upload ảnh xong nhưng server không trả image URL.');
-            }
+          const uploadedUrl = await uploadHookMediaDirect(pendingFile, pendingFile.name, 'file');
+          if (isVideoFile) {
+            videoUrl = uploadedUrl;
           } else {
-            throw new Error(uploadResult?.error || `Upload media thất bại (HTTP ${uploadRes.status}).`);
+            imageUrl = uploadedUrl;
+          }
+
+          if (isVideoFile && thumbnailBase64) {
+            const thumbBlob = dataUrlToBlob(thumbnailBase64);
+            if (thumbBlob) {
+              try {
+                imageUrl = await uploadHookMediaDirect(thumbBlob, `thumb_${pendingFile.name.replace(/\.[^/.]+$/, '')}.jpg`, 'thumb');
+              } catch (thumbErr) {
+                console.warn('Thumbnail upload failed:', thumbErr);
+              }
+            }
           }
         } catch (uploadErr) {
           console.error('Upload request failed:', uploadErr);
