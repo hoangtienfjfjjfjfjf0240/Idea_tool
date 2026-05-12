@@ -1648,7 +1648,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = () => selectedModel || '';
-      const maxAttemptsPerAngle = 1;
+      const maxAttemptsPerAngle = 2;
       const maxConcurrent = Math.min(3, generationTasks.length);
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
