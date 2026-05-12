@@ -101,6 +101,37 @@ function trimWords(text: string, maxWords: number): string {
   return words.length > maxWords ? words.slice(0, maxWords).join(' ') : text;
 }
 
+function splitOverlayLanguageParts(text: string): string[] {
+  const clean = text.trim();
+  if (!clean) return [];
+  const separators = [' / ', ' | ', ' — ', ' -- ', '\n'];
+  const separator = separators.find(item => clean.includes(item));
+  return (separator ? clean.split(separator) : [clean])
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function trimOverlayWords(text: string, maxWordsPerLanguage: number): string {
+  const clean = text.trim();
+  if (!clean) return '';
+  const separators = [' / ', ' | ', ' — ', ' -- ', '\n'];
+  const separator = separators.find(item => clean.includes(item));
+  if (!separator) return trimWords(clean, maxWordsPerLanguage);
+  return clean
+    .split(separator)
+    .map(part => trimWords(part.trim(), maxWordsPerLanguage))
+    .filter(Boolean)
+    .join(separator);
+}
+
+function maxOverlayWordsPerLanguage(text: string): number {
+  return Math.max(0, ...splitOverlayLanguageParts(text).map(countWords));
+}
+
+function vietnameseOverlayPart(text: string): string {
+  return splitOverlayLanguageParts(text)[0] || text.trim();
+}
+
 function stripOverlayTimePrefix(text: string): string {
   return text
     .replace(/^\s*(?:sec\s*)?\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?\s*s?\s*:\s*/i, '')
@@ -1813,7 +1844,7 @@ function createBriefValidationErrors(input: {
     input.hookAlt2,
     input.hookTextOverlay,
     input.ctaText,
-  ].filter(Boolean);
+  ].filter(Boolean).map(value => vietnameseOverlayPart(value || ''));
   if (vietnameseTextFields.some(value => !looksVietnamese(value || ''))) {
     errors.push('hook text overlays, hook alternatives, and cta_text must be Vietnamese; only voice/speech fields use the market language');
   }
@@ -1838,8 +1869,8 @@ function createBriefValidationErrors(input: {
     errors.push('visual_scene prose must be Vietnamese and must not contain Voiceover/CHARACTER SPEECH snippets');
   }
   const hookTextOverlayForCount = input.hookTextOverlay || input.hookPrimary;
-  if (hookTextOverlayForCount && countWords(hookTextOverlayForCount) > 8) {
-    errors.push('hook_text_overlay must be 8 words or fewer');
+  if (hookTextOverlayForCount && maxOverlayWordsPerLanguage(hookTextOverlayForCount) > 8) {
+    errors.push('hook_text_overlay must be 8 words or fewer per language');
   }
   if (input.hookVoiceover && countWords(input.hookVoiceover) > 12) {
     errors.push('hook_vo must be 12 words or fewer');
@@ -1957,8 +1988,8 @@ function createBriefValidationErrors(input: {
     errors.push('script_vo must be 60 words or fewer');
   }
   if (!input.ctaText) errors.push('cta_text is required');
-  if (!isV7 && input.ctaText && input.ctaText.split(/\s+/).filter(Boolean).length > 6) {
-    errors.push('cta_text must be 6 words or fewer');
+  if (!isV7 && input.ctaText && maxOverlayWordsPerLanguage(input.ctaText) > 6) {
+    errors.push('cta_text must be 6 words or fewer per language');
   }
   if (!readText(input.ctaFrictionReducer)) {
     errors.push('cta_friction_reducer is required');
@@ -2149,12 +2180,12 @@ export function normalizeCreativeBriefOutput(
         if (!hookTextOverlay) {
           hookTextOverlay = hookPrimary;
         }
-        hookTextOverlay = trimWords(hookTextOverlay, 8);
-        hookPrimary = trimWords(hookPrimary || hookTextOverlay, 8);
+        hookTextOverlay = trimOverlayWords(hookTextOverlay, 8);
+        hookPrimary = trimOverlayWords(hookPrimary || hookTextOverlay, 8);
         hookVoiceover = trimWords(hookVoiceover, 12);
-        hookAlt1 = trimWords(hookAlt1, 8);
-        hookAlt2 = trimWords(hookAlt2, 8);
-        ctaText = trimWords(ctaText, 6);
+        hookAlt1 = trimOverlayWords(hookAlt1, 8);
+        hookAlt2 = trimOverlayWords(hookAlt2, 8);
+        ctaText = trimOverlayWords(ctaText, 6);
         if (!hookVoiceover && !isV7Ruleset) {
           const candidateVoiceover = firstSentenceSnippet(scriptVo);
           if (candidateVoiceover && !isSameLine(candidateVoiceover, hookPrimary) && !isSameLine(candidateVoiceover, hookTextOverlay)) {
