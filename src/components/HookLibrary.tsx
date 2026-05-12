@@ -76,7 +76,7 @@ const FULL_IDEA_SECTIONS = [
   { key: 'cta', label: '🔥 CTA (3-5s)', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
 ] as const;
 
-const MODIFY_HOOK_REQUEST_TIMEOUT_MS = 58000;
+const MODIFY_HOOK_REQUEST_TIMEOUT_MS = 240000;
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
 
 async function readApiResult<T>(response: Response): Promise<ApiResult<T>> {

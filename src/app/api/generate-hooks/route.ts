@@ -8,12 +8,19 @@ import { guardApiRequest } from '@/lib/apiGuards';
 import { detectTargetLanguageFromMarkets } from '@/lib/filterConsistency';
 import { enrichHookWithFramework } from '@/lib/hookFramework';
 
-export const maxDuration = 60;
+export const runtime = 'nodejs';
+export const maxDuration = 300;
 
 const MAX_HOOK_VARIATIONS = 20;
-const HOOK_ROUTE_BUDGET_MS = 54000;
-const HOOK_MODEL_TIMEOUT_MS = 50000;
-const HOOK_QUEUE_TIMEOUT_MS = 2000;
+const HOOK_ROUTE_BUDGET_MS = positiveIntEnvAny(
+  ['HOOK_ROUTE_BUDGET_MS', 'IDEA_GEMINI3_REQUEST_BUDGET_MS', 'IDEA_REQUEST_BUDGET_MS'],
+  240000
+);
+const HOOK_MODEL_TIMEOUT_MS = positiveIntEnvAny(
+  ['HOOK_MODEL_TIMEOUT_MS', 'IDEA_GEMINI3_TIMEOUT_MS', 'IDEA_GATEWAY_TIMEOUT_MS'],
+  180000
+);
+const HOOK_QUEUE_TIMEOUT_MS = positiveIntEnv('HOOK_QUEUE_TIMEOUT_MS', 5000);
 const MIN_HOOK_MODEL_TIME_MS = 10000;
 const GEMINI3_HOOK_MODEL = 'gemini/gemini-3-pro-preview';
 
@@ -34,6 +41,18 @@ function resolveModel(selected?: string): string {
 function toPositiveInt(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function positiveIntEnv(name: string, fallback: number) {
+  return toPositiveInt(process.env[name], fallback);
+}
+
+function positiveIntEnvAny(names: string[], fallback: number) {
+  for (const name of names) {
+    const parsed = Number(process.env[name]);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
+  }
+  return fallback;
 }
 
 function parseJson(text: string) {
