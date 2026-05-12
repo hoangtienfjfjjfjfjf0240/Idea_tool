@@ -6,7 +6,6 @@ import type { AIModel } from '@/components/NavBar';
 import * as dbService from '@/lib/db';
 import { authenticatedFetch } from '@/lib/authFetch';
 import { buildHookFrameworkFallback } from '@/lib/hookFramework';
-import { supabase } from '@/lib/supabase';
 
 interface HookLibraryProps {
   setScreen: (s: ScreenType) => void;
@@ -66,6 +65,7 @@ type SignedHookMediaUpload = {
   success?: boolean;
   path?: string;
   token?: string;
+  signedUrl?: string;
   publicUrl?: string | null;
   error?: string;
 };
@@ -1556,27 +1556,24 @@ export const HookLibrary: React.FC<HookLibraryProps> = ({ setScreen, currentScre
       }),
     });
     const signResult = await signRes.json().catch(() => null) as SignedHookMediaUpload | null;
-    if (!signRes.ok || !signResult?.success || !signResult.path || !signResult.token) {
+    if (!signRes.ok || !signResult?.success || !signResult.signedUrl || !signResult.publicUrl) {
       throw new Error(signResult?.error || `Không tạo được upload URL (HTTP ${signRes.status}).`);
     }
 
-    const { error } = await supabase.storage
-      .from('hook-media')
-      .uploadToSignedUrl(signResult.path, signResult.token, blob, {
-        cacheControl: '3600',
-        contentType: mimeType,
-        upsert: false,
-      });
-    if (error) {
-      throw new Error(`Upload media thất bại: ${error.message}`);
+    const formData = new FormData();
+    formData.append('cacheControl', '3600');
+    formData.append('', blob, fileName);
+    const uploadRes = await fetch(signResult.signedUrl, {
+      method: 'PUT',
+      body: formData,
+      headers: { 'x-upsert': 'false' },
+    });
+    if (!uploadRes.ok) {
+      const detail = await uploadRes.text().catch(() => '');
+      throw new Error(`Upload media thất bại (HTTP ${uploadRes.status}). ${detail.slice(0, 180)}`);
     }
 
-    const publicUrl = signResult.publicUrl
-      || supabase.storage.from('hook-media').getPublicUrl(signResult.path).data.publicUrl;
-    if (!publicUrl) {
-      throw new Error('Upload xong nhưng không lấy được public URL.');
-    }
-    return publicUrl;
+    return signResult.publicUrl;
   };
 
   const handleSaveHook = async () => {
