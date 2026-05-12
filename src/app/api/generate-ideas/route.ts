@@ -87,16 +87,16 @@ function booleanEnv(name: string, fallback: boolean) {
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 60000);
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 180000);
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 3);
+const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 1);
 const GEMINI3_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_GEMINI3_BATCH_CONCURRENCY', 2);
-const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 90000);
-const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', false);
-const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', true);
+const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 285000);
+const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
+const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', false);
 const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
@@ -3624,8 +3624,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL && !isGemini3Ideas;
-      const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP;
+      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL;
+      const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP && !isGemini3Ideas;
 
       const runBatchPlanWithRecovery = async (
         plan: IdeaBatchPlan,
