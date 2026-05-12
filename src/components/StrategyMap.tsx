@@ -1076,6 +1076,19 @@ function getNodeSavedStrategyCodes(node: WorkflowNode | null | undefined): strin
   );
 }
 
+function getNodeTreeStrategyCodes(node: WorkflowNode | null | undefined): string[] {
+  if (!node || !isTreeNode(node)) return [];
+
+  return Array.from(
+    new Set(
+      collectTreeNodeIdeas(node)
+        .flatMap(getIdeaStrategyCodes)
+        .map(code => code.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 function hydrateCustomNodes(savedNodes: StrategyMapCustomNodeState[] | undefined): CustomWorkflowNode[] {
   return (savedNodes || []).map(node => ({
     ...node,
@@ -2179,6 +2192,15 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
   const searchMatches = useMemo(() => {
     if (!normalizedMapSearchQuery) return [];
     if (normalizedStrategyCodeQuery) {
+      const savedExactMatches = flatNodes.filter(({ node }) => {
+        if (node.level === 'root') return false;
+        if (strategyCodeQueryLevel && node.level !== strategyCodeQueryLevel) return false;
+
+        return getNodeTreeStrategyCodes(node)
+          .some(code => normalizeStrategyCode(code) === normalizedStrategyCodeQuery);
+      });
+      if (savedExactMatches.length > 0) return savedExactMatches;
+
       const exactOwnerMatches = flatNodes.filter(({ node }) => {
         if (node.level === 'root') return false;
         if (strategyCodeQueryLevel && node.level !== strategyCodeQueryLevel) return false;
@@ -2197,6 +2219,15 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         const shallowestLevelIndex = Math.min(...exactPathMatches.map(({ node }) => LEVEL_ORDER.indexOf(node.level)));
         return exactPathMatches.filter(({ node }) => LEVEL_ORDER.indexOf(node.level) === shallowestLevelIndex);
       }
+
+      const savedPrefixMatches = flatNodes.filter(({ node }) => {
+        if (node.level === 'root') return false;
+        if (strategyCodeQueryLevel && node.level !== strategyCodeQueryLevel) return false;
+
+        return getNodeTreeStrategyCodes(node)
+          .some(code => normalizeStrategyCode(code).startsWith(normalizedStrategyCodeQuery));
+      });
+      if (savedPrefixMatches.length > 0) return savedPrefixMatches;
 
       return flatNodes.filter(({ node }) => {
         if (node.level === 'root') return false;
