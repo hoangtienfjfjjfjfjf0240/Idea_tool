@@ -2460,6 +2460,86 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     };
   };
 
+  const mergeRefinedSection = (
+    originalSection: IdeaContent['hook'] | IdeaContent['body'] | IdeaContent['cta'] | undefined,
+    refinedSection: IdeaApiSection | undefined,
+    sectionKey: 'hook' | 'body' | 'cta'
+  ) => {
+    const originalRaw = (originalSection || {}) as Record<string, unknown>;
+    if (!refinedSection) return originalSection;
+
+    const refinedRaw = refinedSection as Record<string, unknown>;
+    const pickText = (raw: Record<string, unknown>, keys: string[]) => {
+      for (const key of keys) {
+        const value = cleanPreviewText(raw[key]);
+        if (value) return value;
+      }
+      return '';
+    };
+
+    const refinedVisual = pickText(refinedRaw, ['visual', 'script']);
+    const originalVisual = pickText(originalRaw, ['visual', 'script']);
+    const refinedTextOverlay = pickText(refinedRaw, ['textOverlay', 'text_overlay', 'text']);
+    const refinedCharacterSpeech = getSectionCharacterSpeech(refinedRaw);
+    const refinedVoiceover = getSectionVoiceover(refinedRaw);
+    const refinedVoice = cleanPreviewText(refinedRaw.voice);
+    const hasRefinedContent = Boolean(refinedVisual || refinedTextOverlay || refinedCharacterSpeech || refinedVoiceover || refinedVoice);
+
+    const next: Record<string, unknown> = { ...originalRaw };
+    Object.entries(refinedRaw).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        const cleaned = cleanPreviewText(value);
+        if (cleaned) next[key] = cleaned;
+        return;
+      }
+      if (value !== undefined && value !== null) next[key] = value;
+    });
+
+    const visual = refinedVisual || originalVisual;
+    if (visual) {
+      next.visual = visual;
+      next.script = pickText(refinedRaw, ['script', 'visual']) || pickText(originalRaw, ['script', 'visual']) || visual;
+    }
+
+    const textOverlay = refinedTextOverlay || pickText(originalRaw, ['textOverlay', 'text']);
+    if (textOverlay) {
+      next.textOverlay = textOverlay;
+      next.text = textOverlay;
+    }
+
+    const characterSpeech = refinedCharacterSpeech || pickText(originalRaw, ['characterSpeech', 'character_speech', 'talentSpeech', 'talent_speech']);
+    if (characterSpeech) next.characterSpeech = characterSpeech;
+
+    const voiceover = refinedVoiceover || pickText(originalRaw, ['voiceover', 'voiceOver', 'voice_over']);
+    if (voiceover) next.voiceover = voiceover;
+
+    const voice = refinedVoice || voiceover || characterSpeech || pickText(originalRaw, ['voice']);
+    if (voice) next.voice = voice;
+
+    const viTranslation = pickText(refinedRaw, ['viTranslation', 'vi_translation', 'vietnameseTranslation', 'vietnamese_translation', 'hookVoiceVi', 'hook_voice_vi'])
+      || pickText(originalRaw, ['viTranslation', 'vi_translation']);
+    if (viTranslation) next.viTranslation = viTranslation;
+
+    if (sectionKey === 'hook') {
+      next.durationSeconds = hasRefinedContent
+        ? getHookDurationSeconds(next as IdeaApiSection)
+        : getHookDurationSeconds(originalRaw as IdeaApiSection);
+      ['viewerProfile', 'viewerEmotion', 'painpointImpact', 'whyTheyStopScrolling'].forEach(key => {
+        const value = pickText(refinedRaw, [key]) || pickText(originalRaw, [key]);
+        if (value) next[key] = value;
+      });
+      return next as IdeaContent['hook'];
+    }
+
+    if (sectionKey === 'cta') {
+      const endCard = pickText(refinedRaw, ['endCard', 'end_card']) || pickText(originalRaw, ['endCard', 'end_card']);
+      if (endCard) next.endCard = endCard;
+      return next as IdeaContent['cta'];
+    }
+
+    return next as IdeaContent['body'];
+  };
+
   const isBuilderIdeaContent = (content: unknown) => {
     const meta = ((content as IdeaContent | undefined)?.meta || {}) as Record<string, unknown>;
     return cleanPreviewText(meta.builderVersion).toLowerCase() === 'prompt_system_builder_html_v1';
@@ -3875,9 +3955,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                                 meta: { ...originalMeta, ...refinedMeta, ...lockedMeta },
                                 framework: { ...(idea.content.framework || {}), ...(refined.framework || {}) },
                                 explanation: refined.explanation || idea.content.explanation,
-                                hook: refined.hook ? { durationSeconds: getHookDurationSeconds(refined.hook), script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.hook), voiceover: getSectionVoiceover(refined.hook), voice: refined.hook.voice || getSectionVoiceover(refined.hook) || getSectionCharacterSpeech(refined.hook), viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : idea.content.hook,
-                                body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.body), voiceover: getSectionVoiceover(refined.body), voice: refined.body.voice || getSectionVoiceover(refined.body) || getSectionCharacterSpeech(refined.body), viTranslation: refined.body.viTranslation || '' } : idea.content.body,
-                                cta: refined.cta ? { script: refined.cta.script || refined.cta.visual || '', visual: refined.cta.visual || refined.cta.script || '', characterSpeech: getSectionCharacterSpeech(refined.cta), voiceover: getSectionVoiceover(refined.cta), voice: refined.cta.voice || getSectionVoiceover(refined.cta) || getSectionCharacterSpeech(refined.cta), text: refined.cta.textOverlay || '', textOverlay: refined.cta.textOverlay || '', endCard: refined.cta.endCard || '', viTranslation: refined.cta.viTranslation || '' } : idea.content.cta,
+                                hook: mergeRefinedSection(idea.content.hook, refined.hook, 'hook') as IdeaContent['hook'],
+                                body: mergeRefinedSection(idea.content.body, refined.body, 'body') as IdeaContent['body'],
+                                cta: mergeRefinedSection(idea.content.cta, refined.cta, 'cta') as IdeaContent['cta'],
                               };
                               const newTitle = refined.title || idea.title || '';
                                await dbService.updateIdeaContent(idea.id, newTitle, newContent);

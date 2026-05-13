@@ -1071,6 +1071,33 @@ function mergeRefinedIdeaWithOriginal(
   const refined = asRecord(normalizeIdeaOutput(refinedInput, options));
   const originalMeta = asRecord(originalIdea.meta);
   const refinedMeta = asRecord(refined.meta);
+  const mergeSection = (sectionKey: 'hook' | 'body' | 'cta') => {
+    const originalSection = asRecord(originalIdea[sectionKey]);
+    const refinedSection = asRecord(refined[sectionKey]);
+    const originalVisual = asText(originalSection.visual) || asText(originalSection.script);
+    const refinedVisual = asText(refinedSection.visual) || asText(refinedSection.script);
+    const merged = {
+      ...originalSection,
+      ...refinedSection,
+    };
+
+    if (!refinedVisual && originalVisual) {
+      merged.visual = asText(originalSection.visual) || originalVisual;
+      merged.script = asText(originalSection.script) || originalVisual;
+    }
+
+    ['textOverlay', 'text', 'characterSpeech', 'voiceover', 'voice', 'viTranslation', 'endCard'].forEach(key => {
+      if (!asText(merged[key]) && asText(originalSection[key])) {
+        merged[key] = originalSection[key];
+      }
+    });
+
+    if (sectionKey === 'hook' && !merged.durationSeconds && originalSection.durationSeconds) {
+      merged.durationSeconds = originalSection.durationSeconds;
+    }
+
+    return merged;
+  };
 
   return {
     ...refined,
@@ -1084,6 +1111,9 @@ function mergeRefinedIdeaWithOriginal(
       ...refinedMeta,
       ...pickExistingMetaFields(originalMeta),
     },
+    hook: mergeSection('hook'),
+    body: mergeSection('body'),
+    cta: mergeSection('cta'),
   };
 }
 
