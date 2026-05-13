@@ -1029,13 +1029,16 @@ function collectTreeNodeDescendantIds(node: TreeNode): string[] {
 
 function getIdeaStrategyCodes(idea: GeneratedIdea): string[] {
   const meta = idea.content?.meta;
-  const rawCodes = [
+  const metaCodes = [
     meta?.strategyCode,
     ...(Array.isArray(meta?.strategyCodes)
       ? meta.strategyCodes.filter(code => /^(?:[A-F]\d+){2,}$/i.test(code))
       : []),
-    ...(typeof idea.title === 'string' ? idea.title.match(/[A-F]\d+(?:[A-F]\d+)*/g) || [] : []),
   ];
+  const fallbackTitleCodes = metaCodes.some(code => typeof code === 'string' && code.trim())
+    ? []
+    : (typeof idea.title === 'string' ? idea.title.match(/[A-F]\d+(?:[A-F]\d+)*/g) || [] : []);
+  const rawCodes = [...metaCodes, ...fallbackTitleCodes];
 
   return Array.from(
     new Set(
@@ -1071,6 +1074,20 @@ function getNodeSavedStrategyCodes(node: WorkflowNode | null | undefined): strin
       getDirectNodeIdeas(node)
         .flatMap(getIdeaStrategyCodes)
         .map(code => code.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function getNodeSavedStrategyCodeMapRows(node: WorkflowNode | null | undefined): string[] {
+  return Array.from(
+    new Set(
+      getDirectNodeIdeas(node)
+        .flatMap(idea => {
+          const rows = idea.content?.meta?.strategyCodeMap;
+          return Array.isArray(rows) ? rows : [];
+        })
+        .map(row => (typeof row === 'string' ? row.trim() : ''))
         .filter(Boolean)
     )
   );
@@ -2738,10 +2755,19 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
     : null;
   const selectedBranchStatusTheme = selectedBranchStatus ? BRANCH_STATUS_THEME[selectedBranchStatus] : null;
   const selectedBranchLevelTheme = selectedBranchNode ? LEVEL_COLORS[selectedBranchNode.level] : null;
-  const selectedBranchStrategyCode = selectedBranchNode?.level === 'structure'
+  const selectedBranchSavedStrategyCodes = getNodeSavedStrategyCodes(selectedBranchNode);
+  const selectedBranchSavedStrategyCode = selectedBranchSavedStrategyCodes.length === 1
+    ? selectedBranchSavedStrategyCodes[0]
+    : '';
+  const selectedBranchSavedStrategyCodeRows = selectedBranchSavedStrategyCode
+    ? getNodeSavedStrategyCodeMapRows(selectedBranchNode)
+    : [];
+  const selectedBranchStrategyCode = selectedBranchSavedStrategyCode || (selectedBranchNode?.level === 'structure'
     ? getNodeStrategyCode(selectedBranchNode)
-    : getNodeOwnStrategyCode(selectedBranchNode);
-  const selectedBranchStrategyCodeRows = selectedBranchNode?.level === 'structure'
+    : getNodeOwnStrategyCode(selectedBranchNode));
+  const selectedBranchStrategyCodeRows = selectedBranchSavedStrategyCodeRows.length > 0
+    ? selectedBranchSavedStrategyCodeRows
+    : selectedBranchNode?.level === 'structure'
     ? getNodeStrategyCodeRows(selectedBranchNode)
     : getNodeOwnStrategyCodeRows(selectedBranchNode);
   const selectedBranchFilterRows = BRANCH_FILTER_FIELDS.map(field => {
@@ -3428,10 +3454,15 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
                 const isSearchMatched = searchMatchNodeIds.has(node.id);
                 const isDimmed = hasFocusedBranch && !highlighted && !isSearchMatched;
                 const displayLabel = node.label.length > 28 ? node.label.substring(0, 28) + '...' : node.label;
-                const strategyCode = node.level === 'structure'
+                const savedStrategyCodes = getNodeSavedStrategyCodes(node);
+                const savedStrategyCode = savedStrategyCodes.length === 1 ? savedStrategyCodes[0] : '';
+                const savedStrategyCodeRows = savedStrategyCode ? getNodeSavedStrategyCodeMapRows(node) : [];
+                const strategyCode = savedStrategyCode || (node.level === 'structure'
                   ? getNodeStrategyCode(node)
-                  : getNodeOwnStrategyCode(node);
-                const strategyCodeRows = node.level === 'structure'
+                  : getNodeOwnStrategyCode(node));
+                const strategyCodeRows = savedStrategyCodeRows.length > 0
+                  ? savedStrategyCodeRows
+                  : node.level === 'structure'
                   ? getNodeStrategyCodeRows(node)
                   : getNodeOwnStrategyCodeRows(node);
                 const showStructureCodeOnly = node.level === 'structure' && !!strategyCode;

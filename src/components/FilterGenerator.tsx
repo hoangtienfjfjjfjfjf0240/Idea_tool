@@ -16,6 +16,7 @@ import {
   formatStrategyCodeForFilterGroups,
   formatStrategyValueGroup,
   getStrategyGroupCodeMapRows,
+  type StrategyCodeFilterKey,
 } from '@/lib/strategyCodes';
 
 interface FilterGeneratorProps {
@@ -577,6 +578,81 @@ function normalizeVisualTypeValue(value: string): string | null {
 function sanitizeVisualTypes(items: string[]) {
   const mapped = items.map(normalizeVisualTypeValue).filter((item): item is string => Boolean(item));
   return mapped.length ? [...new Set(mapped)] : [];
+}
+
+function mergeStrategySourceValues(...sources: unknown[]): string[] {
+  const seen = new Set<string>();
+  const values: string[] = [];
+
+  sources.forEach(source => {
+    const items = Array.isArray(source) ? source : [source];
+    items.forEach(item => {
+      const value = String(item || '').trim();
+      const normalized = normalizeCompareText(value);
+      if (!value || !normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      values.push(value);
+    });
+  });
+
+  return values;
+}
+
+function getStrategySourceGroup(filters: Partial<FilterState>, key: StrategyCodeFilterKey) {
+  const values = key === 'visualType'
+    ? sanitizeVisualTypes(filters.visualType || [])
+    : key === 'angle'
+      ? cleanAngleOptions(filters.angle || [])
+      : filters[key] || [];
+
+  return formatStrategyValueGroup(values);
+}
+
+function buildStableStrategyCodeSource(
+  optionValues: Record<string, string[]>,
+  currentFilters: FilterState,
+  angleValues: string[],
+  historyFilters: Partial<FilterState>[]
+) {
+  const historyGroupsFor = (key: StrategyCodeFilterKey) =>
+    historyFilters.map(filters => getStrategySourceGroup(filters, key)).filter(Boolean);
+
+  const currentGroupFor = (key: StrategyCodeFilterKey) => getStrategySourceGroup(currentFilters, key);
+
+  return {
+    coreUser: mergeStrategySourceValues(
+      optionValues.coreUser || [],
+      historyGroupsFor('coreUser'),
+      currentGroupFor('coreUser')
+    ),
+    solution: mergeStrategySourceValues(
+      optionValues.solution || [],
+      historyGroupsFor('solution'),
+      currentGroupFor('solution')
+    ),
+    emotion: mergeStrategySourceValues(
+      optionValues.emotion || [],
+      historyGroupsFor('emotion'),
+      currentGroupFor('emotion')
+    ),
+    visualType: mergeStrategySourceValues(
+      GLOBAL_VISUAL_TYPES,
+      sanitizeVisualTypes(optionValues.visualType || []),
+      historyGroupsFor('visualType'),
+      currentGroupFor('visualType')
+    ),
+    painPoint: mergeStrategySourceValues(
+      optionValues.painPoint || [],
+      historyGroupsFor('painPoint'),
+      currentGroupFor('painPoint')
+    ),
+    angle: mergeStrategySourceValues(
+      optionValues.angle || [],
+      historyGroupsFor('angle'),
+      angleValues,
+      currentGroupFor('angle')
+    ),
+  } satisfies Partial<Record<StrategyCodeFilterKey, string[]>>;
 }
 
 type CompactCreativeBrief = {
@@ -1618,16 +1694,20 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const strategyAngleValues = anglesToGenerate
         .filter((angle): angle is string => typeof angle === 'string' && angle.trim().length > 0)
         .map(angle => angle.trim());
-      const strategyCodeSource = {
-        coreUser: [formatStrategyValueGroup(sanitizedFilters.coreUser)].filter(Boolean),
-        solution: [formatStrategyValueGroup(sanitizedFilters.solution)].filter(Boolean),
-        emotion: [formatStrategyValueGroup(sanitizedFilters.emotion)].filter(Boolean),
-        visualType: [formatStrategyValueGroup(sanitizedFilters.visualType)].filter(Boolean),
-        painPoint: [formatStrategyValueGroup(sanitizedFilters.painPoint)].filter(Boolean),
-        angle: strategyAngleValues.length > 0
-          ? strategyAngleValues
-          : [formatStrategyValueGroup(sanitizedFilters.angle)].filter(Boolean),
-      };
+      const strategyHistoryFilters = savedHistory
+        .filter(idea => idea.filters_snapshot)
+        .slice()
+        .sort((a, b) => {
+          const timeDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return timeDiff || a.id.localeCompare(b.id);
+        })
+        .map(idea => idea.filters_snapshot as FilterState);
+      const strategyCodeSource = buildStableStrategyCodeSource(
+        options,
+        sanitizedFilters,
+        strategyAngleValues,
+        strategyHistoryFilters
+      );
       const strategyCodeLookup = buildStrategyCodeLookup(strategyCodeSource);
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(effectiveQuantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
