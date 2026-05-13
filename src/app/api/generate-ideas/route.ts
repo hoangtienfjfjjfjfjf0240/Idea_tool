@@ -18,6 +18,8 @@ import {
   TOOL_COMPATIBILITY_GUARDRAILS,
 } from '@/lib/creativePromptSystem';
 import { guardApiRequest } from '@/lib/apiGuards';
+import { createServerClient } from '@/lib/supabase';
+import { SYSTEM_RULE_CATEGORY, compactSystemRule } from '@/lib/systemRule';
 import { GLOBAL_EMOTION_PROMPT_GUIDE } from '@/lib/emotionOptions';
 import {
   buildFilterConsistencyPromptBlock,
@@ -90,14 +92,18 @@ const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS'
 const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 180000);
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
+const QUICK_IDEA_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_QUICK_BATCH_TIMEOUT_MS', 60000);
+const QUICK_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_QUICK_REQUEST_BUDGET_MS', 130000);
+const QUICK_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_QUICK_MAX_BATCH_SIZE', 2), MAX_IDEAS_PER_AI_BATCH);
+const QUICK_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_QUICK_BATCH_CONCURRENCY', 3);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 1);
+const GEMINI3_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 3), MAX_IDEAS_PER_AI_BATCH);
 const GEMINI3_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_GEMINI3_BATCH_CONCURRENCY', 2);
 const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 285000);
 const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
 const ENABLE_LOCAL_FALLBACK_TOPUP = booleanEnv('IDEA_ENABLE_LOCAL_FALLBACK_TOPUP', false);
-const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 1800;
+const GENERATE_IDEAS_CONTEXT_CHAR_LIMIT = 5000;
 const GENERATE_IDEAS_HISTORY_CHAR_LIMIT = 1600;
 const FRAMEWORK_VISUAL_FORMATS = ['2D Animation', '3D Animation', 'UGC', 'POV', 'Motion Graphic'] as const;
 const CREATIVE_RULESET_V7_MARKER = 'CREATIVE_RULESET_V7_TEST';
@@ -105,6 +111,9 @@ const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 const USE_DIRECT_GEMINI = booleanEnv('IDEA_USE_DIRECT_GEMINI', false);
 const DIRECT_GEMINI_API_KEY = USE_DIRECT_GEMINI ? (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '') : '';
 let directGeminiClient: GoogleGenAI | null = null;
+
+const FAST_CREATIVE_IDEA_SYSTEM_PROMPT = `You are a fast Creative Idea Engine for mobile app Meta ads.
+Return JSON only. Follow the saved system_rule and user brief, keep the current idea output schema, and avoid unsupported claims.`;
 
 const CREATIVE_ADS_GENERATION_RULES_V7 = `CREATIVE ADS GENERATION RULES (VERSION 7.0)
 ROLE:
@@ -187,6 +196,53 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+async function loadGenerationAppContext(appId: string): Promise<{
+  appName?: string;
+  appCategory?: string;
+  appKnowledge?: string;
+  systemRule?: string;
+}> {
+  if (!appId) return {};
+
+  try {
+    const supabase = createServerClient();
+    const [appResult, ruleResult] = await Promise.all([
+      supabase
+        .from('apps')
+        .select('name, category, app_knowledge')
+        .eq('id', appId)
+        .maybeSingle(),
+      supabase
+        .from('filter_options')
+        .select('value')
+        .eq('app_id', appId)
+        .eq('category', SYSTEM_RULE_CATEGORY)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (appResult.error) {
+      console.warn('[generate-ideas] App context load failed:', appResult.error.message);
+    }
+    if (ruleResult.error) {
+      console.warn('[generate-ideas] System rule load failed:', ruleResult.error.message);
+    }
+
+    const appRow = asRecord(appResult.data);
+    const ruleRow = asRecord(ruleResult.data);
+    return {
+      appName: asText(appRow.name),
+      appCategory: asText(appRow.category),
+      appKnowledge: asText(appRow.app_knowledge),
+      systemRule: asText(ruleRow.value),
+    };
+  } catch (error) {
+    console.warn('[generate-ideas] Could not load app generation context:', error instanceof Error ? error.message : error);
+    return {};
+  }
 }
 
 function sanitizeMedicalClaimText(text: string): string {
@@ -426,7 +482,7 @@ Hard V7 requirements:
 - Directness rule: if the feature/painpoint contains a concrete metric or feature (blood pressure, heart rate, storage, calories, etc.), that exact metric/feature must appear in hook_text_overlay or hook_vo within the first 0-3 seconds. Do not hide it behind vague lines like "a weird number", "this matters", or "something felt off".
 - Use the selected painpoint as the target of attack. Convert it into a concrete first-3-second situation, but do not soften it into a generic symptom.
 - Voice/character speech must be written in ${input.copyLanguage}. On-screen text, CTA, hook text lines, and visual descriptions stay Vietnamese while preserving native setting, props, and vibe for the selected market.
-- Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put on-camera speech only in hook_character_speech with time + speaker, and put off-camera narration only in hook_voiceover.
+- If a visible character speaks, keep the structured hook_character_speech field and also embed the same exact spoken line inside the matching visual_scene timing row as "và [nhân vật] nói \"...\"". Keep Text hiện in hook_text_overlay/text_overlays.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Obey Rule 4 pacing: 0-3s direct opening is one scene/camera angle; 3-6s pivot is one scene/camera angle; no split-screen or extra cut unless each beat gets at least 2.5s.
 - If a visible person speaks, asks, replies, reacts to camera, or is asked a question in the hook, hook_character_speech is required with time + speaker and hook_voiceover must be empty. If the idea relies on 2+ people communicating, keep the exchange simple and include only the necessary dialogue. If nobody visibly speaks, keep hook_character_speech empty.
@@ -444,7 +500,7 @@ function buildV7TaskDirectives(quantity: number, copyLanguage = 'the requested o
 - The selected metric/feature must be named early. For example, if the app/PSP is blood pressure, use direct copy like "Your iPhone can check blood pressure" or "Blood pressure on iPhone" in the first hook beat, while staying compliant.
 - If the hook situation has a visible person talking to camera, replying, asking, or being questioned, fill hook_character_speech with that exact on-camera line. Use hook_voiceover only for off-camera narration/video voice.
 - Script title/name, visual descriptions, and production notes must be Vietnamese. Hook lines/text overlay, text on screen, and CTA must be bilingual Vietnamese / ${copyLanguage} when ${copyLanguage} is not Vietnamese. Only character dialogue, voice-over, and script_vo use ${copyLanguage}.
-- For visual_scene rows, write only scene/action/camera prose in Vietnamese. Do not include quoted Voiceover / CHARACTER SPEECH / Text hien snippets inside the scene.
+- For visual_scene rows, write scene/action/camera prose in Vietnamese. If a visible character speaks, include the quoted spoken line in the same timing row as "và [nhân vật] nói \"...\""; keep Text hiện in hook_text_overlay/text_overlays.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Obey Rule 4 pacing: 5s outputs max 2 scenes/camera angles; 8-10s outputs max 3-4 scenes/camera angles; fewer scenes are allowed.
 - Think like the selected market: keep local behavior, home/work setting, social pressure, clothing, architecture, and cultural cues native to that market.
@@ -868,8 +924,6 @@ function normalizeAndValidateIdeas(
     ), context.hookDurationSeconds), context.metricLock);
     const errors = [
       ...validateIdeaOutput(normalized),
-      ...validateHealthMetricLockOutput(normalized, context.metricLock, context.appName),
-      ...validateHealthMetricDirectHookOutput(normalized, context.metricLock),
       ...validateInteriorDecorClarityOutput(normalized, context),
     ];
 
@@ -1650,6 +1704,17 @@ function ideaHookLine(idea: Record<string, unknown>): string {
   return asText(meta.hookPrimary) || asText(hook.textOverlay) || asText(hook.voiceover) || asText(hook.voice);
 }
 
+function ideaSceneFamilyKey(idea: Record<string, unknown>): string {
+  const meta = asRecord(idea.meta);
+  return normalizeCompareText(asText(meta.sceneFamily));
+}
+
+function hasSameSceneFamily(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const left = ideaSceneFamilyKey(a);
+  const right = ideaSceneFamilyKey(b);
+  return Boolean(left && right && left === right);
+}
+
 function hasSameHookFrame(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
   const left = ideaHookLine(a);
   const right = ideaHookLine(b);
@@ -1701,6 +1766,7 @@ function hasNearDuplicateIdeas(ideas: Record<string, unknown>[]): boolean {
     for (let j = i + 1; j < ideas.length; j++) {
       if (
         hasSameHookFrame(ideas[i], ideas[j])
+        || hasSameSceneFamily(ideas[i], ideas[j])
         || jaccardSimilarity(ideaSignature(ideas[i]), ideaSignature(ideas[j])) >= 0.76
       ) {
         return true;
@@ -1730,7 +1796,9 @@ function dedupeIdeas(candidates: Record<string, unknown>[], existing: Record<str
     const isOverusedPov = creativeKey === 'pov' && (creativeCounts.pov || 0) >= maxPovPerRequest;
     const isUnique = [...existing, ...unique].every(item => (
       jaccardSimilarity(signature, ideaSignature(item)) < 0.76
-    )) && ![...existing, ...unique].some(item => hasSameHookFrame(candidate, item));
+    )) && ![...existing, ...unique].some(item => (
+      hasSameHookFrame(candidate, item) || hasSameSceneFamily(candidate, item)
+    ));
 
     if (isUnique && !isOverusedPov) {
       unique.push(candidate);
@@ -2702,6 +2770,12 @@ function normalizeLeanCreativeOutput(
     const track = readLooseText(ideaRecord, ['track'], 'B').toUpperCase();
     const safeTrack = ['A', 'B', 'C'].includes(track) ? track : 'B';
     const lockedCreativeType = defaults.visualType?.trim() ? normalizeFrameworkVisualFormat(defaults.visualType) : '';
+    const visualRefNotes = readLooseText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']);
+    const talentProfile = readLooseText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified');
+    const marketInsight = readLooseText(ideaRecord, ['market_insight', 'marketInsight']);
+    const countryVisualInsight = readLooseText(ideaRecord, ['country_visual_insight', 'countryVisualInsight'], marketInsight || visualRefNotes);
+    const hookContextInsight = readLooseText(ideaRecord, ['hook_context_insight', 'hookContextInsight'], visualScene1);
+    const cameraPlan = readLooseText(ideaRecord, ['camera_plan', 'cameraPlan'], visualRefNotes);
 
     return normalizeIdeaOutput({
       id: `P0-A${defaults.angleIndex}-I${ideaIndex}`,
@@ -2726,8 +2800,15 @@ function normalizeLeanCreativeOutput(
         ctaFrictionReducer: readLooseText(ideaRecord, ['cta_friction_reducer', 'ctaFrictionReducer'], 'Free'),
         estimatedThumbStop: readLooseText(ideaRecord, ['estimated_thumb_stop', 'estimatedThumbStop'], 'Medium'),
         ideaReasoning: readLooseText(ideaRecord, ['idea_reasoning', 'ideaReasoning'], angleDesc),
-        visualRefNotes: readLooseText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']),
-        talentProfile: readLooseText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified'),
+        visualRefNotes,
+        talentProfile,
+        characterVisual: readLooseText(ideaRecord, ['character_visual', 'characterVisual'], talentProfile),
+        marketInsight,
+        countryVisualInsight,
+        hookContextInsight,
+        cameraPlan,
+        voiceDirection: readLooseText(ideaRecord, ['voice_direction', 'voiceDirection'], hookCharacterSpeech ? 'Voice follows the visible character in the hook.' : 'Use voiceover only when no visible character speaks.'),
+        sceneFamily: readLooseText(ideaRecord, ['scene_family', 'sceneFamily'], angleName),
         dontDo: readLooseText(ideaRecord, ['dont_do', 'dontDo'], 'Do not make the opening generic or studio-like.'),
         track: safeTrack,
         trackReason: readLooseText(ideaRecord, ['track_reason', 'trackReason']),
@@ -2778,6 +2859,238 @@ function normalizeLeanCreativeOutput(
   }).filter((item): item is Record<string, unknown> => Boolean(item));
 }
 
+function buildQuickSceneLaneBlock(input: {
+  batchStartIndex: number;
+  batchQuantity: number;
+  totalQuantity: number;
+  visualType: string;
+  market: string;
+}): string {
+  if (input.totalQuantity <= 1) return '';
+
+  const lanes = [
+    {
+      sceneFamily: 'morning routine',
+      context: 'bedside, kitchen counter, pill box, first phone check, family/home habit',
+      camera: 'medium wide setup -> close-up prop -> POV phone proof',
+      voice: 'single visible character, quiet first-person concern',
+    },
+    {
+      sceneFamily: 'home office stress',
+      context: 'desk, laptop call, calendar pressure, notification or spreadsheet as proof object',
+      camera: 'over-shoulder -> close-up screen/hand -> split UI',
+      voice: 'character speaks while reacting to the work moment',
+    },
+    {
+      sceneFamily: 'commute or parking lot',
+      context: 'car seat, bus stop, elevator, appointment reminder, bag or keys as blocker',
+      camera: 'wide establishing -> handheld medium -> phone POV',
+      voice: 'short breathy line from the person in the scene',
+    },
+    {
+      sceneFamily: 'pharmacy or store aisle',
+      context: 'shelf labels, receipt, product comparison, public errand behavior native to the market',
+      camera: 'tracking aisle shot -> close-up label -> top-down phone check',
+      voice: 'character whisper or direct thought tied to the visible prop',
+    },
+    {
+      sceneFamily: 'family check-in',
+      context: 'dining table, sofa edge, spouse/parent/child concern, shared phone screen as social proof',
+      camera: 'two-shot wide -> reaction close-up -> over-shoulder phone',
+      voice: 'visible character answers the family member; no fake Speaker 1/2 unless both appear',
+    },
+    {
+      sceneFamily: 'before appointment prep',
+      context: 'clinic waiting room, form, notes app, calendar, app log as reference before speaking to a professional',
+      camera: 'POV form -> close-up hand/phone -> medium waiting room',
+      voice: 'calm first-person line, no diagnosis or treatment promise',
+    },
+    {
+      sceneFamily: 'grocery or daily errand',
+      context: 'basket, nutrition label, queue, small practical decision, market-native packaging/colors',
+      camera: 'wide aisle -> macro prop -> fast match cut to app UI',
+      voice: 'character voice follows the hand action and object choice',
+    },
+    {
+      sceneFamily: 'gym locker or post-walk pause',
+      context: 'locker, towel, water bottle, smartwatch/phone comparison, recovery moment without medical claims',
+      camera: 'low angle locker -> close-up wrist/phone -> POV app action',
+      voice: 'visible character says a short self-check line',
+    },
+    {
+      sceneFamily: 'travel day',
+      context: 'airport/ride-share/hotel room, carry-on, reminder, unfamiliar routine disrupting the normal habit',
+      camera: 'wide location cue -> close-up carry-on/phone -> split-screen reminder',
+      voice: 'first-person voice tied to travel friction',
+    },
+    {
+      sceneFamily: 'comment reply or social proof',
+      context: 'viewer comment, saved screenshot, friend message, skeptical question answered with app proof',
+      camera: 'screen-record style -> comment close-up -> creator reaction/phone POV',
+      voice: 'character answers the visible comment directly',
+    },
+  ];
+
+  const assigned = Array.from({ length: input.batchQuantity }, (_, offset) => {
+    const globalSlot = input.batchStartIndex + offset;
+    const lane = lanes[globalSlot % lanes.length];
+    return `${globalSlot + 1}/${input.totalQuantity}: scene_family="${lane.sceneFamily}" | context=${lane.context} | camera=${lane.camera} | voice=${lane.voice}`;
+  }).join('\n');
+
+  return `SLOT DIVERSITY PLAN
+Visual type remains locked as "${input.visualType}" for every slot.
+Market/context must feel native to: ${input.market || 'selected market'}.
+For each idea, use the assigned scene_family exactly and build a different first frame, prop, camera action, and voice opening:
+${assigned}`;
+}
+
+function buildFastQuickGeneratePrompt(input: {
+  appId?: string;
+  quantity: number;
+  batchStartIndex: number;
+  totalQuantity: number;
+  appName: string;
+  appCategory: string;
+  coreUserValues: string[];
+  painPointValues: string[];
+  emotionValues: string[];
+  featureContext: string;
+  visualType: string;
+  targetMarketValues: string[];
+  outputLanguage: string;
+  angleContext: string;
+  rawBrief?: string;
+  systemRule?: string;
+  previousIdeas?: string;
+  trendingTopics: string[];
+  trendingStructures: string[];
+  seasonalVisualBlock?: string;
+  filterConsistencyBlock?: string;
+}) {
+  const primaryPillar = input.painPointValues[0] || 'General user friction';
+  const coreUser = input.coreUserValues.join('; ') || 'General mobile app user';
+  const emotionJourney = input.emotionValues.join(' -> ') || 'Curiosity';
+  const market = input.targetMarketValues.join(', ') || 'Global';
+  const rawBrief = clampPromptContext(input.rawBrief, 1200) || 'N/A';
+  const savedRule = compactSystemRule(input.systemRule, 1600);
+  const trends = input.trendingTopics.length ? input.trendingTopics.join('; ') : 'None';
+  const importedStructures = input.trendingStructures.length ? input.trendingStructures.slice(0, 2).join('\n') : 'None';
+  const avoidIdeas = clampPromptContext(input.previousIdeas, 1200) || 'None yet';
+  const slotDiversityPlan = buildQuickSceneLaneBlock({
+    batchStartIndex: input.batchStartIndex,
+    batchQuantity: input.quantity,
+    totalQuantity: input.totalQuantity,
+    visualType: input.visualType,
+    market,
+  });
+
+  return `FAST GENERATE MODE
+Use the saved system_rule as the fixed framework. Do not ask follow-up questions.
+
+SAVED system_rule:
+${savedRule}
+
+INPUT FOR THIS RUN
+- app_id: ${input.appId || 'N/A'}
+- app: ${input.appName}
+- category: ${input.appCategory}
+- core_user: ${coreUser}
+- painpoint: ${primaryPillar}
+- PSP / feature: ${input.featureContext}
+- emotion: ${emotionJourney}
+- visual_type: ${input.visualType} (locked creativeType)
+- trend / angle: ${input.angleContext || 'choose the strongest angle from brief'}
+- market: ${market}
+- voice_language: ${input.outputLanguage}
+- quantity: ${input.quantity}
+- quick_brief: ${rawBrief}
+- trending hooks: ${trends}
+- imported trend structure: ${importedStructures}
+- avoid previous ideas / scene families: ${avoidIdeas}
+${input.seasonalVisualBlock || ''}
+${input.filterConsistencyBlock || ''}
+${slotDiversityPlan}
+
+CORE RULES
+- Generate exactly ${input.quantity} ideas.
+- Selected inputs are locked. If quick_brief conflicts with selected chips, keep selected chips unless quick_brief is more specific inside the same meaning.
+- Make every idea visually different: different scene_family, first frame, daily context, object/blocker, camera action, proof object, and payoff.
+- If generating more than 1 idea, at most ONE idea in the full request may use dizziness/falling/collapse/holding head as the hook. Do not make near-identical "person gets dizzy and falls" ideas.
+- Choose unique scene_family labels from varied market-native moments, for example: morning routine, home office, commute/parking lot, pharmacy aisle, gym locker, telehealth note, family check-in, grocery trip, travel day, smartwatch comparison, desk stress, before-doctor-visit prep.
+- Hook context must come from country/core-user insight for ${market}. Use locally plausible home/work/public spaces, clothing, props, phone behavior, family/work norms, and app proof. Avoid stereotypes and avoid generic empty rooms.
+- Character visual is required when a person appears: age range, gender presentation when relevant, skin tone/ethnicity/country cue, outfit, body language, and prop. Keep it production-oriented, not discriminatory.
+- Camera plan is required: name shot size/angle such as wide, medium, close-up, extreme close-up, POV, over-shoulder, top-down, tracking, split-screen.
+- Voice direction is required: voice follows the visible character. If one visible character speaks, use hook_character_speech with that character label and place the same exact spoken line inside the matching visual_scene_1 timing row, e.g. 0-2.5s: Position anchor... Contact anchor... Physical action anchor... và Nhân vật nói "Ignoring that morning neck tension? It could be a silent warning". Do not output Speaker 1/Speaker 2 unless two visible characters are actually described.
+- Hook must be concrete, pain-led, and filmable in the first beat. Body must show the PSP/app action solving or organizing the same pain. CTA must be short.
+- For health/wellness: never diagnose, cure, treat, detect disease, promise prevention, or replace doctor. Use track/check/monitor/reference/wellness.
+- title, visual_scene_1/2/3, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, visual_ref_notes, talent_profile, dont_do are Vietnamese.
+- hook_vo, hook_character_speech, script_vo are in ${input.outputLanguage}. hook_voice_vi is Vietnamese translation with full diacritics.
+- hook_text_overlay, text_overlays.text, cta_text are bilingual Vietnamese / ${input.outputLanguage} when ${input.outputLanguage} is not Vietnamese.
+- visual_scene_1 must include timing rows and obey pacing: 5s max 2 camera rows; 8-10s max 3-4 rows; each row about 2.5s+. Spoken voice must be embedded in the exact row where the character speaks, not only listed below the scene.
+- Every visual_scene_1/2/3 must literally include Position anchor, Contact anchor, and Physical action anchor clauses.
+
+OUTPUT JSON ONLY. Return this current schema:
+[
+  {
+    "pillar_index": 0,
+    "pillar": "${primaryPillar.replace(/"/g, '\\"')}",
+    "angles": [
+      {
+        "angle_index": 0,
+        "angle_name": "short angle name",
+        "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief|Tutorial|Demo|Challenge|Trend",
+        "angle_desc": "one sentence",
+        "ideas": [
+          {
+            "id": "P0-A0-I0",
+            "creativeType": "${input.visualType}",
+            "title": "ten kich ban tieng Viet ngan",
+            "hook_text_overlay": "Vietnamese / ${input.outputLanguage}, max 8 words per language",
+            "hook_vo": "max 12 words, different from overlay",
+            "hook_character_speech": "same visible-character line that is embedded inside visual_scene_1, with time + speaker label; empty only if nobody visible speaks",
+            "hook_voice_vi": "Vietnamese translation of hook voice/speech",
+            "hook_archetype": "taxonomy label",
+            "hook_alt_1_text": "short alt hook",
+            "hook_alt_1_vo": "short alt VO",
+            "hook_alt_1_archetype": "different taxonomy label",
+            "hook_alt_2_text": "short alt hook",
+            "hook_alt_2_vo": "short alt VO",
+            "hook_alt_2_archetype": "different taxonomy label",
+            "emotion_journey": "Hook -> Body -> CTA",
+            "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
+            "scene_family": "assigned unique scene family label, not reused in the full request",
+            "character_visual": "Vietnamese: age, skin tone/ethnicity/country cue, outfit, body language, prop",
+            "country_visual_insight": "Vietnamese: why this visual fits ${market} and the selected core user",
+            "hook_context_insight": "Vietnamese: country/core-user insight behind the hook context",
+            "camera_plan": "Vietnamese: shot sizes and camera angles for hook/body/CTA",
+            "voice_direction": "Vietnamese: who speaks, voice tone, and how voice follows the visible character/timing row",
+            "visual_scene_1": "0-2.5s: Vietnamese hook visual. Include Position anchor, Contact anchor, Physical action anchor, and if the character speaks add: và [nhân vật] nói \"exact hook_character_speech line\". 2.5-5s: Vietnamese continuation if needed.",
+            "visual_scene_2": "Vietnamese body paragraph showing app/PSP action. Include Position anchor, Contact anchor, Physical action anchor.",
+            "visual_scene_3": "Vietnamese CTA/payoff visual. Include Position anchor, Contact anchor, Physical action anchor.",
+            "text_overlays": [
+              {"time":"0-2.5s","text":"hook text"},
+              {"time":"6-9s","text":"body text"},
+              {"time":"18-22s","text":"CTA text"}
+            ],
+            "script_vo": "full VO, max 60 words",
+            "cta_text": "Vietnamese / ${input.outputLanguage}, max 6 words per language",
+            "cta_friction_reducer": "Free|No signup|30 seconds|1 tap",
+            "visual_ref_notes": "camera, lighting, talent direction, pacing",
+            "talent_profile": "specific profile or No talent - screen recording only",
+            "dont_do": "specific QC warning, at least 5 words",
+            "track": "A|B|C",
+            "track_reason": "one sentence",
+            "priority": "A|B|C",
+            "estimated_thumb_stop": "Low|Medium|High",
+            "idea_reasoning": "one sentence"
+          }
+        ]
+      }
+    ]
+  }
+]`;
+}
+
 function buildLeanGeneratePrompt(input: {
   quantity: number;
   appName: string;
@@ -2792,6 +3105,8 @@ function buildLeanGeneratePrompt(input: {
   outputLanguage: string;
   angleContext: string;
   ideaDescription?: string;
+  generationMode?: string;
+  rawBrief?: string;
   previousIdeas?: string;
   appKnowledge?: string;
   trendingTopics: string[];
@@ -2810,7 +3125,9 @@ function buildLeanGeneratePrompt(input: {
   const trends = input.trendingTopics.length ? input.trendingTopics.join('; ') : 'None';
   const importedStructures = input.trendingStructures.length ? input.trendingStructures.slice(0, 4).join('\n') : 'None';
   const recentIdeas = clampPromptContext(input.previousIdeas, 1200) || 'None';
-  const appKnowledge = clampPromptContext(input.appKnowledge, 1200) || 'None';
+  const appKnowledge = clampPromptContext(input.appKnowledge, 4000) || 'None';
+  const rawBrief = clampPromptContext(input.rawBrief, 1400) || '';
+  const isQuickBriefMode = input.generationMode === 'quick';
   const hookDurationPlan = resolveHookDurationPlan({
     ideaDescription: input.ideaDescription,
     painPointValues: input.painPointValues,
@@ -2837,6 +3154,17 @@ function buildLeanGeneratePrompt(input: {
     marketValues: input.targetMarketValues,
     outputLanguage: input.outputLanguage,
   });
+  const quickBriefModeBlock = isQuickBriefMode
+    ? `## QUICK BRIEF MODE - SOURCE OF TRUTH
+The operator is using a Gemini-style one-shot brief flow.
+- rawBrief is the source of truth for this generation.
+- Parsed chips below are helper metadata only. If parsed chips conflict with rawBrief, follow rawBrief.
+- Do not ask for missing chips. Infer reasonable values from rawBrief and the saved rule/app brain.
+- Quantity requested in rawBrief is the total number of ideas for this API call.
+
+rawBrief:
+${rawBrief || input.ideaDescription || 'N/A'}`
+    : '';
 
   return `You already have the Creative Idea Engine rules. Use them as default; do not restate them.
 
@@ -2856,6 +3184,7 @@ Angle planning rule:
 - Health/wellness must include/prefer Fact. Utility must include/prefer Comparison or Demo. AI apps must include/prefer Trend.
 - Test: if removing the angle name makes the videos look similar, rewrite the angle.
 - Scene test: if the angle says TV/editor/news/fact, the setting must feel like studio/newsroom/desk/panel/lower-third/chart/infographic. Do not fall back to kitchen/living room/sofa unless the painpoint explicitly requires it.
+${quickBriefModeBlock}
 ${operatorIdeaBriefBlock}
 ${selectedStrategyLockBlock}
 Operator note priority:
@@ -2866,11 +3195,11 @@ Language matrix rule:
 - title/script name, visual_scene_1/2/3, and production notes MUST be written in Vietnamese.
 - hook_text_overlay, text_overlays.text, and cta_text are actual on-video text and MUST include both Vietnamese and ${input.outputLanguage} when ${input.outputLanguage} is not Vietnamese. Use format "Vietnamese / ${input.outputLanguage}" in the same string.
 - hook_vo, hook_character_speech, and script_vo MUST be written in ${input.outputLanguage}; these are the only audience speech/voice fields that follow the selected market language.
-- hook_vo and hook_character_speech must be direct, pain-led, and emotion-led. In the first hook beat they must name the visible blocker/consequence from the selected pain point and make the selected emotion (${emotionJourney}) obvious; do not use generic soft lines.
+- hook_vo and hook_character_speech must be direct, pain-led, and emotion-led. In the first hook beat they must name the visible blocker/consequence from the selected pain point and make the selected emotion (${emotionJourney}) obvious; do not use generic soft lines. If hook_character_speech is used, also embed the same line inside the matching visual_scene_1 timing row with the speaker action, e.g. "và Nhân vật nói \"...\"".
 - hook_voice_vi MUST be Vietnamese with full diacritics only. It is the Vietnamese translation of hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay. Do not explain the pain point there, do not copy the original ${input.outputLanguage} line into hook_voice_vi, and do not output unaccented Vietnamese.
 - The selected market/core user decides this voice/speech language. Example: US -> English, LATAM/Mexico/Spain -> Spanish, Brazil/Portugal -> Portuguese, Germany -> German.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and production notes MUST be Vietnamese for the internal team.
-- Inside visual_scene_1, keep the production prose Vietnamese. Quoted Voiceover / CHARACTER SPEECH lines use ${input.outputLanguage}; quoted Text hiện must be bilingual Vietnamese / ${input.outputLanguage} when ${input.outputLanguage} is not Vietnamese.
+- Inside visual_scene_1, keep the production prose Vietnamese. Quoted spoken lines embedded in the timing row use ${input.outputLanguage}; quoted Text hiện must be bilingual Vietnamese / ${input.outputLanguage} when ${input.outputLanguage} is not Vietnamese.
 - Do NOT write the whole visual_scene in ${input.outputLanguage}. Only audience speech/voice snippets use ${input.outputLanguage}.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
@@ -3192,12 +3521,15 @@ Chỉ trả về JSON array string. Không markdown.`;
     }
 
     if (mode !== 'refine' && mode !== 'generate-angles') {
-      const appName = asText(body.appName) || 'App';
-      const appCategory = asText(body.appCategory) || 'General';
+      const appId = asText(body.appId);
+      const appContext = appId ? await loadGenerationAppContext(appId) : {};
+      const appName = appContext.appName || asText(body.appName) || 'App';
+      const appCategory = appContext.appCategory || asText(body.appCategory) || 'General';
       const filters = asRecord(body.filters);
       const config = asRecord(body.config);
       const previousIdeas = asText(body.previousIdeas);
-      const appKnowledge = asText(body.appKnowledge);
+      const appKnowledge = appContext.appKnowledge || asText(body.appKnowledge);
+      const savedSystemRule = appContext.systemRule || asText(body.systemRule);
       const useCreativeRulesV7 = false;
       const usePromptSystemBuilderHtml = false;
       const creativeRuleset: 'default' | 'v7' | 'builder' = 'default';
@@ -3222,7 +3554,10 @@ Chỉ trả về JSON array string. Không markdown.`;
         || 'UGC'
       );
       const targetLang = detectMarketLang(marketContextValues, coreUserMarketValues);
-      const ideaDescription = asText(config.ideaDescription) || undefined;
+      const generationMode = asText(config.generationMode) || 'builder';
+      const isQuickGenerationMode = generationMode === 'quick';
+      const rawBrief = asText(config.rawBrief);
+      const ideaDescription = rawBrief || asText(config.ideaDescription) || undefined;
       const hookDurationPlan = resolveHookDurationPlan({
         ideaDescription,
         painPointValues,
@@ -3248,17 +3583,20 @@ Chỉ trả về JSON array string. Không markdown.`;
       const angleIndex = Number(config.angleIndex || 1);
       const requestStartIndex = Math.max(0, Number(config.startIndex || 0) || 0);
       const totalVariations = Math.max(requestedQuantity, Number(config.totalVariations || requestedQuantity) || requestedQuantity);
-      const modelCandidates = resolveIdeaModels(selectedModel).slice(0, MAX_IDEA_MODEL_CANDIDATES);
+      const effectiveSelectedModel = isQuickGenerationMode ? 'gemini-3-pro' : selectedModel;
+      const modelCandidates = resolveIdeaModels(effectiveSelectedModel).slice(0, isQuickGenerationMode ? 1 : MAX_IDEA_MODEL_CANDIDATES);
       const primaryModel = modelCandidates[0] || resolveModel(selectedModel);
       const isGemini3Ideas = primaryModel.includes('gemini-3-pro');
       const batchPlans = buildIdeaBatchPlans(
         requestedQuantity,
-        isGemini3Ideas ? GEMINI3_IDEA_MAX_BATCH_SIZE : MAX_IDEAS_PER_AI_BATCH
+        isQuickGenerationMode ? QUICK_IDEA_MAX_BATCH_SIZE : isGemini3Ideas ? GEMINI3_IDEA_MAX_BATCH_SIZE : MAX_IDEAS_PER_AI_BATCH
       );
       const aiBudgetStartedAt = Date.now();
-      const requestAiBudgetMs = isGemini3Ideas
-        ? Math.max(GENERATE_IDEAS_REQUEST_AI_BUDGET_MS, GEMINI3_IDEA_REQUEST_BUDGET_MS)
-        : GENERATE_IDEAS_REQUEST_AI_BUDGET_MS;
+      const requestAiBudgetMs = isQuickGenerationMode
+        ? QUICK_IDEA_REQUEST_BUDGET_MS
+        : isGemini3Ideas
+          ? Math.max(GENERATE_IDEAS_REQUEST_AI_BUDGET_MS, GEMINI3_IDEA_REQUEST_BUDGET_MS)
+          : GENERATE_IDEAS_REQUEST_AI_BUDGET_MS;
       const getRemainingAiBudgetMs = () => requestAiBudgetMs - (Date.now() - aiBudgetStartedAt);
       const hasAiBudget = () => getRemainingAiBudgetMs() >= GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS;
       const getBudgetedTimeoutMs = (timeoutMs: number) => Math.max(
@@ -3274,7 +3612,10 @@ Chỉ trả về JSON array string. Không markdown.`;
         painPointValues,
       });
 
-      const truncatedKnowledge = clampPromptContext(appKnowledge, GENERATE_IDEAS_CONTEXT_CHAR_LIMIT);
+      const activeSystemRule = compactSystemRule(savedSystemRule, isQuickGenerationMode ? 2200 : 3200);
+      const truncatedKnowledge = isQuickGenerationMode
+        ? ''
+        : clampPromptContext(appKnowledge, GENERATE_IDEAS_CONTEXT_CHAR_LIMIT);
       const truncatedPreviousIdeas = clampPromptContext(previousIdeas, GENERATE_IDEAS_HISTORY_CHAR_LIMIT);
       const structuredTrendNotes = trendingStructures.slice(0, 4);
       const seasonalVisualBlock = buildSeasonalVisualBlock(config.seasonalVisualContext);
@@ -3455,7 +3796,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${plan.batchQuantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text must be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, only quoted Voiceover / CHARACTER SPEECH uses ${outputLanguage}; quoted Text hien is bilingual. Target market affects local setting, vibe, speech language, and second overlay language.
+- title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text must be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, embed quoted spoken lines in the exact timing row where the character speaks; quoted Text hien is bilingual. Target market affects local setting, vibe, speech language, and second overlay language.
 - hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates the ${outputLanguage} side of hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
@@ -3483,27 +3824,53 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         void rulesBlock;
         void taskDirectives;
 
-        const prompt = buildLeanGeneratePrompt({
-          quantity: plan.batchQuantity,
-          appName,
-          appCategory,
-          coreUserValues,
-          painPointValues: painPointValues.length ? painPointValues : [primaryPillar],
-          emotionValues,
-          featureContext,
-          visualType,
-          targetMarketValues: marketContextValues,
-          targetLang,
-          outputLanguage,
-          angleContext,
-          ideaDescription,
-          previousIdeas: [truncatedPreviousIdeas, inRequestHistory].filter(Boolean).join('\n\n'),
-          appKnowledge: truncatedKnowledge,
-          trendingTopics,
-          trendingStructures: structuredTrendNotes,
-          seasonalVisualBlock,
-          filterConsistencyBlock,
-        });
+        const prompt = isQuickGenerationMode
+            ? buildFastQuickGeneratePrompt({
+                appId,
+                quantity: plan.batchQuantity,
+                batchStartIndex: plan.batchStartIndex,
+                totalQuantity: requestedQuantity,
+                appName,
+                appCategory,
+              coreUserValues,
+              painPointValues: painPointValues.length ? painPointValues : [primaryPillar],
+              emotionValues,
+              featureContext,
+              visualType,
+              targetMarketValues: marketContextValues,
+              outputLanguage,
+                angleContext,
+                rawBrief,
+                systemRule: activeSystemRule,
+                previousIdeas: [truncatedPreviousIdeas, inRequestHistory].filter(Boolean).join('\n\n'),
+                trendingTopics,
+              trendingStructures: structuredTrendNotes,
+              seasonalVisualBlock,
+              filterConsistencyBlock,
+            })
+          : buildLeanGeneratePrompt({
+              quantity: plan.batchQuantity,
+              appName,
+              appCategory,
+              coreUserValues,
+              painPointValues: painPointValues.length ? painPointValues : [primaryPillar],
+              emotionValues,
+              featureContext,
+              visualType,
+              targetMarketValues: marketContextValues,
+              targetLang,
+              outputLanguage,
+              angleContext,
+              ideaDescription,
+              generationMode,
+              rawBrief,
+              previousIdeas: [truncatedPreviousIdeas, inRequestHistory].filter(Boolean).join('\n\n'),
+              appKnowledge: truncatedKnowledge,
+              trendingTopics,
+              trendingStructures: structuredTrendNotes,
+              seasonalVisualBlock,
+              filterConsistencyBlock,
+            });
 
         console.log(
           '[generate-ideas] Batch prompt:',
@@ -3519,6 +3886,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
         let parsed: unknown = null;
         let modelUsed = modelCandidates[0];
         let modelUsedIndex = 0;
+        const systemPrompt = isQuickGenerationMode ? FAST_CREATIVE_IDEA_SYSTEM_PROMPT : CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT;
 
         for (const [candidateIndex, model] of modelCandidates.entries()) {
           if (!hasAiBudget()) break;
@@ -3526,11 +3894,11 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             ? getIdeaBatchTimeoutMs(model, plan.batchQuantity)
             : GENERATE_IDEAS_RETRY_TIMEOUT_MS;
           const generationTemperature = plan.batchQuantity > 1 ? 0.82 : 0.75;
-          const budgetedTimeoutMs = getBudgetedTimeoutMs(candidateTimeoutMs);
+          const budgetedTimeoutMs = getBudgetedTimeoutMs(isQuickGenerationMode ? QUICK_IDEA_BATCH_TIMEOUT_MS : candidateTimeoutMs);
           const directGeminiAvailable = Boolean(DIRECT_GEMINI_API_KEY) && model.startsWith('gemini/');
           let candidateText = directGeminiAvailable
             ? await callDirectGemini(model, prompt, {
-                systemInstruction: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+                systemInstruction: systemPrompt,
                 temperature: generationTemperature,
                 maxOutputTokens: responseTokenBudget,
                 timeoutMs: budgetedTimeoutMs,
@@ -3539,7 +3907,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
           if (!candidateText) {
             candidateText = await callAI([
-              { role: 'system', content: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT },
+              { role: 'system', content: systemPrompt },
               { role: 'user', content: prompt },
             ], {
               model,
@@ -3547,7 +3915,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
               max_tokens: responseTokenBudget,
               useCreativePersona: false,
               priority: 'high',
-              timeoutMs: getBudgetedTimeoutMs(candidateTimeoutMs),
+              timeoutMs: budgetedTimeoutMs,
               queueTimeoutMs: model.includes('gemini-3-pro') ? 60000 : undefined,
             });
           }
@@ -3635,7 +4003,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
             if (metricErrors.length > 0) {
               validation.invalidReasons.push(`Soft metric warning P0-A${Math.max(angleIndex - 1, 0)}-I${requestStartIndex + plan.batchStartIndex + lenientIndex}: ${metricErrors.join('; ')}`);
             }
-            const errors = [...validateIdeaOutput(item), ...metricErrors];
+            const errors = validateIdeaOutput(item);
             if (errors.length > 0) {
               lenientRejectedReasons.push(`Lenient P0-A${Math.max(angleIndex - 1, 0)}-I${requestStartIndex + plan.batchStartIndex + lenientIndex}: ${errors.join('; ')}`);
             }
@@ -3654,7 +4022,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           }
           valid = merged;
         }
-        const duplicateDetected = plan.batchQuantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid);
+        const duplicateDetected = !isQuickGenerationMode && plan.batchQuantity > 1 && valid.length > 1 && hasNearDuplicateIdeas(valid);
         const needsValidationRetry = false;
 
         if ((needsValidationRetry || duplicateDetected) && hasAiBudget()) {
@@ -3837,7 +4205,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL;
+      const shouldUseAiRefill = isQuickGenerationMode || (ENABLE_AI_RECOVERY_REFILL && false);
       const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP && !isGemini3Ideas;
 
       const runBatchPlanWithRecovery = async (
@@ -3931,7 +4299,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       };
 
       const batchConcurrency = isGemini3Ideas
-        ? Math.max(1, Math.min(GEMINI3_IDEA_BATCH_CONCURRENCY, 3, batchPlans.length))
+        ? Math.max(1, Math.min(isQuickGenerationMode ? QUICK_IDEA_BATCH_CONCURRENCY : GEMINI3_IDEA_BATCH_CONCURRENCY, 3, batchPlans.length))
         : 1;
       if (batchConcurrency > 1) {
         console.log('[generate-ideas] Gemini batch concurrency:', batchConcurrency, 'plans:', batchPlans.length);
@@ -4259,7 +4627,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Return exactly 1 top-level pillar object, exactly 1 angle object, and exactly ${quantity} ideas.
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
-- title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text must be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, only quoted Voiceover / CHARACTER SPEECH uses ${outputLanguage}; quoted Text hien is bilingual. Target market affects local setting, vibe, speech language, and second overlay language.
+- title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text must be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, embed quoted spoken lines in the exact timing row where the character speaks; quoted Text hien is bilingual. Target market affects local setting, vibe, speech language, and second overlay language.
 - hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates the ${outputLanguage} side of hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`

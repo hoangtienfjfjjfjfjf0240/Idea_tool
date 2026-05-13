@@ -8,11 +8,12 @@ import { CATEGORY_SEEDS, GLOBAL_EMOTION_OPTIONS, GLOBAL_VISUAL_TYPES } from '@/l
 import { buildIdeaFavoriteFingerprint, buildIdeaFavoriteKeys, hasFavoriteIdeaKey, loadFavoriteKeys, mergeFavoriteKeys, notifyFavoriteKeysChanged, saveFavoriteKeys } from '@/lib/favorites';
 import { authenticatedFetch } from '@/lib/authFetch';
 import { cleanupInvalidStrategyIdeas } from '@/lib/ideaCleanupClient';
-import { isInvalidStrategyIdea } from '@/lib/ideaStructure';
+import { isHookLibraryIdeaLike, isInvalidStrategyIdea } from '@/lib/ideaStructure';
 import { formatHealthMetricConflictMessage, getHealthMetricConflict } from '@/lib/filterConsistency';
 import { isPinnedHealthWebFunnelApp } from '@/lib/appDisplay';
 import {
   buildStrategyCodeLookup,
+  cleanStrategyValues,
   formatStrategyCodeForFilterGroups,
   formatStrategyValueGroup,
   getStrategyGroupCodeMapRows,
@@ -349,7 +350,54 @@ function isVisibleStrategyIdea(idea: GeneratedIdea) {
   return !isLocalFallbackIdea(idea) && !isInvalidStrategyIdea(idea);
 }
 
+function isVisibleStrategyMapIdea(idea: GeneratedIdea) {
+  return isVisibleStrategyIdea(idea) && !isHookLibraryIdeaLike(idea);
+}
+
 const IDEA_RUNTIME_GUIDANCE = 'Short social-first runtime';
+
+const STRATEGY_CODE_OPTION_KEYS: Record<StrategyCodeFilterKey, keyof FilterState> = {
+  coreUser: 'coreUser',
+  solution: 'solution',
+  emotion: 'emotion',
+  visualType: 'visualType',
+  painPoint: 'painPoint',
+  angle: 'angle',
+};
+
+const STRATEGY_CODE_FALLBACK_SOURCE: Record<StrategyCodeFilterKey, string[]> = {
+  coreUser: ['User 35+ US', 'Caregiver 45+', 'Busy parent'],
+  solution: ['Blood Pressure Tracker', 'Track BP by camera', 'Family alerts'],
+  emotion: GLOBAL_EMOTION_OPTIONS,
+  visualType: ['UGC at home', 'Doctor demo', 'Morning routine'],
+  painPoint: [
+    'Co tien su BP cao nhung khong co may o nha',
+    'Khong biet so do khi chong mat',
+    'Quen do buoi sang',
+  ],
+  angle: ['Tu thuoc trong', 'Vo hoi may do dau?', 'Chi can mo app'],
+};
+
+type StrategyCodeWorkflowLevel = 'root' | 'coreUser' | 'psp' | 'emotion' | 'visual' | 'painPoint' | 'angle';
+
+type StrategyCodeTreeNode = {
+  id: string;
+  label: string;
+  level: StrategyCodeWorkflowLevel;
+  children: StrategyCodeTreeNode[];
+  ideas: GeneratedIdea[];
+};
+
+const STRATEGY_CODE_LEVEL_ORDER: StrategyCodeWorkflowLevel[] = ['root', 'coreUser', 'psp', 'emotion', 'visual', 'painPoint', 'angle'];
+
+const STRATEGY_CODE_LEVEL_TO_PREFIX: Partial<Record<StrategyCodeWorkflowLevel, string>> = {
+  coreUser: 'A',
+  psp: 'B',
+  emotion: 'C',
+  visual: 'D',
+  painPoint: 'E',
+  angle: 'F',
+};
 
 type IdeaApiSection = {
   durationSeconds?: number;
@@ -410,6 +458,323 @@ type SaveIdeasApiResponse = {
 };
 
 type IdeaSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+function cleanStrategyAngleDisplayText(value: unknown) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripStrategyAngleInstructionText(value: unknown) {
+  let text = cleanStrategyAngleDisplayText(value)
+    .replace(/^\s*F\d+\s*=\s*Angle:\s*/i, '')
+    .replace(/^ANGLE\s+TYPE\s+([^:]+):\s*/i, '$1: ')
+    .replace(/^GÃ³c\s+(\d+\/\d+)\s*-\s*angle_type\s+báº¯t buá»™c:\s*([^.]+)\.\s*/i, '$2: ')
+    .replace(/^GÃ³c\s+([^:]+):\s*/i, '$1: ');
+
+  text = text
+    .replace(/\s*Pháº£i khÃ¡c rÃµ cÃ¡c gÃ³c cÃ²n láº¡i.*$/i, '')
+    .replace(/\s*This angle must look visually different.*$/i, '')
+    .replace(/\s*YÃªu cáº§u thÃªm:.*$/i, '')
+    .replace(/\s*App:\s*.*$/i, '')
+    .replace(/\s*Chá»n má»™t gÃ³c [^.]+\.?\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text;
+}
+
+function getStrategyAngleTypeFromText(...values: unknown[]) {
+  const allowed = ['Comparison', 'Demo', 'Tutorial', 'Fact', 'POV', 'Social', 'Curiosity', 'Relief', 'Challenge', 'Trend', 'Fear'];
+  const haystack = values.map(value => cleanStrategyAngleDisplayText(value)).join(' ');
+  const normalizedHaystack = normalizeCompareText(haystack);
+  return allowed.find(type => normalizedHaystack.includes(normalizeCompareText(type))) || '';
+}
+
+function isInstructionalStrategyAngleLabel(value: unknown) {
+  const normalized = normalizeCompareText(value);
+  return /\bangle type bat buoc\b/.test(normalized)
+    || /\bthis angle must look visually different\b/.test(normalized)
+    || /\bphai khac ro\b/.test(normalized)
+    || /\bye?u cau them\b/.test(normalized)
+    || /\bchon mot goc\b/.test(normalized)
+    || /\bapp phone cleaner\b/.test(normalized);
+}
+
+function isGenericStrategyAngleLabel(value: unknown) {
+  const normalized = normalizeCompareText(value);
+  return !normalized
+    || /^(?:comparison|demo|tutorial|fact|pov|social|curiosity|relief|challenge|trend|fear)$/.test(normalized)
+    || /^goc \d+ \d+/.test(normalized);
+}
+
+function shortenStrategyAngleLabel(value: string, maxLength = 72) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trim()}...`;
+}
+
+function getStrategyCodeAngleLabel(
+  source: GeneratedIdea | GeneratedIdeaApiItem,
+  rawAngle: string,
+  filters: Partial<FilterState>
+) {
+  const content = 'content' in source ? source.content : source;
+  const meta = content?.meta || {};
+  const metaName = stripStrategyAngleInstructionText(meta.angleName);
+  const rawLabel = stripStrategyAngleInstructionText(rawAngle);
+  const type = getStrategyAngleTypeFromText(meta.angleType, metaName, rawAngle);
+
+  if (rawLabel && !isInstructionalStrategyAngleLabel(rawLabel) && !isGenericStrategyAngleLabel(rawLabel)) {
+    return shortenStrategyAngleLabel(rawLabel);
+  }
+
+  if (metaName && !isInstructionalStrategyAngleLabel(metaName) && !isGenericStrategyAngleLabel(metaName)) {
+    return shortenStrategyAngleLabel(type && !normalizeCompareText(metaName).includes(normalizeCompareText(type))
+      ? `${type}: ${metaName}`
+      : metaName);
+  }
+
+  const painPoint = cleanStrategyAngleDisplayText(filters.painPoint?.[0]);
+  if (type && painPoint) return shortenStrategyAngleLabel(`${type}: ${painPoint}`);
+  if (painPoint) return shortenStrategyAngleLabel(`Angle: ${painPoint}`);
+  return type ? `${type} angle` : 'Angle';
+}
+
+function mergeStrategyCodeLabels(...groups: Array<Array<string | null | undefined> | undefined>) {
+  return Array.from(new Set(groups
+    .flatMap(group => group || [])
+    .map(value => (typeof value === 'string' ? value.trim() : ''))
+    .filter(Boolean)));
+}
+
+function normalizeStrategyCodeKeyPart(value: unknown) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi');
+}
+
+function getStrategyCodeLabelKey(level: StrategyCodeWorkflowLevel, value: string) {
+  const normalizedSearch = normalizeCompareText(value);
+  if (level === 'visual') {
+    if (/\b(?:3d|3 d|three d|cgi|render)\b/.test(normalizedSearch)) return 'visual:3d-animation';
+    if (/\b(?:2d|2 d|two d|cartoon|vector|hoat hinh|minh hoa)\b/.test(normalizedSearch)) return 'visual:2d-animation';
+    if (/\b(?:motion graphic|motion|kinetic typography|animated ui|infographic|data visual)\b/.test(normalizedSearch)) return 'visual:motion-graphic';
+    if (/\bugc\b/.test(normalizedSearch)) return 'visual:ugc';
+    if (/\bpov\b/.test(normalizedSearch)) return 'visual:pov';
+  }
+  return normalizeStrategyCodeKeyPart(value);
+}
+
+function normalizeStrategyCodeFilterSnapshot(raw: Partial<FilterState> | null | undefined): Partial<FilterState> {
+  const out: Partial<FilterState> = {};
+  if (!raw || typeof raw !== 'object') return out;
+
+  Object.entries(raw).forEach(([key, value]) => {
+    if (!Array.isArray(value)) return;
+    const clean = value.map(item => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
+    if (clean.length > 0) {
+      (out as Record<string, string[]>)[key] = clean;
+    }
+  });
+
+  return out;
+}
+
+function getStrategyCodeStoredOptions(options: Record<string, string[]>) {
+  return {
+    root: [],
+    coreUser: options.coreUser || [],
+    psp: options.solution || [],
+    emotion: options.emotion || [],
+    visual: options.visualType || [],
+    painPoint: options.painPoint || [],
+    angle: options.angle || [],
+  } satisfies Record<StrategyCodeWorkflowLevel, string[]>;
+}
+
+function buildStrategyCodeOptionValues(
+  options: Record<string, string[]>,
+  strategyMapHistory: GeneratedIdea[]
+) {
+  const values: Record<StrategyCodeWorkflowLevel, Set<string>> = {
+    root: new Set<string>(),
+    coreUser: new Set<string>(),
+    psp: new Set<string>(),
+    emotion: new Set<string>(),
+    visual: new Set<string>(),
+    painPoint: new Set<string>(),
+    angle: new Set<string>(),
+  };
+
+  strategyMapHistory.forEach(idea => {
+    const filters = normalizeStrategyCodeFilterSnapshot(idea.filters_snapshot);
+    (filters.coreUser || []).forEach(value => values.coreUser.add(value));
+    (filters.solution || []).forEach(value => values.psp.add(value));
+    (filters.emotion || []).forEach(value => values.emotion.add(value));
+    (filters.visualType || []).forEach(value => values.visual.add(value));
+    (filters.painPoint || []).forEach(value => values.painPoint.add(value));
+    (filters.angle || []).forEach(value => values.angle.add(value));
+  });
+
+  const stored = getStrategyCodeStoredOptions(options);
+  return Object.fromEntries(STRATEGY_CODE_LEVEL_ORDER.map(level => {
+    const fallback = level === 'psp'
+      ? STRATEGY_CODE_FALLBACK_SOURCE.solution
+      : level === 'visual'
+        ? STRATEGY_CODE_FALLBACK_SOURCE.visualType
+        : level === 'root'
+          ? []
+          : STRATEGY_CODE_FALLBACK_SOURCE[level as StrategyCodeFilterKey] || [];
+    return [level, mergeStrategyCodeLabels(stored[level], Array.from(values[level]), fallback)];
+  })) as Record<StrategyCodeWorkflowLevel, string[]>;
+}
+
+function buildStrategyCodeTree(appName: string, ideas: GeneratedIdea[]) {
+  const root: StrategyCodeTreeNode = { id: 'root', label: appName, level: 'root', children: [], ideas: [] };
+  const mkNode = (id: string, label: string, level: StrategyCodeWorkflowLevel): StrategyCodeTreeNode => ({
+    id,
+    label,
+    level,
+    children: [],
+    ideas: [],
+  });
+
+  ideas.forEach(idea => {
+    const filters = normalizeStrategyCodeFilterSnapshot(idea.filters_snapshot);
+    const baseLevels: Array<{ label: string; level: StrategyCodeWorkflowLevel; key: string }> = [];
+    const pushLevel = (level: StrategyCodeWorkflowLevel, values: string[] | undefined) => {
+      if (!values?.length) return;
+      baseLevels.push({ label: values.join(', '), level, key: values.join(',') });
+    };
+
+    pushLevel('coreUser', filters.coreUser);
+    pushLevel('psp', filters.solution);
+    pushLevel('emotion', filters.emotion);
+    pushLevel('visual', filters.visualType);
+    pushLevel('painPoint', filters.painPoint);
+
+    let parent = root;
+    let pathKey = '';
+    baseLevels.forEach(levelInfo => {
+      pathKey += `|${levelInfo.key}`;
+      const nodeId = `${levelInfo.level}:${pathKey}`;
+      let node = parent.children.find(child => child.id === nodeId);
+      if (!node) {
+        node = mkNode(nodeId, levelInfo.label, levelInfo.level);
+        parent.children.push(node);
+      }
+      parent = node;
+    });
+
+    (filters.angle || []).forEach(angle => {
+      const angleLabel = getStrategyCodeAngleLabel(idea, angle, filters);
+      const anglePath = `${pathKey}|${normalizeStrategyCodeKeyPart(angleLabel || angle)}`;
+      const nodeId = `angle:${anglePath}`;
+      let angleNode = parent.children.find(child => child.id === nodeId);
+      if (!angleNode) {
+        angleNode = mkNode(nodeId, angleLabel, 'angle');
+        parent.children.push(angleNode);
+      }
+      angleNode.ideas.push(idea);
+    });
+  });
+
+  return root;
+}
+
+function flattenStrategyCodeTree(root: StrategyCodeTreeNode) {
+  const registry = new Map<string, StrategyCodeTreeNode>();
+  const parentById = new Map<string, string>();
+  const flatNodes: StrategyCodeTreeNode[] = [];
+
+  const walk = (node: StrategyCodeTreeNode, parentId = '') => {
+    registry.set(node.id, node);
+    flatNodes.push(node);
+    if (parentId) parentById.set(node.id, parentId);
+    node.children.forEach(child => walk(child, node.id));
+  };
+  walk(root);
+
+  return { registry, parentById, flatNodes };
+}
+
+function buildStrategyCodeContext(
+  optionValuesByLevel: Record<StrategyCodeWorkflowLevel, string[]>,
+  flatNodes: StrategyCodeTreeNode[],
+  parentById: Map<string, string>
+) {
+  const ownCodeById = new Map<string, string>();
+  const pathCodeById = new Map<string, string>();
+  const codeByLevelAndLabel = new Map<StrategyCodeWorkflowLevel, Map<string, string>>();
+  const indexedNodes = flatNodes.map((node, index) => ({ node, index }));
+
+  const registerLabelCode = (level: StrategyCodeWorkflowLevel, label: string) => {
+    if (level === 'root') return;
+    const prefix = STRATEGY_CODE_LEVEL_TO_PREFIX[level];
+    if (!prefix) return;
+    const key = getStrategyCodeLabelKey(level, label);
+    if (!key) return;
+    let levelMap = codeByLevelAndLabel.get(level);
+    if (!levelMap) {
+      levelMap = new Map<string, string>();
+      codeByLevelAndLabel.set(level, levelMap);
+    }
+    if (!levelMap.has(key)) levelMap.set(key, `${prefix}${levelMap.size + 1}`);
+  };
+
+  STRATEGY_CODE_LEVEL_ORDER.forEach(level => {
+    if (level === 'root') return;
+    (optionValuesByLevel[level] || []).forEach(label => registerLabelCode(level, label));
+  });
+
+  indexedNodes
+    .filter(({ node }) => node.level !== 'root')
+    .sort((a, b) => {
+      const levelDiff = STRATEGY_CODE_LEVEL_ORDER.indexOf(a.node.level) - STRATEGY_CODE_LEVEL_ORDER.indexOf(b.node.level);
+      return levelDiff || a.index - b.index;
+    })
+    .forEach(({ node }) => registerLabelCode(node.level, node.label));
+
+  flatNodes.forEach(node => {
+    if (node.level === 'root') return;
+    const key = getStrategyCodeLabelKey(node.level, node.label);
+    const code = codeByLevelAndLabel.get(node.level)?.get(key);
+    if (code) ownCodeById.set(node.id, code);
+  });
+
+  const resolve = (nodeId: string): string => {
+    if (pathCodeById.has(nodeId)) return pathCodeById.get(nodeId) || '';
+    if (nodeId === 'root') return '';
+    const parentId = parentById.get(nodeId) || '';
+    const code = `${parentId ? resolve(parentId) : ''}${ownCodeById.get(nodeId) || ''}`;
+    pathCodeById.set(nodeId, code);
+    return code;
+  };
+
+  flatNodes.forEach(node => resolve(node.id));
+  return { pathCodeById };
+}
+
+function buildStrategyMapCodeByIdeaId(
+  appName: string,
+  options: Record<string, string[]>,
+  strategyMapHistory: GeneratedIdea[],
+  favoriteIdeas: GeneratedIdea[]
+) {
+  const optionValuesByLevel = buildStrategyCodeOptionValues(options, strategyMapHistory);
+  const root = buildStrategyCodeTree(appName, favoriteIdeas);
+  const { flatNodes, parentById } = flattenStrategyCodeTree(root);
+  const { pathCodeById } = buildStrategyCodeContext(optionValuesByLevel, flatNodes, parentById);
+  const codeByIdeaId = new Map<string, string>();
+
+  flatNodes.forEach(node => {
+    const code = pathCodeById.get(node.id) || '';
+    if (!code) return;
+    node.ideas.forEach(idea => {
+      if (idea.id && !codeByIdeaId.has(idea.id)) codeByIdeaId.set(idea.id, code);
+    });
+  });
+
+  return codeByIdeaId;
+}
 
 const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { id: 'coreUser', label: 'Đối tượng', icon: Users },
@@ -658,27 +1023,46 @@ function buildStableStrategyCodeSource(
 type CompactCreativeBrief = {
   coreUser?: string;
   painPoint?: string;
+  solution?: string;
   emotion?: string;
+  visualType?: string;
+  trend?: string;
   angleRequest?: string;
   market?: string;
   requestedAngleCount?: number;
   ideasPerAngle?: number;
 };
 
+type GenerationMode = 'quick' | 'builder';
+
 const COMPACT_BRIEF_LABELS = [
   'Core User',
+  'User',
   'Pain points?',
   'Painpoint',
   'Pain point',
+  'Pain',
+  'PSP',
+  'Product Selling Point',
+  'Solution',
+  'Feature',
   'Emotion Trigger',
   'Emotion',
+  'Visual Type',
+  'Visual',
+  'Trend',
+  'Reference',
   'Angles?',
   'Market',
   'Thị trường',
   'Thi truong',
   'Output',
+  'Quantity',
+  'So luong',
   'Hãy tạo',
   'Hay tao',
+  'Tao',
+  'Create',
 ];
 
 function extractCompactBriefSection(text: string, labelPattern: string): string {
@@ -692,15 +1076,26 @@ function parseCompactCreativeBrief(text: string): CompactCreativeBrief | null {
   if (!raw) return null;
   const normalized = normalizeCompareText(raw);
   const looksLikeBrief = /\bcore user\b/.test(normalized)
+    || /\bpsp\b/.test(normalized)
+    || /\bproduct selling point\b/.test(normalized)
+    || /\bsolution\b/.test(normalized)
+    || /\bfeature\b/.test(normalized)
     || /\bpain points?\b/.test(normalized)
     || /\bemotion trigger\b/.test(normalized)
+    || /\bvisual(?: type)?\b/.test(normalized)
+    || /\btrend\b/.test(normalized)
+    || /\btao\s+\d+\s+ideas?\b/.test(normalized)
+    || /\bcreate\s+\d+\s+ideas?\b/.test(normalized)
     || /\bangles?\b/.test(normalized);
   if (!looksLikeBrief) return null;
 
-  const coreUser = extractCompactBriefSection(raw, 'Core User');
-  const painPoint = extractCompactBriefSection(raw, 'Pain points?|Painpoint|Pain point');
+  const coreUser = extractCompactBriefSection(raw, 'Core User|User');
+  const painPoint = extractCompactBriefSection(raw, 'Pain points?|Painpoint|Pain point|Pain');
+  const solution = extractCompactBriefSection(raw, 'PSP|Product Selling Point|Solution|Feature');
   const emotion = extractCompactBriefSection(raw, 'Emotion Trigger|Emotion');
-  const angleRequest = extractCompactBriefSection(raw, 'Angles?');
+  const visualType = extractCompactBriefSection(raw, 'Visual Type|Visual');
+  const trend = extractCompactBriefSection(raw, 'Trend|Reference');
+  const angleRequest = extractCompactBriefSection(raw, 'Angles?') || trend;
   const market = extractCompactBriefSection(raw, 'Market|Thị trường|Thi truong')
     || raw.match(/(?:Thị trường|Thi truong|Market)\s+([^\n.]+)/i)?.[1]?.trim()
     || '';
@@ -713,6 +1108,7 @@ function parseCompactCreativeBrief(text: string): CompactCreativeBrief | null {
   const ideasPerAngle = Number(
     raw.match(/(\d+)\s*ideas?\s*(?:cho|per|mỗi|moi)?\s*(?:mỗi|moi|per)?\s*angles?/i)?.[1]
       || normalized.match(/(\d+)\s*ideas?\s*(?:cho|per|moi)?\s*(?:moi|per)?\s*angles?/i)?.[1]
+      || normalized.match(/(?:tao|hay tao|create)\s*(\d+)\s*ideas?/i)?.[1]
       || raw.match(/(\d+)\s*ideas?/i)?.[1]
       || normalized.match(/(\d+)\s*ideas?/i)?.[1]
       || 0
@@ -721,7 +1117,10 @@ function parseCompactCreativeBrief(text: string): CompactCreativeBrief | null {
   return {
     coreUser: coreUser || undefined,
     painPoint: painPoint || undefined,
+    solution: solution || undefined,
     emotion: emotion || undefined,
+    visualType: visualType || undefined,
+    trend: trend || undefined,
     angleRequest: angleRequest || undefined,
     market: market || undefined,
     requestedAngleCount,
@@ -730,6 +1129,8 @@ function parseCompactCreativeBrief(text: string): CompactCreativeBrief | null {
 }
 
 function inferCompactSolution(app: AppProject, brief: CompactCreativeBrief | null): string {
+  if (brief?.solution?.trim()) return brief.solution.trim();
+
   const haystack = normalizeCompareText([
     app.name,
     app.category,
@@ -748,11 +1149,12 @@ function inferCompactSolution(app: AppProject, brief: CompactCreativeBrief | nul
 function buildCompactGenerationFilters(
   currentFilters: FilterState,
   brief: CompactCreativeBrief | null,
-  app: AppProject
+  app: AppProject,
+  preferBrief = false
 ): FilterState {
   const hidePsp = shouldHidePspForApp(app);
 
-  if (!brief) {
+  if (!brief && !preferBrief) {
     return {
       ...currentFilters,
       solution: hidePsp ? [] : currentFilters.solution,
@@ -760,14 +1162,27 @@ function buildCompactGenerationFilters(
     } as FilterState;
   }
 
+  const readFilter = (key: keyof FilterState, fallback: string) => {
+    const current = currentFilters[key] || [];
+    if (!preferBrief && current.length > 0) return current;
+    return [fallback || current[0]].filter(Boolean) as string[];
+  };
+  const parsedVisualTypes = sanitizeVisualTypes([brief?.visualType || '']);
+  const currentVisualTypes = sanitizeVisualTypes(currentFilters.visualType || []);
+
   const next = {
     ...currentFilters,
-    coreUser: (currentFilters.coreUser || []).length ? currentFilters.coreUser : [brief.coreUser].filter(Boolean) as string[],
-    painPoint: (currentFilters.painPoint || []).length ? currentFilters.painPoint : [brief.painPoint].filter(Boolean) as string[],
-    emotion: (currentFilters.emotion || []).length ? currentFilters.emotion : [brief.emotion].filter(Boolean) as string[],
-    targetMarket: (currentFilters.targetMarket || []).length ? currentFilters.targetMarket : [brief.market || 'Global'].filter(Boolean) as string[],
-    solution: hidePsp ? [] : ((currentFilters.solution || []).length ? currentFilters.solution : [inferCompactSolution(app, brief)]),
-    visualType: sanitizeVisualTypes(currentFilters.visualType || []).length ? sanitizeVisualTypes(currentFilters.visualType || []) : ['UGC'],
+    coreUser: readFilter('coreUser', brief?.coreUser || 'General mobile app user'),
+    painPoint: readFilter('painPoint', brief?.painPoint || brief?.angleRequest || brief?.trend || 'User wants a faster, clearer result'),
+    emotion: readFilter('emotion', brief?.emotion || 'Curiosity'),
+    targetMarket: readFilter('targetMarket', brief?.market || 'Global'),
+    solution: hidePsp ? [] : readFilter('solution', inferCompactSolution(app, brief)),
+    visualType: preferBrief
+      ? (parsedVisualTypes.length ? parsedVisualTypes : (currentVisualTypes.length ? currentVisualTypes : ['UGC']))
+      : (currentVisualTypes.length ? currentVisualTypes : (parsedVisualTypes.length ? parsedVisualTypes : ['UGC'])),
+    angle: preferBrief
+      ? [brief?.angleRequest || brief?.trend || ''].filter(Boolean) as string[]
+      : currentFilters.angle,
   } as FilterState;
 
   return next;
@@ -1163,6 +1578,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [categories, setCategories] = useState<CategoryConfig[]>(() => loadCategories(app.id));
   const [filters, setFilters] = useState<FilterState>({ coreUser: [], painPoint: [], solution: [], emotion: [], videoStructure: [], visualType: [], targetMarket: [], angle: [] });
   const [options, setOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: GLOBAL_EMOTION_OPTIONS, videoStructure: [], visualType: GLOBAL_VISUAL_TYPES, targetMarket: ['US (Mỹ)', 'SEA (Đông Nam Á)', 'EU (Châu Âu)', 'JP (Nhật Bản)', 'KR (Hàn Quốc)', 'LATAM (Mỹ Latin)', 'VN (Việt Nam)'] });
+  const [strategyCodeOptions, setStrategyCodeOptions] = useState<Record<string, string[]>>({ coreUser: [], painPoint: [], solution: [], emotion: GLOBAL_EMOTION_OPTIONS, videoStructure: [], visualType: GLOBAL_VISUAL_TYPES, targetMarket: [] });
   const [newItem, setNewItem] = useState<{ cat: string | null; text: string }>({ cat: null, text: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -1173,6 +1589,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   const [results, setResults] = useState<GeneratedIdea[]>([]);
   const [quantity, setQuantity] = useState(3);
   const [ideaDescription, setIdeaDescription] = useState('');
+  const [generationMode] = useState<GenerationMode>('builder');
+  const [systemRuleDraft, setSystemRuleDraft] = useState('');
+  const [savingSystemRule, setSavingSystemRule] = useState(false);
+  const [systemRuleMessage, setSystemRuleMessage] = useState('');
   const [editModeCat, setEditModeCat] = useState<string | null>(null);
   const [editingItemText, setEditingItemText] = useState<{ original: string; current: string } | null>(null);
   const [savedHistory, setSavedHistory] = useState<GeneratedIdea[]>([]);
@@ -1212,6 +1632,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     () => importedTrendAnalyses.filter(analysis => !isGenericImportedTrendAnalysis(analysis)),
     [importedTrendAnalyses]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setSystemRuleDraft('');
+    setSystemRuleMessage('');
+
+    dbService.getSystemRule(app.id)
+      .then(rule => {
+        if (!cancelled) setSystemRuleDraft(rule || '');
+      })
+      .catch(error => {
+        console.warn('Load system rule failed:', error);
+        if (!cancelled) setSystemRuleMessage('Không load được system_rule');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app.id]);
 
   useEffect(() => {
     setOptions({
@@ -1263,6 +1702,22 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     if (normalized.length === 0) return;
 
     setTrendingTopics(prev => [...new Set([...prev, ...normalized])]);
+  };
+
+  const handleSaveSystemRule = async () => {
+    if (savingSystemRule) return;
+    setSavingSystemRule(true);
+    setSystemRuleMessage('');
+
+    try {
+      const saved = await dbService.saveSystemRule(app.id, systemRuleDraft);
+      if (!saved) throw new Error('Could not save system_rule.');
+      setSystemRuleMessage('Đã lưu system_rule');
+    } catch (error) {
+      setSystemRuleMessage(error instanceof Error ? error.message : 'Save failed');
+    } finally {
+      setSavingSystemRule(false);
+    }
   };
 
   const handleAddTrendingInput = async () => {
@@ -1378,6 +1833,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       ...(prefillFilters || filters),
       angle: cleanAngleOptions((prefillFilters || filters).angle || []),
     };
+    setStrategyCodeOptions({ ...safeFullOptions, visualType: GLOBAL_VISUAL_TYPES });
     setOptions(prev => mergeOptionSelections({ ...safeFullOptions, visualType: GLOBAL_VISUAL_TYPES }, safeSelectedFilters));
     return;
     // Merge market presets with any DB options
@@ -1635,19 +2091,131 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     return '';
   };
 
+  const strategyMapCodeByIdeaId = useMemo(() => {
+    const strategyMapHistory = savedHistory.filter(isVisibleStrategyMapIdea);
+    const favoriteStrategyMapHistory = strategyMapHistory.filter(idea => hasFavoriteIdeaKey(app.id, idea, favoriteIdeas));
+    const currentWeekKey = getHistoryWeekKey(new Date());
+    const currentWeekFavorites = favoriteStrategyMapHistory.filter(idea => getHistoryWeekKey(idea.created_at) === currentWeekKey);
+
+    return {
+      all: buildStrategyMapCodeByIdeaId(app.name, strategyCodeOptions, strategyMapHistory, favoriteStrategyMapHistory),
+      currentWeek: buildStrategyMapCodeByIdeaId(app.name, strategyCodeOptions, strategyMapHistory, currentWeekFavorites),
+    };
+  }, [app.id, app.name, favoriteIdeas, savedHistory, strategyCodeOptions]);
+
+  const buildGlobalStrategyCodeSource = useCallback((currentFilters: FilterState, currentAngles: string[]) => {
+    const source = {} as Record<StrategyCodeFilterKey, string[]>;
+    const strategyMapHistory = savedHistory.filter(isVisibleStrategyMapIdea);
+    const favoriteStrategyMapHistory = strategyMapHistory.filter(idea => hasFavoriteIdeaKey(app.id, idea, favoriteIdeas));
+
+    (Object.keys(STRATEGY_CODE_OPTION_KEYS) as StrategyCodeFilterKey[]).forEach(key => {
+      const filterKey = STRATEGY_CODE_OPTION_KEYS[key];
+      const values: string[] = [];
+      const append = (items: unknown) => {
+        cleanStrategyValues(items).forEach(value => {
+          if (!values.includes(value)) values.push(value);
+        });
+      };
+      const appendGroup = (items: unknown) => {
+        const value = formatStrategyValueGroup(items);
+        if (value && !values.includes(value)) values.push(value);
+      };
+
+      append(strategyCodeOptions[filterKey] || []);
+      strategyMapHistory.forEach(idea => append(idea.filters_snapshot?.[filterKey]));
+      append(currentFilters[filterKey]);
+      append(STRATEGY_CODE_FALLBACK_SOURCE[key]);
+      if (key === 'angle') {
+        favoriteStrategyMapHistory.forEach(idea => {
+          const ideaFilters = (idea.filters_snapshot || {}) as Partial<FilterState>;
+          cleanStrategyValues(ideaFilters.angle).forEach(angle => {
+            append([getStrategyCodeAngleLabel(idea, angle, ideaFilters)]);
+          });
+        });
+        append(currentAngles);
+        source[key] = values;
+        return;
+      }
+      favoriteStrategyMapHistory.forEach(idea => appendGroup(idea.filters_snapshot?.[filterKey]));
+      appendGroup(currentFilters[filterKey]);
+
+      source[key] = values;
+    });
+
+    return source;
+  }, [app.id, favoriteIdeas, savedHistory, strategyCodeOptions]);
+
+  const getEffectiveStrategyCodeMeta = useCallback((idea: GeneratedIdea) => {
+    const savedMeta = idea.content?.meta || {};
+    const mapStrategyCode = getHistoryWeekKey(idea.created_at) === getHistoryWeekKey(new Date())
+      ? strategyMapCodeByIdeaId.currentWeek.get(idea.id) || strategyMapCodeByIdeaId.all.get(idea.id) || ''
+      : strategyMapCodeByIdeaId.all.get(idea.id) || '';
+    const snapshot = idea.filters_snapshot;
+    if (!snapshot || Object.keys(snapshot).length === 0) {
+      return {
+        strategyCode: mapStrategyCode || String(savedMeta.strategyCode || ''),
+        strategyCodeMap: Array.isArray(savedMeta.strategyCodeMap)
+          ? savedMeta.strategyCodeMap.map(item => String(item || '').trim()).filter(Boolean)
+          : [],
+      };
+    }
+
+    const snapshotFilters = {
+      coreUser: snapshot.coreUser || [],
+      painPoint: snapshot.painPoint || [],
+      solution: snapshot.solution || [],
+      emotion: snapshot.emotion || [],
+      videoStructure: snapshot.videoStructure || [],
+      visualType: snapshot.visualType || [],
+      targetMarket: snapshot.targetMarket || [],
+      angle: snapshot.angle || [],
+    } as FilterState;
+    const angleValues = cleanStrategyValues(snapshotFilters.angle)
+      .map(angle => getStrategyCodeAngleLabel(idea, angle, snapshotFilters));
+    const codeFiltersSnapshot = {
+      ...snapshotFilters,
+      angle: angleValues,
+    } as FilterState;
+    const lookup = buildStrategyCodeLookup(buildGlobalStrategyCodeSource(snapshotFilters, angleValues));
+    const strategyCode = mapStrategyCode
+      || formatStrategyCodeForFilterGroups(codeFiltersSnapshot, lookup)
+      || String(savedMeta.strategyCode || '');
+    const strategyCodeMap = getStrategyGroupCodeMapRows(codeFiltersSnapshot, lookup);
+
+    return {
+      strategyCode,
+      strategyCodeMap: strategyCodeMap.length > 0
+        ? strategyCodeMap
+        : Array.isArray(savedMeta.strategyCodeMap)
+          ? savedMeta.strategyCodeMap.map(item => String(item || '').trim()).filter(Boolean)
+          : [],
+    };
+  }, [buildGlobalStrategyCodeSource, strategyMapCodeByIdeaId]);
+
   const handleGenerate = async () => {
-    const compactBrief = parseCompactCreativeBrief(ideaDescription);
-    const generationBaseFilters = buildCompactGenerationFilters(filters, compactBrief, app);
+    const rawBrief = ideaDescription.trim();
+    const compactBrief = parseCompactCreativeBrief(rawBrief);
+    const isQuickBriefMode = Boolean(compactBrief && rawBrief);
+    const useFastGeneratePath = true;
+    const generationBaseFilters = buildCompactGenerationFilters(filters, compactBrief, app, isQuickBriefMode);
     const selectedAnglesFromFilters = Array.from(new Set((generationBaseFilters.angle || []).map(angle => angle.trim()).filter(Boolean)));
-    const generatedAngleList = selectedAnglesFromFilters.length > 0
-      ? selectedAnglesFromFilters
-      : buildCompactAutoAngles(compactBrief, app, [], autoAngleCount);
+    const generatedAngleList = isQuickBriefMode
+      ? [
+          selectedAnglesFromFilters[0]
+            || compactBrief?.angleRequest
+            || compactBrief?.trend
+            || '',
+        ].filter(Boolean)
+      : selectedAnglesFromFilters.length > 0
+        ? selectedAnglesFromFilters
+        : buildCompactAutoAngles(compactBrief, app, [], autoAngleCount);
     const anglesToGenerate: Array<string | null> = generatedAngleList.length > 0 ? generatedAngleList : [null];
     const effectiveQuantity = Math.min(10, Math.max(1, compactBrief?.ideasPerAngle || quantity));
+    const validationAngleList = isQuickBriefMode && generatedAngleList.length === 0 ? ['Quick Brief angle'] : generatedAngleList;
     const validationFilters = hidePspForCurrentApp
       ? { ...generationBaseFilters, solution: [app.name] }
       : generationBaseFilters;
-    const generationValidationMessage = getGenerationValidationMessage(validationFilters, generatedAngleList);
+    const generationValidationMessage = getGenerationValidationMessage(validationFilters, validationAngleList);
     if (generationValidationMessage) {
       setValidationError(generationValidationMessage);
       setGenerationNotice(null);
@@ -1710,7 +2278,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         strategyAngleValues,
         strategyHistoryFilters
       );
-      const strategyCodeLookup = buildStrategyCodeLookup(strategyCodeSource);
       const generationTasks = anglesToGenerate.flatMap((angle, angleIndex) =>
         Array.from({ length: Math.ceil(effectiveQuantity / maxIdeasPerAngleRequest) }, (_, chunkIndex) => {
           const startIndex = chunkIndex * maxIdeasPerAngleRequest;
@@ -1730,7 +2297,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = () => selectedModel || '';
-      const maxAttemptsPerAngle = 2;
+      const maxAttemptsPerAngle = useFastGeneratePath ? 3 : 1;
       const maxConcurrent = Math.min(3, generationTasks.length);
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
@@ -1760,13 +2327,24 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         }).join('\n');
         const collectUniqueItems = (items: GeneratedIdeaApiItem[]) => {
           let added = 0;
+          const duplicateItems: GeneratedIdeaApiItem[] = [];
           for (const item of items) {
             const key = getGeneratedIdeaDedupKey(item);
-            if (key && collectedKeys.has(key)) continue;
+            if (key && collectedKeys.has(key)) {
+              duplicateItems.push(item);
+              continue;
+            }
             if (key) collectedKeys.add(key);
             collected.push(item);
             added += 1;
             if (collected.length >= task.requestQuantity) break;
+          }
+          if (useFastGeneratePath && collected.length < task.requestQuantity) {
+            for (const item of duplicateItems) {
+              collected.push(item);
+              added += 1;
+              if (collected.length >= task.requestQuantity) break;
+            }
           }
           return added;
         };
@@ -1797,6 +2375,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                appId: app.id,
                 appName: app.name,
                 appCategory: app.category,
                 filters: task.filtersSnapshot,
@@ -1804,6 +2383,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   quantity: missingQuantity,
                   duration: IDEA_RUNTIME_GUIDANCE,
                   ideaDescription,
+                  generationMode: useFastGeneratePath ? 'quick' : generationMode,
+                  rawBrief: rawBrief || undefined,
                   visualType: sanitizeVisualTypes(task.filtersSnapshot.visualType || [])[0] || 'UGC',
                   seasonalVisualContext,
                   totalVariations: effectiveQuantity,
@@ -1814,7 +2395,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                   selectedAngle: task.selectedAngle,
                 },
                 previousIdeas: previousIdeasForRequest || null,
-                appKnowledge: app.app_knowledge || null,
                 selectedModel: attemptModel,
                 trendingTopics: trendingTopics.length > 0 ? trendingTopics : null,
                 trendingStructures: usableImportedTrendAnalyses.length > 0
@@ -1936,8 +2516,18 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       if (result.success && result.data?.length > 0) {
         const seenDisplayTitles = new Map<string, number>();
         ideas = result.data.map(({ item, filtersSnapshot }, index) => {
-          const strategyCode = formatStrategyCodeForFilterGroups(filtersSnapshot, strategyCodeLookup);
-          const strategyCodeMap = getStrategyGroupCodeMapRows(filtersSnapshot, strategyCodeLookup);
+          const angleValues = cleanStrategyValues(filtersSnapshot.angle)
+            .map(angle => getStrategyCodeAngleLabel(item, angle, filtersSnapshot));
+          const codeFiltersSnapshot = {
+            ...filtersSnapshot,
+            angle: angleValues,
+          } as FilterState;
+          const itemStrategyCodeLookup = buildStrategyCodeLookup({
+            ...strategyCodeSource,
+            angle: mergeStrategySourceValues(strategyCodeSource.angle, angleValues),
+          });
+          const strategyCode = formatStrategyCodeForFilterGroups(codeFiltersSnapshot, itemStrategyCodeLookup);
+          const strategyCodeMap = getStrategyGroupCodeMapRows(codeFiltersSnapshot, itemStrategyCodeLookup);
           const displayTitle = getUniqueGeneratedIdeaTitle(item, index, seenDisplayTitles);
 
           return {
@@ -2167,6 +2757,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const hookVisual = normalizeHookTimingLabel(content.hook?.visual || content.hook?.script || '');
     const bodyVisual = content.body?.visual || content.body?.script || '';
     const ctaVisual = content.cta?.visual || content.cta?.script || '';
+    const hookSpeechInline = visualContainsSpokenLine(hookVisual, hookSpeech.characterSpeech);
+    const bodySpeechInline = visualContainsSpokenLine(bodyVisual, bodySpeech.characterSpeech);
+    const ctaSpeechInline = visualContainsSpokenLine(ctaVisual, ctaSpeech.characterSpeech);
     const hookText = content.hook?.textOverlay || content.hook?.text || meta.hookPrimary || '';
     const hookVoiceVi = getSectionViTranslation(content.hook);
     const bodyText = content.body?.textOverlay || content.body?.text || '';
@@ -2176,10 +2769,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const angleDesc = String(meta.angleDesc || content.explanation || '');
     const scriptIndex = String(idea.id || '').match(/A(\d+)-I(\d+)/);
     const readableScriptLabel = getReadableScriptLabel(idea);
-    const strategyCode = String(meta.strategyCode || '');
-    const strategyCodeMap = Array.isArray(meta.strategyCodeMap)
-      ? meta.strategyCodeMap.map(item => String(item || '').trim()).filter(Boolean)
-      : [];
+    const { strategyCode, strategyCodeMap } = getEffectiveStrategyCodeMeta(idea);
     const scriptLabel = scriptIndex
       ? `Kịch bản ${Number(scriptIndex[1]) + 1}.${Number(scriptIndex[2]) + 1}: ${idea.title}`
       : `Kịch bản: ${idea.title}`;
@@ -2193,11 +2783,29 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const mainBodyVoiceover = bodySpeech.voiceover || content.body?.voice || '';
     const finalCtaText = ctaText || ctaSpeech.voiceover || content.cta?.endCard || '';
     const selectedInputLines = getResultInputChips(idea, content).map(chip => `${chip.label}: ${chip.value}`);
+    const productionDetailLines = [
+      { label: 'Scene family', value: meta.sceneFamily },
+      { label: 'Character visual', value: meta.characterVisual || meta.talentProfile },
+      { label: 'Country insight', value: meta.countryVisualInsight || meta.marketInsight },
+      { label: 'Hook context insight', value: meta.hookContextInsight },
+      { label: 'Camera angle / shot plan', value: meta.cameraPlan },
+      { label: 'Voice direction', value: meta.voiceDirection },
+      { label: 'Visual ref', value: meta.visualRefNotes },
+      { label: 'Do not', value: meta.dontDo },
+    ]
+      .map(item => {
+        const value = cleanPreviewText(item.value);
+        return value ? `${item.label}: ${value}` : '';
+      })
+      .filter(Boolean);
 
     const readableText = [
       'INPUT DA CHON',
       ...selectedInputLines,
       '',
+      productionDetailLines.length ? 'PRODUCTION BLUEPRINT' : '',
+      ...productionDetailLines,
+      productionDetailLines.length ? '' : '',
       'TÌNH HUỐNG GỐC (PAIN POINT)',
       framework.painpoint || '',
       '',
@@ -2211,18 +2819,19 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       'Hook (5s đầu):',
       hookVisual || '',
       hookText && !hookVisualIncludesCopy ? `Text hiện: "${hookText}"` : '',
-      hookSpeech.characterSpeech ? `Lời nhân vật: "${hookSpeech.characterSpeech}"` : '',
+      hookSpeech.characterSpeech && !hookSpeechInline ? `Lời nhân vật: "${hookSpeech.characterSpeech}"` : '',
       hookSpeech.voiceover && !hookVisualIncludesCopy ? `Voiceover: "${hookSpeech.voiceover}"` : '',
       hookVoiceVi ? `Dịch hook voice: "${hookVoiceVi}"` : '',
       hookVariants ? `Biến thể hook:\n${hookVariants}` : '',
       '',
       bodyVisual ? `Diễn biến (Body): ${bodyVisual}` : 'Diễn biến (Body):',
       bodyText ? `Text body: "${bodyText}"` : '',
-      bodySpeech.characterSpeech ? `Lời nhân vật: "${bodySpeech.characterSpeech}"` : '',
+      bodySpeech.characterSpeech && !bodySpeechInline ? `Lời nhân vật: "${bodySpeech.characterSpeech}"` : '',
       mainBodyVoiceover ? `Voiceover chính: "${mainBodyVoiceover}"` : '',
       '',
       finalCtaText ? `Kêu gọi hành động (CTA): ${finalCtaText}` : 'Kêu gọi hành động (CTA):',
       ctaVisual ? `Visual CTA: ${ctaVisual}` : '',
+      ctaSpeech.characterSpeech && !ctaSpeechInline ? `Lời nhân vật CTA: "${ctaSpeech.characterSpeech}"` : '',
       ctaSpeech.voiceover && ctaSpeech.voiceover !== finalCtaText ? `Voiceover CTA: "${ctaSpeech.voiceover}"` : '',
       content.cta?.endCard && content.cta.endCard !== finalCtaText ? `Màn hình kết: ${content.cta.endCard}` : '',
       meta.visualRefNotes ? `Ghi chú quay dựng: ${meta.visualRefNotes}` : '',
@@ -2339,9 +2948,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const framework = ((content as IdeaContent).framework || {}) as Partial<IdeaContent['framework']>;
     const meta = ((content as IdeaContent).meta || {}) as NonNullable<IdeaContent['meta']> & Record<string, unknown>;
     const snapshot = idea.filters_snapshot || null;
-    const strategyCodeMapRows = Array.isArray(meta.strategyCodeMap)
-      ? meta.strategyCodeMap.map(item => cleanPreviewText(item)).filter(Boolean)
-      : [];
+    const strategyCodeMapRows = getEffectiveStrategyCodeMeta(idea).strategyCodeMap
+      .map(item => cleanPreviewText(item))
+      .filter(Boolean);
     const mappedAngle = strategyCodeMapRows
       .find(row => /^\s*F\d+\s*=/.test(row))
       ?.replace(/^\s*F\d+\s*=\s*Angle:\s*/i, '');
@@ -2460,6 +3069,27 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       voiceover: voiceover || (!characterSpeech ? legacyVoice : ''),
       legacyVoice: characterSpeech ? legacyVoice : '',
     };
+  };
+
+  const stripSpeechTimingForCompare = (value: string) => cleanPreviewText(value)
+    .split(/\r?\n/)
+    .map(line => line
+      .replace(/^\s*\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*s\s*[-:]\s*[^:]{2,80}:\s*/i, '')
+      .replace(/^\s*[^:]{2,80}:\s*/i, '')
+      .replace(/^["']|["']$/g, '')
+      .trim())
+    .filter(Boolean)
+    .join(' ');
+
+  const visualContainsSpokenLine = (visual: string, speech: string) => {
+    const speechText = stripSpeechTimingForCompare(speech);
+    if (!speechText) return false;
+    const normalizedVisual = normalizeCompareText(visual);
+    const normalizedSpeech = normalizeCompareText(speechText);
+    if (!normalizedVisual || !normalizedSpeech) return false;
+    if (normalizedVisual.includes(normalizedSpeech)) return true;
+    const speechTokens = normalizedSpeech.split(/\s+/).filter(Boolean);
+    return speechTokens.length > 3 && speechTokens.slice(0, 8).every(token => normalizedVisual.includes(token));
   };
 
   const mergeRefinedSection = (
@@ -3304,6 +3934,146 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
   };
 
   // === RENDER: Wizard Step Content ===
+  const renderQuickBriefContent = () => {
+    const quickBrief = parseCompactCreativeBrief(ideaDescription);
+    const detectedQuantity = quickBrief?.ideasPerAngle;
+    const quickBriefChips = [
+      quickBrief?.coreUser ? `Core user: ${quickBrief.coreUser}` : '',
+      quickBrief?.painPoint ? `Pain: ${quickBrief.painPoint}` : '',
+      quickBrief?.solution ? `PSP: ${quickBrief.solution}` : '',
+      quickBrief?.emotion ? `Emotion: ${quickBrief.emotion}` : '',
+      quickBrief?.visualType ? `Visual: ${quickBrief.visualType}` : '',
+      quickBrief?.trend ? `Trend: ${quickBrief.trend}` : '',
+      detectedQuantity ? `${detectedQuantity} idea` : '',
+    ].filter(Boolean);
+
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center gap-2"><Filter size={14} /> Bối cảnh từ brief</h3>
+          <div className="flex flex-wrap gap-2">
+            {quickBriefChips.length > 0 ? quickBriefChips.map(item => (
+              <span key={item} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200">
+                {item}
+              </span>
+            )) : (
+              <span className="text-gray-400 italic text-sm">Chưa có brief. Paste brief bên dưới để AI tự đọc bối cảnh.</span>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
+                <Settings2 size={14} /> Rule cố định / System Prompt
+              </h3>
+              <p className="mt-1 text-xs text-gray-400">Lưu một lần cho app. Mỗi lần tạo idea, Quick Brief sẽ dùng phần này như lớp luật cố định.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { void handleSaveSystemRule(); }}
+              disabled={savingSystemRule}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+            >
+              {savingSystemRule ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {savingSystemRule ? 'Đang lưu...' : 'Lưu Rule'}
+            </button>
+          </div>
+          <textarea
+            value={systemRuleDraft}
+            onChange={(e) => setSystemRuleDraft(e.target.value)}
+            placeholder="Dán framework/rule cố định ở đây: schema output, luật hook, pacing, language, compliance, style guardrails..."
+            className="w-full h-36 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-200"
+          />
+          {systemRuleMessage && (
+            <p className={`mt-2 text-xs font-semibold ${systemRuleMessage === 'Saved' ? 'text-emerald-600' : 'text-red-500'}`}>
+              {systemRuleMessage}
+            </p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-gray-500">
+            <FileEdit size={14} /> Mô tả ý tưởng - brief chính
+          </label>
+          <p className="mb-3 text-xs text-gray-400">
+            Paste một brief ngắn như chat. Backend giữ nguyên rawBrief làm nguồn chính, chip chỉ là metadata phụ.
+          </p>
+          <textarea
+            value={ideaDescription}
+            onChange={(e) => setIdeaDescription(e.target.value)}
+            placeholder={`Core user: 25-40, likes home decor but does not know which style fits
+Pain: wants to decorate fast and improve the living space
+PSP: AI redecorate from one room photo
+Emotion: Curiosity + Social Proof
+Visual: 3D Animation
+Trend: Aha moment
+Tao 3 idea`}
+            className="w-full h-64 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {quickBrief?.coreUser && <span className="rounded-full bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-600">User: {quickBrief.coreUser}</span>}
+            {quickBrief?.painPoint && <span className="rounded-full bg-rose-50 px-2.5 py-1 font-semibold text-rose-600">Pain: {quickBrief.painPoint}</span>}
+            {quickBrief?.solution && <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-600">PSP: {quickBrief.solution}</span>}
+            {quickBrief?.visualType && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-600">Visual: {quickBrief.visualType}</span>}
+            {detectedQuantity && <span className="rounded-full bg-orange-50 px-2.5 py-1 font-semibold text-orange-600">Quantity: {detectedQuantity}</span>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <label className="mb-3 flex items-center gap-2 text-xs font-bold uppercase text-gray-400">
+            <ListOrdered size={14} /> Số lượng idea
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="10"
+            value={quantity}
+            onChange={(e) => setQuantity(Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))}
+            className="w-full rounded-xl border border-gray-200 py-2 text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          />
+          <p className="mt-2 text-center text-xs text-gray-400">
+            Chỉ dùng khi brief không ghi rõ cần tạo bao nhiêu idea.
+          </p>
+        </div>
+
+        {validationError && (
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-600 animate-in fade-in duration-200">
+            <AlertTriangle size={14} />
+            <span>{validationError}</span>
+          </div>
+        )}
+
+        <button onClick={handleGenerate} disabled={isGenerating}
+          className={`w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-xl ${isGenerating ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-pink-500 to-orange-500 hover:shadow-orange-200 text-white hover:scale-[1.01]'
+            }`}>
+          {isGenerating ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
+          {isGenerating ? 'Đang Sáng Tạo & Lưu...' : 'BẮT ĐẦU TẠO IDEA'}
+        </button>
+
+        {isGenerating && progress > 0 && (
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-indigo-600 font-medium flex items-center gap-2">
+                <Loader2 className="animate-spin" size={14} /> {progressLabel}
+              </span>
+              <span className="font-bold text-indigo-700">{progress}%</span>
+            </div>
+            <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${progress}%` }} />
+            </div>
+            <button onClick={handleCancel}
+              className="w-full mt-2 py-2.5 rounded-xl font-semibold text-sm border-2 border-red-200 text-red-500 bg-red-50 hover:bg-red-100 hover:border-red-300 transition-all flex items-center justify-center gap-2">
+              <X size={16} /> Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderWizardContent = () => {
     const step = WIZARD_STEPS[wizardStep];
     // Angle step uses a special category 'angle' not in default categories list
@@ -3337,6 +4107,49 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               {Object.values(filters).flat().length === 0 && <span className="text-gray-400 italic text-sm">Chưa chọn bối cảnh nào (AI sẽ tự do sáng tạo)</span>}
             </div>
           </div>
+
+          <details className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
+                  <Settings2 size={14} /> System Rule riêng
+                </h3>
+                <p className="mt-1 text-xs text-gray-400">
+                  Nhập framework/rule một lần. Khi generate, backend đọc theo app id và chỉ gửi prompt ngắn cho AI.
+                </p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${systemRuleDraft.trim() ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
+                {systemRuleDraft.trim() ? 'Đã có rule' : 'Chưa có rule'}
+              </span>
+            </summary>
+            <div className="mt-4 space-y-3">
+              <textarea
+                value={systemRuleDraft}
+                onChange={(e) => setSystemRuleDraft(e.target.value)}
+                placeholder="Dán framework/rule cốt lõi: hook rules, pacing, language, compliance, output schema notes..."
+                className="w-full h-32 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-gray-400">
+                  {systemRuleDraft.trim().length.toLocaleString('vi-VN')} ký tự. Backend sẽ rút gọn phần cốt lõi khi gọi AI.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { void handleSaveSystemRule(); }}
+                  disabled={savingSystemRule}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                >
+                  {savingSystemRule ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {savingSystemRule ? 'Đang lưu...' : 'Lưu Rule'}
+                </button>
+              </div>
+              {systemRuleMessage && (
+                <p className={`text-xs font-semibold ${systemRuleMessage.includes('lưu') || systemRuleMessage.includes('Saved') || systemRuleMessage.includes('luu') ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {systemRuleMessage}
+                </p>
+              )}
+            </div>
+          </details>
 
           {/* Seasonal Events */}
           <div className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 p-5">
@@ -3545,10 +4358,10 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
           {/* Description */}
           <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm">
-            <label className="block text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2"><FileEdit size={14} /> Mô tả ý tưởng - directive chính</label>
-            <p className="text-xs text-gray-400 mb-3">AI dùng phần này để quyết định hook, nhịp cảnh, thời lượng và cấu trúc video.</p>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2"><FileEdit size={14} /> Mô tả ý tưởng / Quick Brief</label>
+            <p className="text-xs text-gray-400 mb-3">Có thể nhập directive ngắn như cũ, hoặc paste brief đủ Core user, Pain, PSP, Emotion, Visual, Trend, số lượng idea.</p>
             <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)}
-              placeholder="VD: Hook 6s tò mò, mở bằng podcast giữa bác sĩ và bệnh nhân; nếu không ghi số giây AI sẽ tự chọn 3-8s theo nội dung."
+              placeholder="VD: Hook 6s tò mò... hoặc Core user: ... / Pain: ... / PSP: ... / Visual: ... / Tạo 3 idea"
               className="w-full h-28 resize-none py-3 px-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-200 border-gray-200" />
           </div>
 
@@ -3781,12 +4594,26 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
             const hookVoiceVi = getSectionViTranslation(hookData);
+            const hookSpeechInline = visualContainsSpokenLine(hookVisual, hookSpeech.characterSpeech);
             const primaryHook = c?.meta?.hookPrimary || '';
             const hookPreviewIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
             const showPrimaryHookLine = cleanPreviewText(primaryHook).toLowerCase() !== cleanPreviewText(hookText).toLowerCase();
             const scriptDisplayLabel = getReadableScriptLabel(idea, idx);
-            const strategyCode = String(c?.meta?.strategyCode || '');
+            const { strategyCode } = getEffectiveStrategyCodeMeta(idea);
             const selectedInputChips = getResultInputChips(idea, c || {});
+            const meta = (c?.meta || {}) as Record<string, unknown>;
+            const productionDetails = [
+              { label: 'Scene family', value: meta.sceneFamily },
+              { label: 'Character visual', value: meta.characterVisual || meta.talentProfile },
+              { label: 'Country insight', value: meta.countryVisualInsight || meta.marketInsight },
+              { label: 'Hook context', value: meta.hookContextInsight },
+              { label: 'Camera angle', value: meta.cameraPlan },
+              { label: 'Voice direction', value: meta.voiceDirection },
+              { label: 'Visual ref', value: meta.visualRefNotes },
+              { label: 'Do not', value: meta.dontDo },
+            ]
+              .map(item => ({ ...item, value: cleanPreviewText(item.value) }))
+              .filter(item => item.value);
             return (
               <div key={ideaKey} className="h-full bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all">
                 <div className="p-4">
@@ -3891,7 +4718,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
                         <p className="whitespace-pre-line">{hookVisual || 'Hook visual will appear here.'}</p>
-                        {hookSpeech.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
+                        {hookSpeech.characterSpeech && !hookSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
                         {hookSpeech.voiceover && !hookPreviewIncludesCopy && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
                         {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
                         {hookVoiceVi && <p className="text-gray-800 whitespace-pre-line">[DỊCH HOOK VOICE] {hookVoiceVi}</p>}
@@ -3990,6 +4817,21 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     </div>
                   )}
 
+                  {productionDetails.length > 0 && (
+                    <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <span className="mb-3 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        Production Blueprint
+                      </span>
+                      <div className="space-y-2">
+                        {productionDetails.map(item => (
+                          <p key={item.label} className="text-sm leading-6 text-gray-700">
+                            <span className="font-bold text-slate-700">[{item.label}]</span> {item.value}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Body + CTA shown only when the card is expanded, being edited, or refined. */}
                   {[{ key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                   { key: 'cta', label: '🔥 CTA', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
@@ -3997,6 +4839,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                     const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
                     const visualContent = secData?.visual || secData?.script || '';
                     const spokenLines = getSectionSpokenLines(secData);
+                    const characterSpeechInline = visualContainsSpokenLine(visualContent, spokenLines.characterSpeech);
                     const textOverlay = secData?.textOverlay || secData?.text || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
                     return (
@@ -4030,7 +4873,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                         ) : (
                           <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
                             <p className="whitespace-pre-line">[VISUAL] {visualContent || '-'}</p>
-                            {spokenLines.characterSpeech && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {spokenLines.characterSpeech}</p>}
+                            {spokenLines.characterSpeech && !characterSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {spokenLines.characterSpeech}</p>}
                             {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover}</p>}
                             {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {spokenLines.legacyVoice}</p>}
                             {textOverlay && <p className="text-gray-800">[TEXT OVERLAY] {textOverlay}</p>}

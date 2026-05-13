@@ -219,6 +219,13 @@ function normalizeMeta(metaInput: unknown, defaults?: { pillar?: string }): Reco
     ideaReasoning: readText(meta.ideaReasoning, readText(meta.idea_reasoning)),
     visualRefNotes: readText(meta.visualRefNotes, readText(meta.visual_ref_notes)),
     talentProfile: readText(meta.talentProfile, readText(meta.talent_profile, 'No talent specified')),
+    characterVisual: readText(meta.characterVisual, readText(meta.character_visual)),
+    marketInsight: readText(meta.marketInsight, readText(meta.market_insight)),
+    countryVisualInsight: readText(meta.countryVisualInsight, readText(meta.country_visual_insight)),
+    hookContextInsight: readText(meta.hookContextInsight, readText(meta.hook_context_insight)),
+    cameraPlan: readText(meta.cameraPlan, readText(meta.camera_plan)),
+    voiceDirection: readText(meta.voiceDirection, readText(meta.voice_direction)),
+    sceneFamily: readText(meta.sceneFamily, readText(meta.scene_family)),
     dontDo: readText(meta.dontDo, readText(meta.dont_do)),
     track: readText(meta.track, 'B'),
     trackReason: readText(meta.trackReason, readText(meta.track_reason)),
@@ -748,7 +755,7 @@ Return exactly 1 top-level pillar object for this API call, exactly 1 angle obje
 Title/script name, hook_text_overlay, hook alternatives, text_overlays.text, cta_text, visual scene prose, and production notes must be Vietnamese.
 Only hook_vo, hook_character_speech, and script_vo must be in ${options.language}.
 Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
-Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put spoken lines only in hook_vo/hook_character_speech/script_vo and on-screen copy only in hook_text_overlay/text_overlays.
+If a visible character speaks, keep hook_character_speech as the structured field AND embed the same exact spoken line inside the matching visual_scene_1 timing row, written as "và [nhân vật] nói \"...\"". Keep on-screen copy in hook_text_overlay/text_overlays.
 Every idea must also include hook_voice_vi as a Vietnamese translation with full Vietnamese diacritics of hook_vo + hook_character_speech for internal output cards.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
@@ -780,7 +787,7 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
             "hook_alt_2_archetype": "Must be different from primary and alt_1",
             "emotion_journey": "Hook Emotion -> Body Emotion -> CTA Emotion",
             "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
-            "visual_scene_1": "Sec 0-5 (THE HOOK - max 2 scenes/camera angles): Scene 1 (0-2.5s): [VISUAL SHOCK that depicts the pain point situation]. Scene 2 (2.5-5s): [CONTEXT + CURIOSITY GAP, hook_text_overlay appears visually but do not quote it here]. Do not include Voiceover/Text hien/CHARACTER SPEECH in this visual text. ${visualAnchorClause} ${pacingClause}",
+            "visual_scene_1": "Sec 0-5 (THE HOOK - max 2 scenes/camera angles): Scene 1 (0-2.5s): [VISUAL SHOCK that depicts the pain point situation + if visible character speaks, add: và [nhân vật] nói \"exact hook_character_speech line\"]. Scene 2 (2.5-5s): [CONTEXT + CURIOSITY GAP, hook_text_overlay appears visually but do not quote it here]. ${visualAnchorClause} ${pacingClause}",
             "visual_scene_2": "Sec 5-18 (THE BODY): [body_motivation_pattern applied]. Include tension, app action, camera style, pacing, and key proof moments. ${visualAnchorClause}",
             "visual_scene_3": "Sec 18-25 (THE CTA): Resolution plus CTA visual. Show proof/payoff and app/download prompt. ${visualAnchorClause}",
             "text_overlays": [
@@ -843,7 +850,7 @@ Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
 Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${quantityLabel} idea objects inside that angle.
 Title/script name, hook lines/text overlay, CTA, visual shooting descriptions, and production notes must be Vietnamese for the internal Idea tool UI. Only on-camera character speech, voice/video voiceover, and script_vo must be in ${options.language}.
 Visual shooting descriptions and production notes must be Vietnamese for the internal team.
-Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put spoken lines only in hook_voiceover/hook_character_speech/script_vo and on-screen copy only in hook_text_overlay.
+If a visible character speaks, keep hook_character_speech/hook_voiceover as the structured field AND embed the same exact spoken line inside the matching visual_scene timing row, written as "và [nhân vật] nói \"...\"". Keep on-screen copy in hook_text_overlay.
 Every idea must include hook_voice_vi as a Vietnamese translation with full diacritics of the hook voice/speech for internal output cards.
 The selected market controls setting, culture, behavior, and vibe only. Do not switch production prose away from Vietnamese.
 
@@ -912,7 +919,7 @@ Return exactly 1 top-level pillar object for this API call, exactly 1 angle obje
 Use this existing JSON structure so the tool can render and save results, but fill it according to CREATIVE ADS GENERATION RULES V7.
 Title/script name, hook lines/text overlay, CTA, visual scenes, and production notes must be Vietnamese. Only character speech, voice/video narrator, and script_vo must be in ${options.language}. The selected market controls behavior, setting, social context, and vibe only.
 Every idea must include hook_voice_vi as a Vietnamese translation with full diacritics of the hook voice/speech for internal output cards.
-Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put spoken lines only in hook_voiceover/hook_character_speech/script_vo and on-screen copy only in hook_text_overlay.
+If a visible character speaks, keep hook_character_speech/hook_voiceover as the structured field AND embed the same exact spoken line inside the matching visual_scene timing row, written as "và [nhân vật] nói \"...\"". Keep on-screen copy in hook_text_overlay.
 
 [
   {
@@ -968,7 +975,7 @@ Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scen
 4. The first visible beat must attack the pain point with brutal directness at second 0.1.
 5. visual_scene_1 must be specific enough for a creator or AI video tool to execute exactly.
 6. Pivot visual_scene_2 must show the feature/app action in detail: finger position, screen state, light/animation, numbers/chart changes.
-7. Title/script name, text on screen, CTA, hook_voice_vi, visual notes, and production notes must be Vietnamese. Only character speech, voice-over/video voice, and script_vo use ${options.language}. Do not put Voiceover / CHARACTER SPEECH snippets inside visual scenes.
+7. Title/script name, text on screen, CTA, hook_voice_vi, visual notes, and production notes must be Vietnamese. Only character speech, voice-over/video voice, and script_vo use ${options.language}. If a character speaks, embed that spoken line into the matching visual_scene timing row as "và [nhân vật] nói \"...\"" so the reader sees action + voice together.
 8. Speech, behavior, setting, props, social relationship, and vibe must feel native to the selected market. Describe the visual execution in Vietnamese.
 9. If the idea has a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required with time + speaker and hook_voiceover must be empty. If 2+ people communicate, keep the exchange simple, natural, role-accurate, and include only the necessary dialogue.
 10. Do not use rhetorical questions, wordplay, vague metaphors, generic UGC filler, or unnecessary sound design.
@@ -1015,7 +1022,7 @@ The array must follow this exact structure:
             "app_demo_action": "Exact app action shown on screen: tap, scan, upload, measure, compare, render, clean, save, etc.",
             "overlay_sequence": ["hook overlay inside visual_scene_1", "demo overlay", "proof overlay", "CTA overlay"],
             "edit_notes": "Concrete editing notes: cut rhythm, zoom, caption style, SFX, transition, or b-roll reference",
-            "visual_scene_1": "Timed hook scene covering the selected hook duration, usually 3-8s. Use explicit rows such as 0-2.5s / 2.5-5s, with max scenes = floor(seconds / 2.5). Who, where, doing what, what pain object is visible. Do not include Voiceover/Text hien/CHARACTER SPEECH in this visual text. ${visualAnchorClause}",
+            "visual_scene_1": "Timed hook scene covering the selected hook duration, usually 3-8s. Use explicit rows such as 0-2.5s / 2.5-5s, with max scenes = floor(seconds / 2.5). Who, where, doing what, what pain object is visible. If visible character speaks, include the spoken line inside the same timing row as: và [nhân vật] nói \"...\". ${visualAnchorClause}",
             "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point. ${visualAnchorClause}",
             "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual. ${visualAnchorClause}",
             "script_vo": "Full speakable voiceover script, max 60 words.",
@@ -1508,6 +1515,82 @@ function formatCharacterSpeechWithTiming(visual: string, speech: string): string
     }
     return `${time} - ${fallbackSpeaker}: ${line}`;
   }).join('\n');
+}
+
+function parseTimedSpeechLine(line: string, fallbackVisual: string): { time: string; speaker: string; text: string } | null {
+  const clean = readSpeechText(line)
+    .replace(/^["']|["']$/g, '')
+    .trim();
+  if (!clean) return null;
+
+  const timedSpeaker = clean.match(/^\s*(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)\s*s\s*[-:]\s*([^:]{2,80}):\s*(.+)$/i);
+  if (timedSpeaker) {
+    return {
+      time: `${timedSpeaker[1].replace(',', '.')}-${timedSpeaker[2].replace(',', '.')}s`,
+      speaker: timedSpeaker[3].trim(),
+      text: timedSpeaker[4].replace(/^["']|["']$/g, '').trim(),
+    };
+  }
+
+  const speakerOnly = clean.match(/^\s*([^:]{2,80}):\s*(.+)$/);
+  if (speakerOnly && /\b(?:speaker|host|guest|doctor|patient|man|woman|bác|bac|bệnh|benh|người|nguoi|nhân|nhan|character|talent)\b/i.test(speakerOnly[1])) {
+    return {
+      time: pickSpeechTimeRange(fallbackVisual),
+      speaker: speakerOnly[1].trim(),
+      text: speakerOnly[2].replace(/^["']|["']$/g, '').trim(),
+    };
+  }
+
+  return {
+    time: pickSpeechTimeRange(fallbackVisual),
+    speaker: extractSpeakerLabel(fallbackVisual),
+    text: clean,
+  };
+}
+
+function sceneAlreadyContainsSpeech(visual: string, speech: string): boolean {
+  const normalizedVisual = normalizeCompareText(visual);
+  const normalizedSpeech = normalizeCompareText(speech);
+  if (!normalizedVisual || !normalizedSpeech) return false;
+  if (normalizedVisual.includes(normalizedSpeech)) return true;
+  const speechTokens = normalizedSpeech.split(/\s+/).filter(Boolean);
+  if (speechTokens.length <= 4) return speechTokens.every(token => normalizedVisual.includes(token));
+  const signature = speechTokens.slice(0, 8).join(' ');
+  return signature.length > 8 && normalizedVisual.includes(signature);
+}
+
+function appendInlineSpeechToTimedScene(visual: string, timedSpeech: string): string {
+  const baseVisual = readText(visual);
+  const speechLines = readSpeechText(timedSpeech)
+    .split(/\r?\n/)
+    .map(line => parseTimedSpeechLine(line, baseVisual))
+    .filter((item): item is { time: string; speaker: string; text: string } => Boolean(item?.text));
+
+  if (!baseVisual || speechLines.length === 0) return baseVisual;
+
+  let nextVisual = baseVisual;
+  for (const speech of speechLines) {
+    if (sceneAlreadyContainsSpeech(nextVisual, speech.text)) continue;
+
+    const inline = `${speech.speaker || 'Nhân vật'} nói "${speech.text}"`;
+    const [start, end] = speech.time.split('-').map(part => part.replace(/s$/i, '').trim());
+    const rangePattern = new RegExp(
+      `(\\b${start.replace('.', '[\\.,]')}\\s*[-–]\\s*${end.replace('.', '[\\.,]')}\\s*s\\s*:\\s*)([\\s\\S]*?)(?=(?:\\s+\\d+(?:[\\.,]\\d+)?\\s*[-–]\\s*\\d+(?:[\\.,]\\d+)?\\s*s\\s*:)|$)`,
+      'i'
+    );
+
+    if (rangePattern.test(nextVisual)) {
+      nextVisual = nextVisual.replace(rangePattern, (_match, prefix: string, body: string) => {
+        const trimmedBody = body.trimEnd();
+        const separator = /[.!?]\s*$/.test(trimmedBody) ? ' ' : ', ';
+        return `${prefix}${trimmedBody}${separator}và ${inline}.`;
+      });
+    } else {
+      nextVisual = `${nextVisual.trim()}\n${speech.time}: ${inline}.`;
+    }
+  }
+
+  return nextVisual;
 }
 
 function moveOnCameraVoiceoverToCharacterSpeech(
@@ -2146,6 +2229,13 @@ export function normalizeCreativeBriefOutput(
         );
         const visualRefNotes = readFirstText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']);
         const talentProfile = readFirstText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified');
+        const characterVisual = readFirstText(ideaRecord, ['character_visual', 'characterVisual'], talentProfile);
+        const marketInsight = readFirstText(ideaRecord, ['market_insight', 'marketInsight']);
+        const countryVisualInsight = readFirstText(ideaRecord, ['country_visual_insight', 'countryVisualInsight'], marketInsight || visualRefNotes);
+        const hookContextInsight = readFirstText(ideaRecord, ['hook_context_insight', 'hookContextInsight'], visualScene1);
+        const cameraPlan = readFirstText(ideaRecord, ['camera_plan', 'cameraPlan'], visualRefNotes);
+        const voiceDirection = readFirstText(ideaRecord, ['voice_direction', 'voiceDirection'], hookCharacterSpeech ? 'Voice follows the visible character in the hook.' : 'Use voiceover only when no visible character speaks.');
+        const sceneFamily = readFirstText(ideaRecord, ['scene_family', 'sceneFamily'], referencePattern);
         let dontDo = readFirstText(ideaRecord, ['dont_do', 'dontDo']);
         const track = readFirstText(ideaRecord, ['track'], 'B').trim().toUpperCase();
         const trackReason = readFirstText(ideaRecord, ['track_reason', 'trackReason']);
@@ -2374,6 +2464,13 @@ export function normalizeCreativeBriefOutput(
             editNotes,
             visualRefNotes,
             talentProfile,
+            characterVisual,
+            marketInsight,
+            countryVisualInsight,
+            hookContextInsight,
+            cameraPlan,
+            voiceDirection,
+            sceneFamily,
             dontDo,
             track: normalizeBriefTrack(track),
             trackReason,
@@ -2453,7 +2550,7 @@ Return ${quantityLabel} objects in this exact schema:
   },
   "hook": {
     "durationSeconds": 3,
-    "visual": "Detailed hook-only visual in Vietnamese. Do not include Voiceover/Text hien/Text hiện/CHARACTER SPEECH in this visual text. ${visualAnchorClause} ${pacingClause}",
+    "visual": "Detailed hook-only visual in Vietnamese. If visible character speaks, include the spoken line inside the same timing row as: và [nhân vật] nói \"...\". Keep Text hiện in textOverlay. ${visualAnchorClause} ${pacingClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; include time + speaker when filled, e.g. 0-3s - Creator: line; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty when characterSpeech is filled",
     "voice": "Legacy compatibility line in ${options.language}: same as characterSpeech or voiceover, not a merged script",
@@ -2753,10 +2850,13 @@ export function normalizeIdeaOutput(
     );
     const characterSpeech = formatCharacterSpeechWithTiming(sourceVisual, speech.characterSpeech);
     const voiceover = characterSpeech ? '' : speech.voiceover;
+    const visualWithTimedSpeech = characterSpeech
+      ? appendInlineSpeechToTimedScene(sourceVisual, characterSpeech)
+      : sourceVisual;
     return {
       ...section,
-      visual,
-      script: script || visual,
+      visual: visualWithTimedSpeech,
+      script: visualWithTimedSpeech || script,
       characterSpeech,
       voiceover,
       voice: voiceover || characterSpeech,

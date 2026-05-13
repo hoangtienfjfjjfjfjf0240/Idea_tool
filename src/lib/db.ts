@@ -15,6 +15,7 @@ import type {
 } from '@/types/database';
 import { GLOBAL_EMOTION_OPTIONS, mergeWithGlobalEmotionOptions, uniqueNonEmptyStrings } from './emotionOptions';
 import { withPinnedWebFunnelAppName } from './appDisplay';
+import { SYSTEM_RULE_CATEGORY } from './systemRule';
 
 // ============================================
 // CATEGORY SPECIFIC SEEDS (Kept from original)
@@ -84,7 +85,7 @@ function getStrategyMapStateCategory(weekKey: string) {
 }
 
 function isInternalFilterCategory(category: string) {
-  return category.startsWith(STRATEGY_MAP_STATE_CATEGORY_PREFIX);
+  return category === SYSTEM_RULE_CATEGORY || category.startsWith(STRATEGY_MAP_STATE_CATEGORY_PREFIX);
 }
 
 function isStrategyWorkflowLevel(value: unknown): value is StrategyWorkflowLevel {
@@ -710,6 +711,92 @@ export async function getFilterOptions(app: AppProject): Promise<Record<string, 
   }
 
   return result;
+}
+
+export async function getSystemRule(appId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('filter_options')
+    .select('value')
+    .eq('app_id', appId)
+    .eq('category', SYSTEM_RULE_CATEGORY)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getSystemRule error:', error);
+    return '';
+  }
+
+  return typeof data?.value === 'string' ? data.value : '';
+}
+
+export async function saveSystemRule(appId: string, rule: string): Promise<boolean> {
+  const value = rule.trim();
+
+  const { data: existingRows, error: selectError } = await supabase
+    .from('filter_options')
+    .select('id')
+    .eq('app_id', appId)
+    .eq('category', SYSTEM_RULE_CATEGORY)
+    .order('created_at', { ascending: false });
+
+  if (selectError) {
+    console.error('saveSystemRule select error:', selectError);
+    return false;
+  }
+
+  const [currentRow, ...duplicateRows] = existingRows || [];
+
+  if (!value) {
+    const ids = (existingRows || []).map(row => row.id).filter(Boolean);
+    if (ids.length === 0) return true;
+    const { error: deleteError } = await supabase
+      .from('filter_options')
+      .delete()
+      .in('id', ids);
+    if (deleteError) {
+      console.error('saveSystemRule delete error:', deleteError);
+      return false;
+    }
+    return true;
+  }
+
+  if (currentRow?.id) {
+    const { error: updateError } = await supabase
+      .from('filter_options')
+      .update({ value, is_custom: true })
+      .eq('id', currentRow.id);
+
+    if (updateError) {
+      console.error('saveSystemRule update error:', updateError);
+      return false;
+    }
+  } else {
+    const { error: insertError } = await supabase
+      .from('filter_options')
+      .insert({ app_id: appId, category: SYSTEM_RULE_CATEGORY, value, is_custom: true });
+
+    if (insertError) {
+      console.error('saveSystemRule insert error:', insertError);
+      return false;
+    }
+  }
+
+  if (duplicateRows.length > 0) {
+    const duplicateIds = duplicateRows.map(row => row.id).filter(Boolean);
+    if (duplicateIds.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('filter_options')
+        .delete()
+        .in('id', duplicateIds);
+      if (deleteError) {
+        console.error('saveSystemRule cleanup error:', deleteError);
+      }
+    }
+  }
+
+  return true;
 }
 
 export async function addFilterOption(appId: string, category: string, value: string): Promise<FilterOption | null> {

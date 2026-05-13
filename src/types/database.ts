@@ -69,6 +69,13 @@ export interface IdeaMeta {
   ideaReasoning?: string;
   visualRefNotes?: string;
   talentProfile?: string;
+  characterVisual?: string;
+  marketInsight?: string;
+  countryVisualInsight?: string;
+  hookContextInsight?: string;
+  cameraPlan?: string;
+  voiceDirection?: string;
+  sceneFamily?: string;
   dontDo?: string;
   track?: string;
   trackReason?: string;
