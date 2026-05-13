@@ -3863,10 +3863,17 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
                             if (res.ok && result.success && result.data) {
                               // eslint-disable-next-line @typescript-eslint/no-explicit-any
                               const refined = result.data as any;
+                              const originalMeta = ((idea.content.meta || {}) as Record<string, unknown>);
+                              const refinedMeta = ((refined.meta || {}) as Record<string, unknown>);
+                              const lockedMeta = Object.fromEntries(
+                                ['strategyCode', 'strategyCodes', 'strategyCodeMap', 'isFavorite', 'favoriteKeys', 'favoriteMarkedAt', 'sourceHookId', 'sourceHookTitle', 'sessionType']
+                                  .filter(key => originalMeta[key] !== undefined && originalMeta[key] !== null && originalMeta[key] !== '')
+                                  .map(key => [key, originalMeta[key]])
+                              );
                               const newContent = {
                                 ...idea.content,
-                                meta: refined.meta || idea.content.meta,
-                                framework: refined.framework || idea.content.framework,
+                                meta: { ...originalMeta, ...refinedMeta, ...lockedMeta },
+                                framework: { ...(idea.content.framework || {}), ...(refined.framework || {}) },
                                 explanation: refined.explanation || idea.content.explanation,
                                 hook: refined.hook ? { durationSeconds: getHookDurationSeconds(refined.hook), script: refined.hook.script || refined.hook.visual || '', textOverlay: refined.hook.textOverlay || '', visual: refined.hook.visual || refined.hook.script || '', text: refined.hook.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.hook), voiceover: getSectionVoiceover(refined.hook), voice: refined.hook.voice || getSectionVoiceover(refined.hook) || getSectionCharacterSpeech(refined.hook), viTranslation: refined.hook.viTranslation || '', viewerProfile: refined.hook.viewerProfile || '', viewerEmotion: refined.hook.viewerEmotion || '', painpointImpact: refined.hook.painpointImpact || '', whyTheyStopScrolling: refined.hook.whyTheyStopScrolling || '' } : idea.content.hook,
                                 body: refined.body ? { script: refined.body.script || refined.body.visual || '', textOverlay: refined.body.textOverlay || '', visual: refined.body.visual || refined.body.script || '', text: refined.body.textOverlay || '', characterSpeech: getSectionCharacterSpeech(refined.body), voiceover: getSectionVoiceover(refined.body), voice: refined.body.voice || getSectionVoiceover(refined.body) || getSectionCharacterSpeech(refined.body), viTranslation: refined.body.viTranslation || '' } : idea.content.body,

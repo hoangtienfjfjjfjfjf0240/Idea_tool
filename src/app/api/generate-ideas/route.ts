@@ -1043,6 +1043,50 @@ function buildRefineEmergencyFallback(payload: Record<string, unknown>) {
   });
 }
 
+const REFINE_LOCKED_META_KEYS = [
+  'strategyCode',
+  'strategyCodes',
+  'strategyCodeMap',
+  'isFavorite',
+  'favoriteKeys',
+  'favoriteMarkedAt',
+  'sourceHookId',
+  'sourceHookTitle',
+  'sessionType',
+];
+
+function pickExistingMetaFields(meta: Record<string, unknown>) {
+  return Object.fromEntries(
+    REFINE_LOCKED_META_KEYS
+      .filter(key => meta[key] !== undefined && meta[key] !== null && meta[key] !== '')
+      .map(key => [key, meta[key]])
+  );
+}
+
+function mergeRefinedIdeaWithOriginal(
+  refinedInput: unknown,
+  originalIdea: Record<string, unknown>,
+  options: { duration: string; appName: string; pillar: string }
+) {
+  const refined = asRecord(normalizeIdeaOutput(refinedInput, options));
+  const originalMeta = asRecord(originalIdea.meta);
+  const refinedMeta = asRecord(refined.meta);
+
+  return {
+    ...refined,
+    creativeType: asText(refined.creativeType) || asText(originalIdea.creativeType),
+    framework: {
+      ...asRecord(originalIdea.framework),
+      ...asRecord(refined.framework),
+    },
+    meta: {
+      ...originalMeta,
+      ...refinedMeta,
+      ...pickExistingMetaFields(originalMeta),
+    },
+  };
+}
+
 function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
   const painpoints = Array.isArray(payload.painpoints)
     ? payload.painpoints.map(asText).filter(Boolean)
@@ -2837,6 +2881,7 @@ ${refineFramework}
 Refine one existing production brief using the user instruction below.
 - Apply only the requested changes.
 - Preserve the same problem-solution chain unless the user explicitly changes it.
+- Preserve all existing meta strategy fields exactly: strategyCode, strategyCodes, strategyCodeMap, favorite keys, and source IDs.
 - Keep or add meta.pspBridge so Hook connects the pain/emotion to the PSP before Body.
 - Body is only the demo/proof continuation; do not make Body the first place where PSP becomes relevant.
 - Keep visual, voice, and textOverlay separated for hook, body, and CTA.
@@ -2888,7 +2933,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       }
       return NextResponse.json({
         success: true,
-        data: normalizeIdeaOutput(parsed, {
+        data: mergeRefinedIdeaWithOriginal(parsed, originalIdea, {
           duration: originalDuration,
           appName,
           pillar: asText(originalFramework.painpoint),
