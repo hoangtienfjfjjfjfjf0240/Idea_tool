@@ -56,6 +56,15 @@ export interface IdeaMeta {
   angleName?: string;
   angleType?: string;
   angleDesc?: string;
+  angleLens?: string;
+  triggerSituation?: string;
+  copingBehavior?: string;
+  hiddenBelief?: string;
+  persuasionMechanism?: string;
+  coreArgument?: string;
+  angleDifferentiationCheck?: string;
+  videoCharacterConcept?: string;
+  characterDirection?: string;
   hookPrimary?: string;
   hookAlt1?: string;
   hookAlt2?: string;

@@ -453,6 +453,26 @@ function getStrategyCodeTerminalLevel(code: string): WorkflowLevel | null {
   return null;
 }
 
+function getStrategyCodePartForLevel(code: string, level: WorkflowLevel): string {
+  const prefix = LEVEL_TO_STRATEGY_PREFIX[level];
+  if (!prefix) return '';
+  const parts = normalizeStrategyCode(code).match(/[A-F]\d+/g) || [];
+  return parts.find(part => part.startsWith(prefix)) || '';
+}
+
+function getSavedOwnCodeForNodeLevel(node: WorkflowNode): string {
+  if (!isTreeNode(node) || node.level === 'root' || node.level === 'structure') return '';
+
+  const parts = new Set(
+    collectTreeNodeIdeas(node)
+      .flatMap(getIdeaStrategyCodes)
+      .map(code => getStrategyCodePartForLevel(code, node.level))
+      .filter(Boolean)
+  );
+
+  return parts.size === 1 ? Array.from(parts)[0] : '';
+}
+
 function normalizeWorkflowSearchText(value: unknown) {
   return String(value || '')
     .normalize('NFD')
@@ -1872,6 +1892,13 @@ export const StrategyMap: React.FC<StrategyMapProps> = ({ app, onBack, inline = 
         const key = getStrategyCodeLabelKey(node.level, getNodeStrategyLabel(node));
         const code = codeByLevelAndLabel.get(node.level)?.get(key);
         if (code) map.set(node.id, code);
+      });
+
+    registryItems
+      .filter(({ node }) => isTreeNode(node) && node.level !== 'root')
+      .forEach(({ node }) => {
+        const savedOwnCode = getSavedOwnCodeForNodeLevel(node);
+        if (savedOwnCode) map.set(node.id, savedOwnCode);
       });
 
     return map;

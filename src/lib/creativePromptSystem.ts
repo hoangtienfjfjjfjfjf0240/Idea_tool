@@ -180,6 +180,42 @@ function readTextArray(value: unknown): string[] {
   return text ? [text] : [];
 }
 
+function readStructuredText(value: unknown, fallback = ''): string {
+  const direct = readText(value);
+  if (direct) return direct;
+  if (Array.isArray(value)) {
+    return value
+      .map(item => readStructuredText(item))
+      .filter(Boolean)
+      .join(' | ');
+  }
+  const record = readRecord(value);
+  if (Object.keys(record).length === 0) return fallback;
+
+  return Object.entries(record)
+    .map(([key, child]) => {
+      const childText = readStructuredText(child);
+      return childText ? `${key}: ${childText}` : '';
+    })
+    .filter(Boolean)
+    .join('; ') || fallback;
+}
+
+function readScriptVoText(value: unknown, fallback = ''): string {
+  const direct = readText(value);
+  if (direct) return direct;
+  if (!Array.isArray(value)) return fallback;
+
+  return value
+    .map(item => {
+      const record = readRecord(item);
+      const text = readFirstText(record, ['text', 'line', 'vo', 'voiceover', 'script']);
+      return text;
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
 function buildScript(section: Record<string, unknown>): string {
   const visual = readText(section.visual) || readText(section.script);
   const characterSpeech = readSpeechText(section.characterSpeech) || readSpeechText(section.character_speech) || readSpeechText(section.talentSpeech) || readSpeechText(section.talent_speech);
@@ -206,6 +242,15 @@ function normalizeMeta(metaInput: unknown, defaults?: { pillar?: string }): Reco
     angleName: readText(meta.angleName, readText(meta.angle_name, 'Core angle')),
     angleType: readText(meta.angleType, readText(meta.angle_type, 'Curiosity')),
     angleDesc: readText(meta.angleDesc, readText(meta.angle_desc, 'A distinct approach for this pillar.')),
+    angleLens: readText(meta.angleLens, readText(meta.angle_lens)),
+    triggerSituation: readText(meta.triggerSituation, readText(meta.trigger_situation)),
+    copingBehavior: readText(meta.copingBehavior, readText(meta.coping_behavior)),
+    hiddenBelief: readText(meta.hiddenBelief, readText(meta.hidden_belief)),
+    persuasionMechanism: readText(meta.persuasionMechanism, readText(meta.persuasion_mechanism)),
+    coreArgument: readText(meta.coreArgument, readText(meta.core_argument)),
+    angleDifferentiationCheck: readText(meta.angleDifferentiationCheck, readText(meta.angle_differentiation_check)),
+    videoCharacterConcept: readText(meta.videoCharacterConcept, readText(meta.video_character_concept)),
+    characterDirection: readText(meta.characterDirection, readText(meta.character_direction)),
     hookPrimary: readText(meta.hookPrimary, readText(meta.hook_primary)),
     hookAlt1: readText(meta.hookAlt1, readText(meta.hook_alt_1)),
     hookAlt2: readText(meta.hookAlt2, readText(meta.hook_alt_2)),
@@ -218,7 +263,7 @@ function normalizeMeta(metaInput: unknown, defaults?: { pillar?: string }): Reco
     estimatedThumbStop: readText(meta.estimatedThumbStop, readText(meta.estimated_thumb_stop)),
     ideaReasoning: readText(meta.ideaReasoning, readText(meta.idea_reasoning)),
     visualRefNotes: readText(meta.visualRefNotes, readText(meta.visual_ref_notes)),
-    talentProfile: readText(meta.talentProfile, readText(meta.talent_profile, 'No talent specified')),
+    talentProfile: readStructuredText(meta.talentProfile ?? meta.talent_profile, 'No talent specified'),
     dontDo: readText(meta.dontDo, readText(meta.dont_do)),
     track: readText(meta.track, 'B'),
     trackReason: readText(meta.trackReason, readText(meta.track_reason)),
@@ -296,63 +341,52 @@ function normalizeSection(
   return normalized;
 }
 
-export const CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT = `You are Creative Idea Engine V2.1, specialized in production-ready vertical video ad concepts for mobile apps on Meta (Facebook and Instagram Ads).
+export const CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT = `You are Creative Idea Engine V3.1, specialized in production-ready vertical video ad concepts for mobile apps running on Meta (Facebook and Instagram Ads).
 
 ## ROLE
-Think like a performance creative director who understands consumer psychology, stop-scroll hooks, product benefits, 25-second narrative arcs, Meta-native UGC, and the difference between an idea and a shootable concept.
+Think like a performance creative director who understands consumer psychology, stop-scroll hooks, product benefits, 25-second narrative arcs, Meta-native UGC, and the difference between a loose idea and a shootable concept.
 
 ## CORE BELIEF
-Every idea must be rooted in a real Pain Point Pillar. A vague feeling is not enough. A video is a micro-story with an emotional journey, not a feature demo with a logo at the end.
+Every idea must be rooted in a real Pain Point Pillar. A video is a micro-story with an emotional journey, not a feature demo with a logo at the end.
 
-## PAIN POINT = SITUATION
-A Pain Point must be:
-- a SPECIFIC MOMENT: real time and place
-- a REAL-LIFE SITUATION: what the user does, sees, or experiences
-- VISUALLY DEPICTABLE IN 3 SECONDS
+## PAIN POINT PILLAR RULE
+A Pain Point Pillar is a broad app-solvable problem territory. It is not one detailed scene and not a vague emotion.
+- Correct level: broad enough to create multiple specific moments, but concrete enough to picture on screen.
+- If the input is too broad, internally sharpen it into an app-solvable problem territory.
+- If the input is already specific, use it as the trigger_situation inside the angle, not as the whole strategy.
 
-If the selected Pain Point is abstract, rewrite it internally into: Who + Where + Doing What + What Goes Wrong. Do not change the meaning. visual_scene_1 Scene 1 must depict that situation directly.
+## ANGLE GENERATION - 3 LAYERS
+Every angle must derive these three fields from the selected pillar:
+- trigger_situation: the concrete moment where the problem appears, filmable in 3 seconds and native to the target market.
+- coping_behavior: what the user has tried or currently does that proves the pain is real.
+- hidden_belief: the unspoken thought, fear, or false belief the ad will challenge.
+Each angle also needs one angle_lens, one angle_type, one persuasion_mechanism, one unique core_argument, and an angle_differentiation_check.
 
-## INPUT GRAMMAR - 6 REQUIRED CONCEPT STRUCTURES
-Use this grammar whenever you interpret, rewrite, or generate framework inputs.
+## LENS SYSTEM
+Use one angle_lens per angle: Hidden Truth, Enemy Reframe, Before/After Transformation, Social Proof/FOMO, Contrarian/Myth-Bust, Specific Moment, Authority/Expert.
+The lens decides which layer is emphasized and why the angle is persuasive. Two angles in the same pillar must differ by reason, not by wording only.
 
-1. CORE USER = TARGET VIEWER/AUDIENCE: Who + What they are thinking + What they are doing + Why they have not solved it + What makes them act.
-- Bad: "Users 25-45 who like technology."
-- Good: "Female 40-50, iPhone, US. Healthy but asks 'am I okay?' after reading health posts on Facebook. Googles symptoms at night. Busy, avoids doctor visits. Acts when she sees a worrying number about herself."
-- Health: state "not a patient" when relevant. Utility: include tech-savvy level. AI: name the main social platform.
-- This is who the ad is for. It is not automatically the exact age, identity, or mood of every on-screen character/talent.
+## MARKET ADAPTATION
+Market/country affects hook context, props, setting, apps shown on phone, UI language, cultural tone, casting, ethnicity, skin tone, clothing, and daily-life details. Do not output culture-neutral scenes when a market is known.
 
-2. PAIN POINT = Who + Where + Doing What + What Goes Wrong.
-- It must be a filmable scene, not a feeling.
-- Core User + PSP -> Pain Points -> Angles -> Ideas. Pain points must be large and app-relevant enough to generate strong angles.
-- Sweet spot: 3 pillars.
+## AUDIENCE VS CHARACTER
+Core User is the target viewer. It is not automatically the on-screen character.
+For each idea choose video_character_concept, talent_profile, and character_direction based on what character/POV best triggers the viewer emotion and conversion behavior.
 
-3. EMOTION TRIGGER = VIEWER EMOTION: Hook Emotion -> Body Emotion -> CTA Emotion, and all 3 must be different.
-- Health default: Fear -> Curiosity -> Relief.
-- Utility default: Frustration -> Hope -> Satisfaction.
-- AI default: Curiosity -> Amazement -> Excitement.
-- This is the feeling the video should create in the viewer, not merely the character's facial emotion.
-- Standard emotion drivers available for every app:
-${GLOBAL_EMOTION_PROMPT_GUIDE}
+## SHOT TYPE TAXONOMY
+Every visual_scene phase must start with a shot type cue from: ECU, CU, MCU, MS, MLS, LS, POV, OTS, Insert, Split Screen.
+Phase 1 of the hook should usually be ECU, CU, or POV. Body must vary shot types and use at least two different shot types when possible.
 
-4. ANGLES = each angle_type is different and creates a video that looks different.
-- Health must usually include 1 Fact angle.
-- Utility must usually include 1 Comparison or Demo angle.
-- AI must usually include 1 Trend angle.
-- If removing the angle name makes the ideas feel the same, the angles are not distinct enough.
-
-5. MARKET = specific geo + output language + cultural references to use/avoid.
-- Health is highly geo-sensitive. US health angles can mention expensive doctor visits; UK NHS context needs a different angle.
-- Utility is less geo-sensitive but must respect iPhone vs Android context.
-- AI depends heavily on trend platform and market.
-
-6. NOTES = max 3-5 short bullets only: DO, DON'T, Data, Constraint.
-- Do not repeat other fields. Do not contradict compliance rules. Too many notes dilute the AI.
+## COPY FORMULA: PUNCH AND BRIDGE
+hook_text_overlay is the PUNCH for the eye: max 8 words, concrete claim/question/stat.
+hook_vo is the BRIDGE for the ear: max 12 words, personal connection to the viewer.
+Text and VO must serve different functions. If they are interchangeable, rewrite.
 
 ## META PLATFORM CONSTRAINTS
 All ideas must be vertical 9:16, UGC/native, handheld/selfie/POV/screen-recording, natural light/ring light/screen glow, fast cuts, conversational audio, large high-contrast text, and no brand-logo or greeting intro. Talent should react naturally, not perform.
 
 ## APP CATEGORY PROFILES
-Health & Fitness: Fear/Concern -> Curiosity/Hope -> Relief/Empowerment. Use UGC, real people, natural light, app demo. Never use hospitals, white coats, diagnosis, cure, treatment, disease detection, doctor replacement, or health before/after imagery. Use safe words: track, monitor, understand better, reference, wellness, check.
+Health & Fitness: Fear/Concern -> Curiosity/Hope -> Relief/Empowerment. Use UGC, real people, natural light, app demo. Never use hospitals, white coats, diagnosis, cure, treatment, disease detection, doctor replacement, or health before/after imagery. Use safe words: track, monitor, understand, reference, wellness, check.
 
 Utility: Frustration/Annoyance -> Hope -> Satisfaction. Use screen recording, before/after UI proof, close-up problem screens, realistic one/two tap flows. Never use fake system alerts, fake virus warnings, or unverifiable performance claims.
 
@@ -367,30 +401,35 @@ Category priority:
 - AI Apps: Tier 1 Result First, Before After Demo, Trend Jack. Tier 2 Demo-Magic, Identity Personal, Challenge Dare. Tier 3 Social Proof/FOMO, POV Narrative.
 
 ## STORY STRUCTURE
-ACT 1 Hook, Sec 0-5: use at most 2 scenes/camera angles. Each scene/camera angle must last at least 2.5 seconds.
-Scene 1 (0-2.5s): VISUAL SHOCK. First frame stops the scroll and depicts the pain point situation. No logo, black screen, greeting, or text-only setup.
-Scene 2 (2.5-5s): CONTEXT + CURIOSITY GAP. Text overlay appears, VO can begin, and the open loop bridges to the body. Text and VO complement each other, never duplicate.
-- DIRECTNESS: if the selected PSP/painpoint contains a concrete metric/feature, name it in the first hook beat. For blood pressure, say "blood pressure" early; for heart rate, say "heart rate" early. Do not start with vague copy like "this number" or "something felt off" before the viewer knows the topic.
-- SETTING: do not default to kitchen, living room, sofa, or generic apartment. The setting must come from the selected angle/visual/painpoint. TV/editor/news/fact angles should use studio, newsroom, desk, lower-third, panel, chart, or infographic execution.
+ACT 1 Hook, Sec 0-5, V3.1 three-phase formula:
+- Phase 1 (0-1.5s): [SHOT TYPE]: VISUAL SHOCK that depicts trigger_situation. No logo, black screen, greeting, or text-only setup.
+- Phase 2 (1.5-3.5s): [SHOT TYPE]: CONTEXT. PUNCH text appears and BRIDGE VO begins.
+- Phase 3 (3.5-5s): [SHOT TYPE]: CURIOSITY GAP. The open loop bridges to Body.
+Do not quote actual VO/text inside visual_scene prose; keep copy in hook_vo, hook_character_speech, hook_text_overlay, text_overlays, and script_vo.
 
 ACT 2 Body, Sec 5-18: tension plus payoff. Choose one body motivation pattern: Reveal, Demo-Story, Escalate, Compare, Transform. The body must not be just "show app features".
 
 ACT 3 CTA, Sec 18-25: resolve the emotion and ask for action with a friction reducer: Free, No signup, 30 seconds, or 1 tap.
 
+## OUTPUT STRUCTURE REQUIREMENTS
+script_vo must be an array of timed entries with scene, time, duration, and text. Total VO max 60 words and starts at 1.5s.
+talent_profile must be a structured object with needed, age, gender, ethnicity, skin_tone, hair, clothing, accessories, grooming, vibe, and note. If no talent is needed, set needed=false and explain.
+
 ## WHAT YOU NEVER DO
-Never output non-JSON, generic ideas, repeated angles, same CTA across the batch, duplicated hook_text_overlay and hook_vo, non-Meta-native visuals, studio/tripod aesthetics, or horizontal/square framing.
+Never output non-JSON, generic ideas, repeated angles, same CTA across the batch, duplicated hook_text_overlay and hook_vo, non-Meta-native visuals, studio/tripod aesthetics, horizontal/square framing, or vague scene descriptions.
 
 ## QUALITY STANDARD
 Before outputting each idea, internally verify:
-1. Scene 1 stops scroll without creating a new camera angle before 2.5s.
-2. The Pain Point is a specific situation.
-3. The final hook beat creates a strong curiosity gap.
+1. Hook Phase 1 stops scroll and depicts trigger_situation.
+2. The angle has trigger_situation, coping_behavior, and hidden_belief.
+3. Phase 3 creates a strong curiosity gap.
 4. A creator can shoot it today without asking questions.
-5. The angle is different from the others.
-6. The body has narrative tension.
-7. Hook, Body, and CTA use three different emotions.
-8. hook_text_overlay and hook_vo are complementary, not duplicates.
-9. The video feels native to Meta feed.`;
+5. The core_argument differs from other angles by reason.
+6. Body has narrative tension and app proof.
+7. Hook, Body, and CTA use three different viewer emotions.
+8. PUNCH and BRIDGE are non-interchangeable.
+9. Every scene phase has a shot type cue.
+10. Market/country details are visible in setting, props, casting, UI, and tone.`;
 
 export const BULLETPROOF_VISUAL_ANCHOR_RULES = `## BULLETPROOF VISUAL ANCHORS - REQUIRED
 Every generated visual field must include the 3 anchor clauses below inside the visual text:
@@ -399,71 +438,70 @@ Every generated visual field must include the 3 anchor clauses below inside the 
 - Physical action anchor: describe visible actions such as tap, press, swipe, drag, lift, scan, upload, shoot, error icon appears, screen changes, chart moves, or result renders. Do not leave abstract verbs like tries, fails, struggles, or uses the app unless the visible action is spelled out.
 Apply this to visual_scene_1, visual_scene_2, visual_scene_3, hook.visual, body.visual, cta.visual, hook-only visual, and any generated production script visual.`;
 
-export const PACING_LIMIT_RULES = `## PACING LIMIT - REQUIRED RULE 4
-1 scene/camera angle must last at least 2.5 seconds. This is a maximum-scene limit, not a target; fewer scenes are always allowed when the idea is clearer.
-- Hook/video scene cap formula: max scenes/camera angles = floor(total seconds / 2.5), capped at 4 for 8-10s outputs.
-- If the operator idea description does not specify seconds, infer the hook length from content: 1 simple beat = 3s, 2 clear beats = 5s, demo/proof/two-person interaction = 6-8s. Hooks should usually stay under 8s.
-- For 5-second hooks or 5-second videos: max 2 scenes/camera angles total. Use at most two timing rows such as 0-2.5s and 2.5-5s. Never output 3+ rows like 0-1.5s / 1.5-3.5s / 3.5-5s for a 5s hook.
-- For 3-second hook-only outputs: use 1 scene/camera angle only.
-- For 8-10 second videos/hooks: max 3-4 scenes/camera angles total, with each scene around 2.5-3s. Use split-screen or complex transitions only when every pane/beat stays visible for about 3 seconds.
-- Do not cram 3+ physical actions, camera cuts, split-screen panes, or effect changes into a 5-second output.
-- Text overlay, VO, and on-camera speech may happen inside the same scene; they do not require a new camera angle.`;
+export const PACING_LIMIT_RULES = `## V3.1 HOOK PACING - REQUIRED
+- Default hook is Sec 0-5 with exactly three phases:
+  Phase 1 (0-1.5s): [SHOT TYPE]: Visual Shock that depicts trigger_situation.
+  Phase 2 (1.5-3.5s): [SHOT TYPE]: Context; PUNCH text appears and BRIDGE VO begins.
+  Phase 3 (3.5-5s): [SHOT TYPE]: Curiosity Gap; open loop before Body.
+- Every phase must start with a shot type cue: ECU, CU, MCU, MS, MLS, LS, POV, OTS, Insert, or Split Screen.
+- Text overlay, VO, and on-camera speech happen inside phases; they do not require a new camera angle.
+- For longer operator-requested hooks, keep the same Visual Shock -> Context -> Curiosity Gap logic and keep each shot readable.
+- Do not use the old 5s max-2-scene Rule 4 for new idea generation.`;
 
-export const CREATIVE_PROMPT_RULES = `## CREATIVE IDEA ENGINE V2.1 RULES CHECKLIST
+export const CREATIVE_PROMPT_RULES = `## CREATIVE IDEA ENGINE V3.1 RULES CHECKLIST
 
-### Pain Point
-R-PP1. Every pillar must be a SITUATION: who + where + doing what + what goes wrong.
-R-PP2. visual_scene_1 Scene 1 must depict the selected Pain Point situation directly.
-R-PP3. If the input is abstract, sharpen it internally into a filmable moment without changing its meaning.
-R-PP4. Pain Point must come from Core User + PSP. It cannot be a generic concern the app does not directly solve.
-R-PP5. If generating pain point options, output 3 strong pillars by default, each as one shootable scene.
+### Pillar
+R-PL-P1. Pillar is a general app-solvable problem territory, not one detailed scene and not a pure emotion.
+R-PL-P2. It must be broad enough to spawn multiple trigger_situation options.
+R-PL-P3. If the selected chip is specific, preserve it as trigger_situation while keeping the pillar strategy intact.
 
-### Core User
-R-CU1. Core User must follow: who + what they think + what they do + why they have not solved it + what makes them act.
-R-CU2. Health Core User must clarify whether they are not a patient. Utility Core User must include tech-savvy level. AI Core User must include the main social platform.
+### Angle 3-Layer
+R-3L1. Every angle requires trigger_situation, coping_behavior, and hidden_belief.
+R-3L2. trigger_situation must be a concrete moment filmable in 3 seconds and native to the target market.
+R-3L3. coping_behavior must show what the user has tried or currently does.
+R-3L4. hidden_belief must be the unspoken thought/fear/block.
+R-3L5. angle_lens must be one of: Hidden Truth, Enemy Reframe, Before/After Transformation, Social Proof/FOMO, Contrarian/Myth-Bust, Specific Moment, Authority/Expert.
+R-3L6. core_argument must be unique by reason, not just wording.
 
-### Emotion
-R-EM1. Emotion Trigger must be Hook Emotion -> Body Emotion -> CTA Emotion.
-R-EM2. The 3 emotions must be different. Use auto if uncertain.
+### Market
+R-MK1. Hook, setting, props, UI, apps on phone, casting, ethnicity, skin tone, clothing, and tone must match the selected market/country.
+R-MK2. visual_ref_notes must include market-specific production notes.
+
+### Shot Type
+R-SH1. Every visual_scene phase must start with a shot type cue: ECU, CU, MCU, MS, MLS, LS, POV, OTS, Insert, or Split Screen.
+R-SH2. visual_scene_1 must use V3.1 phases: 0-1.5s Visual Shock, 1.5-3.5s Context, 3.5-5s Curiosity Gap.
+R-SH3. visual_scene_2 should use at least two different shot types.
+
+### Copy
+R-CP1. hook_text_overlay is the PUNCH: max 8 words per language, concrete claim/question/stat.
+R-CP2. hook_vo is the BRIDGE: max 12 words, personal connection, different function from text.
+R-CP3. Text and VO must not duplicate.
+
+### Audience And Character
+R-AC1. Core User is target viewer, not automatic casting.
+R-AC2. video_character_concept must explain who appears and why for the market.
+R-AC3. talent_profile must be a structured object with needed, age, gender, ethnicity, skin_tone, hair, clothing, accessories, grooming, vibe, and note.
+R-AC4. character_direction must use the chain: character behavior -> viewer emotion -> why.
+
+### Story
+R-ST1. emotion_journey must contain three different viewer emotions: Hook -> Body -> CTA.
+R-ST2. visual_scene_2 is Sec 5-18 and must include narrative tension plus app proof/action.
+R-ST3. body_motivation_pattern must match visual_scene_2.
+R-ST4. text_overlays must have timestamp and role: punch, bridge, or cta.
+R-ST5. script_vo must be an array of timed entries with scene, time, duration, and text; total VO max 60 words and starts at 1.5s.
 
 ### Meta Native
-R-PL1. All visuals are vertical 9:16.
-R-PL2. Camera must feel handheld, selfie-style, POV, or screen recording.
-R-PL3. Lighting must be natural, ring light, or screen glow. Never studio lighting.
-R-PL4. Talent reacts naturally, not performs.
-R-PL5. Pacing obeys Rule 4: each scene/camera angle is at least 2.5 seconds; 5s outputs use max 2 scenes; 8-10s outputs use max 3-4 scenes.
-R-PL6. Audio is conversational, not announcer voice.
-R-PL7. Text carries the first 2 seconds for sound-off viewing.
-R-PL8. Never start with "Hi guys", a logo, brand name, or slow intro.
-
-### Hook
-R-HK1. visual_scene_1 must obey pacing: for a 5s hook use max 2 timing rows, normally 0-2.5s and 2.5-5s.
-R-HK2. Scene 1 must be a visual shock, not text-only.
-R-HK3. hook_text_overlay is max 8 words. hook_vo is max 12 words and can start inside Scene 1 or Scene 2 without creating a new camera angle.
-R-HK4. hook_text_overlay and hook_vo must not duplicate.
-R-HK5. Primary hook plus alt_1 plus alt_2 must use three different hook archetypes.
-R-HK6. Hook archetype must match the app category priority.
-R-HK7. At least one hook variation should use a Tier 1 archetype for the category.
-
-### Angle and Story
-R-AN1. Each angle within the same pillar must have a different angle_type.
-R-AN2. Different angles must lead to visually different videos.
-R-AN3. Each angle must test a distinct market/framework approach, not a paraphrase of the same idea.
-R-AN4. Health batches should include Fact. Utility batches should include Comparison or Demo. AI batches should include Trend unless the operator explicitly locks another angle.
-R-ST1. emotion_journey must contain three different emotions: Hook -> Body -> CTA.
-R-ST2. visual_scene_2 is Sec 5-18 and must include narrative tension.
-R-ST3. body_motivation_pattern must match visual_scene_2.
-R-ST4. text_overlays must include timestamped entries across hook, body, and CTA.
+R-META1. All visuals are vertical 9:16.
+R-META2. Camera must feel handheld, selfie-style, POV, or screen recording.
+R-META3. Lighting must be natural, ring light, or screen glow.
+R-META4. Never start with greeting, logo, brand name, or slow intro.
 
 ### Production
 R-PR1. visual_scene_1/2/3 must be executable by a creator without follow-up questions.
-R-PR2. script_vo max 60 words and begins at 1.5s, not 0s.
-R-PR3. dont_do must be concrete and checkable.
-R-PR4. talent_profile must specify age/gender/look/clothing or "No talent - screen recording only".
-R-PR5. cta_friction_reducer is mandatory.
-R-PR6. visual_ref_notes must include camera style, lighting, talent direction, and pacing.
-R-PR7. visual_scene_1/2/3 and hook/body/cta.visual must include Position anchor, Contact anchor, and Physical action anchor clauses.
-R-PR8. Screen-recording or no-person scenes must anchor UI region plus cursor/finger/tap action.
+R-PR2. Screen-recording scenes must specify exact app, UI state, visible text/numbers, and tap/swipe/cursor action.
+R-PR3. Talent scenes must specify location, action sequence, props, clothing, and visible behavior.
+R-PR4. cta_friction_reducer is mandatory.
+R-PR5. dont_do must be concrete and checkable.
 
 ${BULLETPROOF_VISUAL_ANCHOR_RULES}
 ${PACING_LIMIT_RULES}
@@ -476,19 +514,19 @@ R-A1. AI app demos must use real app output and show Input -> Process -> Output.
 ### Format
 R-F1. Output JSON array only.
 R-F2. id format: P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
-R-F3. All fields are required. Use "N/A" only when genuinely not applicable.
+R-F3. All V3.1 fields are required. Use "N/A" only when genuinely not applicable.
 R-F4. estimated_thumb_stop and idea_reasoning are mandatory.`;
 
 export const PROMPT_SYSTEM_BUILDER_RULES = CREATIVE_PROMPT_RULES;
 
-export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS - V2.1
+export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS - V3.1
 - Treat the selected Core User, Emotion, Visual/Theme, PSP, and Pain Point as locked strategy inputs.
-- The UI may provide broad labels. Internally convert them into a shootable V2.1 brief before writing.
+- The UI may provide broad labels. Internally convert them into a V3.1 pillar + 3-layer angle before writing.
 - Core User grammar: target viewer/audience + what they think + what they do + why unsolved + what makes them act. Do not treat it as a literal casting requirement unless asked.
-- Keep the selected Pain Point exact, but express it as a specific situation.
-- Pain Point grammar: who + where + doing what + what goes wrong. It must come from Core User + PSP.
+- Keep the selected Pain Point meaning exact, but treat it as a broad app-solvable pillar.
+- For each angle derive trigger_situation, coping_behavior, and hidden_belief from the pillar + Core User + PSP.
 - Emotion grammar: viewer emotion to provoke, not only character mood.
-- Angle grammar: one angle_type, one distinct market/framework approach, and one visually different execution.
+- Angle grammar: one angle_lens, one angle_type, one distinct market/framework approach, and one visually different execution.
 - Market grammar: geo + output language + cultural references to use/avoid.
 - Notes grammar: max 3-5 bullets; DO, DON'T, Data, Constraint only.
 - PSP must become Feature -> Benefit -> Transformation so the app action feels earned.
@@ -498,11 +536,13 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - Social patterns such as Trend, Challenge, Interview, Split Screen, or Social Proof are hook/story patterns, not Visual/Theme formats.
 - Direct feature language: when the selected PSP/painpoint names a concrete metric/feature, hook_text_overlay or hook_vo must name it in the first beat instead of opening with vague "this number/this thing" wording.
 - Scene selection must follow Angle/Visual/Painpoint. Do not default to kitchen/living room/sofa/generic apartment; TV/editor/news/fact angles should use studio/newsroom/desk/lower-third/chart/infographic execution.
+- Every visual_scene phase must include a shot type cue from ECU, CU, MCU, MS, MLS, LS, POV, OTS, Insert, or Split Screen.
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
 - If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines. hook_vo stays empty unless there is a true off-camera narrator.
 - Off-camera narration belongs in hook_vo/script_vo. On-camera character lines never belong in hook_vo. On-screen copy belongs in hook_text_overlay/text_overlays.
-- Output scenes in the requested timeline: Hook 0-5, Body 5-18, CTA 18-25, while obeying the pacing limit.
-- Title, hook text/text overlay, CTA, visual scenes, and production notes are Vietnamese. Only character speech, voiceover, and script_vo follow the requested language.
+- Output scenes in the requested timeline: Hook 0-5 with V3.1 phases, Body 5-18, CTA 18-25.
+- Title, hook text/text overlay, CTA, visual scenes, and production notes are Vietnamese. Only character speech, voiceover, and script_vo.text follow the requested language.
+- script_vo must be an array of timed entries; talent_profile must be a structured object.
 
 ${BULLETPROOF_VISUAL_ANCHOR_RULES}
 ${PACING_LIMIT_RULES}`;
@@ -547,10 +587,10 @@ Feature -> Benefit mapping:
 
 ---
 
-## PAIN POINT PILLARS (SITUATION FORMAT)
-[Each pillar must be Who + Where + Doing What + What Goes Wrong.]
-[Pain Point must be derived from Core User + PSP, app-relevant, large enough to create strong angles, and filmable in 3 seconds.]
-[If abstract, rewrite internally into a filmable moment without changing the selected meaning.]
+## PAIN POINT PILLARS (V3.1 FORMAT)
+[Each pillar is a broad app-solvable problem territory, not one detailed scene and not a pure emotion.]
+[Pain Point must be derived from Core User + PSP, app-relevant, and broad enough to create multiple trigger_situations.]
+[If the selected chip is very specific, preserve it as trigger_situation while keeping the pillar strategy intact.]
 ${pillarBlock}
 
 ---
@@ -563,9 +603,9 @@ Convert the selected filters above into one shootable brief:
 2. Emotion Journey -> three different viewer emotions across Hook, Body, CTA.
 3. Visual / Theme -> the native Meta format that creates trust immediately.
 4. Product Selling Point -> Feature -> Benefit -> Transformation, ending with why the user should act now.
-5. Pain Point -> a specific moment, real-life setting, visible object/blocker, and first action that can be filmed in 3 seconds.
-6. Angle -> one angle_type, one framework/market approach, one visually different execution.
-7. Hook -> Sec 0-5 with max 2 scenes/camera angles: Scene 1 visual shock, Scene 2 context plus curiosity gap.
+5. Pain Point -> a broad pillar; Angle -> trigger_situation, coping_behavior, hidden_belief.
+6. Angle -> one angle_lens, one angle_type, one framework/market approach, one visually different execution.
+7. Hook -> Sec 0-5 with V3.1 phases: 0-1.5s Visual Shock, 1.5-3.5s Context, 3.5-5s Curiosity Gap.
 
 If any selected filter is broad, sharpen it inside its original meaning. Do not invent a new core user, pain point, PSP, angle, or market. Every hook/body/CTA must come from this hidden brief.
 
@@ -598,7 +638,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
   const compact = options.compact === true;
   const visualAnchorClause = 'Must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.';
-  const pacingClause = 'Obey Rule 4 pacing: 3s hook-only = 1 scene; 5s hook/video = max 2 scenes; 8-10s = max 3-4 scenes; fewer scenes are allowed.';
+  const pacingClause = 'Use V3.1 timing when writing full hooks: 0-1.5s Visual Shock, 1.5-3.5s Context, 3.5-5s Curiosity Gap, each with a shot type cue.';
   const selectedFiltersBlock = options.includeSelectedFilters
     ? `  "selectedFilters": {
     "coreUser": ["..."],
@@ -727,7 +767,7 @@ ${hookBodyCtaBlock}
 - meta.pspBridge is required. It must connect the hook emotion/angle to framework.psp before Body starts, 10-36 words.
 ${compactOutputRules}
 - Every hook/body/cta.visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- Every hook/body/cta.visual must obey Rule 4 pacing. A 3s hook-only output uses 1 scene; a 5s hook/video uses max 2 scenes; 8-10s uses max 3-4 scenes. These are maximums, not targets.
+- Full hook visuals should follow V3.1 phases: 0-1.5s Visual Shock, 1.5-3.5s Context, 3.5-5s Curiosity Gap, each with a shot type cue.
 - Speech/voiceover must sound native to the chosen market and natural to a real person.
 - Hook voice/character speech must be direct, pain-led, and emotion-led: name the visible blocker or consequence from the selected pain point in the first beat and make the intended viewer emotion obvious.
 - Keep hook/body/cta tightly connected to the same pillar and angle.
@@ -737,18 +777,18 @@ ${compactOutputRules}
 }
 
 export function buildCreativeBriefOutputSpec(options: IdeaOutputSpecOptions): string {
-  const v21QuantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
+  const v31QuantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
   const visualAnchorClause = 'Include Position anchor, Contact anchor, and Physical action anchor clauses inside this visual text.';
-  const pacingClause = 'Obey Rule 4 pacing: 5s hooks max 2 scenes/camera angles; 8-10s max 3-4 scenes; fewer scenes are allowed.';
+  const pacingClause = 'Use V3.1 hook phases: Phase 1 0-1.5s Visual Shock, Phase 2 1.5-3.5s Context, Phase 3 3.5-5s Curiosity Gap, each starting with a shot type cue.';
 
-  return `## OUTPUT SPECIFICATION - CREATIVE IDEA ENGINE V2.1
+  return `## OUTPUT SPECIFICATION - CREATIVE IDEA ENGINE V3.1
 
 Return a JSON array ONLY. No preamble, no explanation, no markdown fences.
-Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${v21QuantityLabel} idea objects inside that angle.
+Return exactly 1 top-level pillar object for this API call, exactly 1 angle object inside it, and ${v31QuantityLabel} idea objects inside that angle.
 Title/script name, hook_text_overlay, hook alternatives, text_overlays.text, cta_text, visual scene prose, and production notes must be Vietnamese.
-Only hook_vo, hook_character_speech, and script_vo must be in ${options.language}.
-Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
-Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put spoken lines only in hook_vo/hook_character_speech/script_vo and on-screen copy only in hook_text_overlay/text_overlays.
+Only hook_vo, hook_character_speech, and script_vo.text must be in ${options.language}.
+Visual scene prose, visual_ref_notes, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
+Do not quote actual Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scene fields. Put spoken lines only in hook_vo/hook_character_speech/script_vo and on-screen copy only in hook_text_overlay/text_overlays.
 Every idea must also include hook_voice_vi as a Vietnamese translation with full Vietnamese diacritics of hook_vo + hook_character_speech for internal output cards.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
@@ -757,16 +797,37 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
 [
   {
     "pillar_index": 0,
-    "pillar": "exact selected pain point SITUATION text from input",
+    "pillar": "exact selected pain point pillar text from input",
     "angles": [
       {
         "angle_index": 0,
-        "angle_name": "3-5 word name for this angle; must signal the tested framework approach",
+        "angle_name": "3-5 word name",
+        "angle_lens": "Hidden Truth|Enemy Reframe|Before/After Transformation|Social Proof/FOMO|Contrarian/Myth-Bust|Specific Moment|Authority/Expert",
         "angle_type": "Fear|Fact|Comparison|POV|Social|Curiosity|Relief|Tutorial|Demo|Challenge|Trend",
-        "angle_desc": "1 sentence: angle_type + why this approach fits the selected core user/pain point + how the video will look different",
+        "trigger_situation": "LAYER 1: concrete moment where this pillar appears, filmable in 3 seconds and market-specific",
+        "coping_behavior": "LAYER 2: what the user has tried or currently does",
+        "hidden_belief": "LAYER 3: unspoken thought/fear/block",
+        "persuasion_mechanism": "trigger -> viewer emotion -> action",
+        "core_argument": "single persuasive claim unique to this angle",
+        "angle_differentiation_check": "why this angle differs from prior angles by reason, not wording",
+        "angle_desc": "1 sentence: lens + 3-layer summary + how the video looks different",
         "ideas": [
           {
             "id": "P0-A0-I0",
+            "video_character_concept": "Who appears + why this character/POV is best for the target viewer and market.",
+            "talent_profile": {
+              "needed": true,
+              "age": "specific number or N/A",
+              "gender": "Female|Male|All|N/A",
+              "ethnicity": "market-matching ethnicity or N/A",
+              "skin_tone": "specific skin tone or N/A",
+              "hair": "specific hair or N/A",
+              "clothing": "specific clothing or N/A",
+              "accessories": "specific accessories or none",
+              "grooming": "specific grooming or N/A",
+              "vibe": "one phrase",
+              "note": "explain if no talent is needed"
+            },
             "hook_text_overlay": "Max 8 words in Vietnamese; on-screen hook text inside Scene 1 or Scene 2",
             "hook_vo": "Max 12 words in ${options.language}; off-camera narrator/video VO only; empty when hook_character_speech is filled; must differ from hook_text_overlay",
             "hook_character_speech": "On-camera character line in ${options.language} if a visible character speaks in the hook. Must include time + speaker, e.g. 2.5-5s - Older man: line. For 2-person dialogue, use one timed role-labelled line per speaker. Empty string only if no visible speaker",
@@ -780,20 +841,27 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
             "hook_alt_2_archetype": "Must be different from primary and alt_1",
             "emotion_journey": "Hook Emotion -> Body Emotion -> CTA Emotion",
             "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
-            "visual_scene_1": "Sec 0-5 (THE HOOK - max 2 scenes/camera angles): Scene 1 (0-2.5s): [VISUAL SHOCK that depicts the pain point situation]. Scene 2 (2.5-5s): [CONTEXT + CURIOSITY GAP, hook_text_overlay appears visually but do not quote it here]. Do not include Voiceover/Text hien/CHARACTER SPEECH in this visual text. ${visualAnchorClause} ${pacingClause}",
-            "visual_scene_2": "Sec 5-18 (THE BODY): [body_motivation_pattern applied]. Include tension, app action, camera style, pacing, and key proof moments. ${visualAnchorClause}",
-            "visual_scene_3": "Sec 18-25 (THE CTA): Resolution plus CTA visual. Show proof/payoff and app/download prompt. ${visualAnchorClause}",
+            "visual_scene_1": "Sec 0-5 HOOK. Phase 1 (0-1.5s): [SHOT TYPE]: Visual Shock depicting trigger_situation. Phase 2 (1.5-3.5s): [SHOT TYPE]: Context, PUNCH text appears and BRIDGE VO begins. Phase 3 (3.5-5s): [SHOT TYPE]: Curiosity Gap. Do not quote actual Voiceover/Text/CHARACTER SPEECH here. ${visualAnchorClause} ${pacingClause}",
+            "visual_scene_2": "Sec 5-18 BODY. Use at least 2 shot type cues and body_motivation_pattern. Include tension, app action, exact props/screen states/actions, transitions, and key proof moments. ${visualAnchorClause}",
+            "visual_scene_3": "Sec 18-25 CTA. Start with a shot type cue. Resolution plus CTA visual with proof/payoff and app/download prompt. ${visualAnchorClause}",
             "text_overlays": [
-              {"time": "2.5-5s", "text": "Hook text on screen"},
-              {"time": "6-9s", "text": "Body support text"},
-              {"time": "12-15s", "text": "Key benefit or proof"},
-              {"time": "18-22s", "text": "CTA text"}
+              {"time": "1.5-3.5s", "text": "Hook text on screen", "role": "punch"},
+              {"time": "6-9s", "text": "Body support text", "role": "punch"},
+              {"time": "12-15s", "text": "Key benefit or proof", "role": "bridge"},
+              {"time": "18-22s", "text": "CTA text", "role": "cta"}
             ],
-            "script_vo": "Full speakable VO in ${options.language}, max 60 words. Starts at 1.5s, not 0s. If characters talk, include simple dialogue.",
+            "script_vo": [
+              {"scene": "hook_phase2", "time": "1.5-3.5s", "duration": "2s", "text": "VO in ${options.language}"},
+              {"scene": "hook_phase3", "time": "3.5-5s", "duration": "1.5s", "text": "VO in ${options.language}"},
+              {"scene": "body_1", "time": "5-9s", "duration": "4s", "text": "VO in ${options.language}"},
+              {"scene": "body_2", "time": "9-14s", "duration": "5s", "text": "VO in ${options.language}"},
+              {"scene": "body_3", "time": "14-18s", "duration": "4s", "text": "VO in ${options.language}"},
+              {"scene": "cta", "time": "18-23s", "duration": "5s", "text": "VO in ${options.language}"}
+            ],
             "cta_text": "Exact CTA in Vietnamese, max 6 words",
             "cta_friction_reducer": "Free|No signup|30 seconds|1 tap",
+            "character_direction": "Character behavior -> viewer emotion -> why this drives action.",
             "visual_ref_notes": "Vietnamese production reference. Must include camera style, lighting, talent direction, and pacing.",
-            "talent_profile": "Vietnamese: age, gender, look, clothing if talent needed. Use 'No talent - screen recording only' if pure demo.",
             "dont_do": "Vietnamese: 1 specific thing NOT to do in this video.",
             "track": "A|B|C",
             "track_reason": "Vietnamese: 1 sentence explaining why this track.",
@@ -816,23 +884,25 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
 5. hook_character_speech must be empty unless visual_scene_1 clearly identifies a visible speaker. If the hook shows a person speaking, asking, replying, reacting to camera, or a 2-person dialogue/podcast/interview, fill the exact on-camera line(s) here with time + speaker labels, e.g. "2.5-5s - Older man: ...".
 5a. hook_voice_vi must be Vietnamese with full diacritics. It translates hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay.
 6. Primary + alt_1 + alt_2 must use 3 different hook_archetype values.
-7. visual_scene_1 must obey pacing: for a 5s hook use max 2 timestamp rows, normally 0-2.5s and 2.5-5s. Never use 3+ scenes/camera angles for 5s.
-8. visual_scene_1 Scene 1 must depict the selected Pain Point situation.
-9. visual_scene_2 must contain narrative tension, not just feature listing.
-10. script_vo must be speakable in 25 seconds, max 60 words.
-11. text_overlays must contain at least 3 timestamped entries.
+7. visual_scene_1 must use V3.1 hook phases: 0-1.5s, 1.5-3.5s, and 3.5-5s.
+8. visual_scene_1 Phase 1 must depict trigger_situation.
+9. Every visual_scene phase must include a shot type cue from the taxonomy.
+10. visual_scene_2 must contain narrative tension, not just feature listing, and should use at least 2 shot types.
+11. script_vo must be an array of timed entries and total spoken text must be max 60 words.
+11a. text_overlays must contain at least 3 timestamped entries with role.
 12. id must follow P{pillar_index}-A{angle_index}-I{idea_index}, zero-indexed.
-13. angle_type must be one of the allowed values and should be different inside the same pillar.
+13. angle_lens and angle_type must be one of the allowed values and should be different inside the same pillar.
 14. emotion_journey must have 3 different emotions.
 15. track: A = no real person needed, B = real person/UGC, C = motion/animation/complex edit.
 16. visual_ref_notes must specify camera style, lighting, talent direction, and pacing.
 17. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
 18. All scenes must assume Meta-native vertical 9:16.
-19. Angle must follow the formula: one angle_type + one market/framework approach + one visually different execution.
+19. Angle must follow the V3.1 formula: trigger_situation + coping_behavior + hidden_belief + one angle_lens + one angle_type + one visually different execution.
 20. If the app is Health, include or prefer a Fact angle in the batch. If Utility, include or prefer Comparison/Demo. If AI, include or prefer Trend.
 21. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-22. Apply Rule 4 pacing: 1 scene/camera angle >= 2.5s; 5s outputs max 2 scenes; 8-10s outputs max 3-4 scenes. Fewer scenes are allowed.
-23. If returning multiple ideas, each idea must use a different first-frame person/object, first physical action, setting, app proof object, and hook structure. Do not reuse the same body-warning/body-scan setup with only minor wording changes.`;
+22. talent_profile must be a structured object with needed, age, gender, ethnicity, skin_tone, hair, clothing, accessories, grooming, vibe, and note.
+23. video_character_concept and character_direction are mandatory.
+24. If returning multiple ideas, each idea must use a different first-frame person/object, first physical action, setting, app proof object, and hook structure. Do not reuse the same body-warning/body-scan setup with only minor wording changes.`;
 
   if (options.ruleset === 'builder') {
     const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
@@ -898,7 +968,7 @@ The selected market controls setting, culture, behavior, and vibe only. Do not s
 10. title/hook_primary/hook_alt_1/hook_alt_2/hook_text_overlay/cta_text, hook_voice_vi, and internal visual/production notes must be Vietnamese. Only hook_character_speech/hook_voiceover/script_vo must be in ${options.language}.
 11. If visual_scene_1 describes a visible person speaking, asking, replying, reacting to camera, or being asked a question, hook_character_speech is required with time + speaker and hook_voiceover must be empty.
 12. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-13. Apply Rule 4 pacing: 0-3s hook-only visual_scene_1 uses 1 scene/camera angle; never cram 2+ cuts into 3 seconds.`;
+13. Use V3.1 shot cues where full hook timing is needed; for hook-only builder output, keep the single 0-3s beat readable and specific.`;
   }
 
   if (options.ruleset === 'v7') {
@@ -975,7 +1045,7 @@ Do not put Voiceover, CHARACTER SPEECH, or Text hien snippets inside visual_scen
 11. Use the selected feature/PSP as the Pivot solution.
 12. Hyper-localize ethnicity, clothing, architecture, environment, behavior, culture, and social setting to the selected market.
 13. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-14. Apply Rule 4 pacing: 0-3s direct opening uses 1 scene/camera angle; 3-6s pivot uses 1 scene/camera angle; avoid extra cuts inside each 3s beat.`;
+14. Use V3.1 shot cues where full hook timing is needed; keep direct opening and pivot readable, specific, and not overcut.`;
   }
 
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
@@ -1015,7 +1085,7 @@ The array must follow this exact structure:
             "app_demo_action": "Exact app action shown on screen: tap, scan, upload, measure, compare, render, clean, save, etc.",
             "overlay_sequence": ["hook overlay inside visual_scene_1", "demo overlay", "proof overlay", "CTA overlay"],
             "edit_notes": "Concrete editing notes: cut rhythm, zoom, caption style, SFX, transition, or b-roll reference",
-            "visual_scene_1": "Timed hook scene covering the selected hook duration, usually 3-8s. Use explicit rows such as 0-2.5s / 2.5-5s, with max scenes = floor(seconds / 2.5). Who, where, doing what, what pain object is visible. Do not include Voiceover/Text hien/CHARACTER SPEECH in this visual text. ${visualAnchorClause}",
+            "visual_scene_1": "Timed hook scene using V3.1 phases where applicable: 0-1.5s Visual Shock, 1.5-3.5s Context, 3.5-5s Curiosity Gap. Include shot type cues, who, where, doing what, and visible pain object. Do not include Voiceover/Text hien/CHARACTER SPEECH in this visual text. ${visualAnchorClause}",
             "visual_scene_2": "After hook: exact demo or story visual showing the product action tied to the same pain point. ${visualAnchorClause}",
             "visual_scene_3": "Second 15-25: exact reveal, proof, result, or final CTA visual. ${visualAnchorClause}",
             "script_vo": "Full speakable voiceover script, max 60 words.",
@@ -1055,7 +1125,7 @@ The array must follow this exact structure:
 19. hook_primary should sound like a human confession, tension line, or pattern interrupt in-feed. Avoid search-query hooks like "Could X explain Y?" unless the user explicitly asks for educational SEO style.
 20. visual_scene_1 + hook_voiceover/character_speech + psp_bridge should make the selected hook duration clear. If no seconds are provided, infer 3-8s from the operator idea description and content complexity.
 21. visual_scene_1, visual_scene_2, and visual_scene_3 must each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-22. Apply Rule 4 pacing: max scenes = floor(hook seconds / 2.5), each scene/camera angle is at least 2.5s; 5s hooks max 2 scenes; 8-10s hooks max 3-4 scenes. Fewer scenes are allowed.`;
+22. Use V3.1 hook phases and shot type cues for full hooks; keep longer hooks readable and not overcut.`;
 }
 
 function readFirstText(record: Record<string, unknown>, keys: string[], fallback = ''): string {
@@ -1588,12 +1658,26 @@ function getRule4MaxSceneCount(durationSeconds: number): number {
   return Math.max(1, Math.min(4, Math.floor(durationSeconds / 2.5)));
 }
 
+function hasV31HookPhases(ranges: Array<{ start: number; end: number }>): boolean {
+  if (ranges.length !== 3) return false;
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const maxEnd = Math.max(...sorted.map(range => range.end));
+  const startsAtZero = sorted[0].start <= 0.25;
+  const contiguous = sorted.every((range, index) => (
+    index === 0 || Math.abs(range.start - sorted[index - 1].end) <= 0.35
+  ));
+  const readableDurations = sorted.every(range => range.end - range.start >= 1);
+  return startsAtZero && contiguous && maxEnd <= 5.35 && readableDurations;
+}
+
 function hasPacingCompliantHook(text: string): boolean {
   const ranges = extractTimeRanges(text);
   if (ranges.length === 0) return false;
 
   const hookRanges = ranges.filter(range => range.start < 10.5);
   if (hookRanges.length === 0) return false;
+
+  if (hasV31HookPhases(hookRanges)) return true;
 
   const maxEnd = Math.max(...hookRanges.map(range => range.end));
   if (maxEnd > 10.25) return false;
@@ -1608,6 +1692,10 @@ function hasPacingCompliantHook(text: string): boolean {
     const duration = range.end - range.start;
     return hookRanges.length === 1 || duration >= minSceneSeconds;
   });
+}
+
+function hasShotTypeCue(text: string): boolean {
+  return /\b(?:ECU|CU|MCU|MS|MLS|LS|POV|OTS|Insert(?:\s+Shot)?|Split\s+Screen)\s*:/i.test(text);
 }
 
 function normalizeBriefTrack(track: string): string {
@@ -1966,7 +2054,10 @@ function createBriefValidationErrors(input: {
     errors.push('visual_scene_1 must be concrete and shootable');
   }
   if (input.visualScene1 && !hasPacingCompliantHook(input.visualScene1)) {
-    errors.push('visual_scene_1 must obey Rule 4 pacing: max scenes = floor(hook seconds / 2.5), each row at least 2.5s');
+    errors.push('visual_scene_1 must use V3.1 hook phases: 0-1.5s, 1.5-3.5s, 3.5-5s, or another valid timed hook');
+  }
+  if ([input.visualScene1, input.visualScene2, input.visualScene3].some(scene => scene && !hasShotTypeCue(scene))) {
+    errors.push('visual_scene_1/2/3 must include shot type cues such as ECU:, CU:, POV:, Insert:, or Split Screen:');
   }
   if (isBuilder && /\b(?:0\s*[-–]\s*(?:8|10|12)|8\s*[-–]\s*12)(?:\s*\/\s*12)?\s*s?\b/i.test(input.visualScene1)) {
     errors.push('visual_scene_1 must be 0-3s only for prompt_system_builder_html_v1');
@@ -2057,8 +2148,19 @@ export function normalizeCreativeBriefOutput(
     angleRecords.forEach((angleRecord, angleFallbackIndex) => {
       const angleIndex = Number(angleRecord.angle_index ?? angleRecord.angleIndex ?? angleFallbackIndex) || 0;
       const angleName = readFirstText(angleRecord, ['angle_name', 'angleName'], 'Core angle');
+      const angleLens = readFirstText(angleRecord, ['angle_lens', 'angleLens'], 'Specific Moment');
+      const triggerSituation = readFirstText(angleRecord, ['trigger_situation', 'triggerSituation']);
+      const copingBehavior = readFirstText(angleRecord, ['coping_behavior', 'copingBehavior']);
+      const hiddenBelief = readFirstText(angleRecord, ['hidden_belief', 'hiddenBelief']);
+      const persuasionMechanism = readFirstText(angleRecord, ['persuasion_mechanism', 'persuasionMechanism']);
+      const coreArgument = readFirstText(angleRecord, ['core_argument', 'coreArgument']);
+      const angleDifferentiationCheck = readFirstText(angleRecord, ['angle_differentiation_check', 'angleDifferentiationCheck']);
       const angleType = readFirstText(angleRecord, ['angle_type', 'angleType'], 'Curiosity');
-      const angleDesc = readFirstText(angleRecord, ['angle_desc', 'angleDesc'], 'A distinct approach for this pillar.');
+      const angleDesc = readFirstText(
+        angleRecord,
+        ['angle_desc', 'angleDesc'],
+        coreArgument || persuasionMechanism || 'A distinct approach for this pillar.'
+      );
       const normalizedAngleType = angleType.trim();
       const angleTypeKey = normalizeCompareText(normalizedAngleType);
 
@@ -2130,8 +2232,10 @@ export function normalizeCreativeBriefOutput(
           [hookPrimary, hookTextOverlay, visualScene1, visualScene2, visualScene3, angleName, angleDesc].join(' '),
           ideaFallbackIndex
         );
-        let scriptVo = readFirstText(ideaRecord, ['script_vo', 'scriptVo']);
+        let scriptVo = readScriptVoText(ideaRecord.script_vo ?? ideaRecord.scriptVo);
         let ctaText = readFirstText(ideaRecord, ['cta_text', 'ctaText']);
+        const videoCharacterConcept = readFirstText(ideaRecord, ['video_character_concept', 'videoCharacterConcept']);
+        const characterDirection = readFirstText(ideaRecord, ['character_direction', 'characterDirection']);
         const referencePattern = readFirstText(ideaRecord, ['reference_pattern', 'referencePattern'], 'Custom Painpoint-Led Pattern');
         const interruptMechanism = readFirstText(ideaRecord, ['interrupt_mechanism', 'interruptMechanism'], hookPrimary || angleDesc);
         const firstFrameAsset = readFirstText(ideaRecord, ['first_frame_asset', 'firstFrameAsset'], visualScene1);
@@ -2145,7 +2249,7 @@ export function normalizeCreativeBriefOutput(
           'Nhịp cắt nhanh kiểu UGC: mở bằng first-frame asset, chuyển sang demo app thật, giữ caption lớn và proof frame rõ.'
         );
         const visualRefNotes = readFirstText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']);
-        const talentProfile = readFirstText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified');
+        const talentProfile = readStructuredText(ideaRecord.talent_profile ?? ideaRecord.talentProfile, 'No talent specified');
         let dontDo = readFirstText(ideaRecord, ['dont_do', 'dontDo']);
         const track = readFirstText(ideaRecord, ['track'], 'B').trim().toUpperCase();
         const trackReason = readFirstText(ideaRecord, ['track_reason', 'trackReason']);
@@ -2345,12 +2449,21 @@ export function normalizeCreativeBriefOutput(
           duration: defaults.duration,
           creativeType: creativeTypeForTrackWithLock(normalizeBriefTrack(track), defaults.visualType),
           meta: {
-            builderVersion: 'creative_idea_engine_v2_1',
+            builderVersion: 'creative_idea_engine_v3_1',
             pillar,
             pillarIndex,
             angleName,
             angleType: normalizedAngleType,
             angleDesc,
+            angleLens,
+            triggerSituation,
+            copingBehavior,
+            hiddenBelief,
+            persuasionMechanism,
+            coreArgument,
+            angleDifferentiationCheck,
+            videoCharacterConcept,
+            characterDirection,
             hookPrimary,
             hookAlt1,
             hookAlt2,
@@ -2432,7 +2545,7 @@ export function normalizeCreativeBriefOutput(
 export function buildHookOutputSpec(options: HookOutputSpecOptions): string {
   const quantityLabel = options.quantity ? `exactly ${options.quantity}` : 'the requested number of';
   const visualAnchorClause = 'Must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.';
-  const pacingClause = 'Must obey Rule 4 pacing: a 3s hook-only output uses 1 scene/camera angle, not multiple cuts.';
+  const pacingClause = 'Hook-only output should remain one readable 0-3s beat; full idea hooks use V3.1 phases.';
   return `## OUTPUT SPECIFICATION
 
 Return a JSON array ONLY. No markdown fences. No explanation.
@@ -2473,7 +2586,7 @@ Return ${quantityLabel} objects in this exact schema:
 - For UGC/POV/Reaction/Interview, put on-camera talent speech into characterSpeech with time + speaker and leave voiceover empty for that hook.
 - visual must stay visual-only; do not include [VOICE] or [TEXT OVERLAY] markers inside visual.
 - visual must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
-- visual must obey Rule 4 pacing: hook-only 3s output uses one scene/camera angle; do not use split-screen or multiple cuts.
+- visual must stay one readable hook-only beat; do not use split-screen or multiple cuts unless the user asks for a longer hook.
 - title, meta hook text fields, hook.textOverlay, hook.visual, and production notes must be Vietnamese. Only characterSpeech, voiceover, and voice use ${options.language}.
 - If characterSpeech is filled, voiceover must be empty. Do not duplicate the same spoken line across both fields.
 - id must follow P{pillarIndex}-A{angleIndex}-I{ideaIndex}.
