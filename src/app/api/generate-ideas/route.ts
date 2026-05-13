@@ -87,12 +87,15 @@ function booleanEnv(name: string, fallback: boolean) {
 const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
-const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 180000);
+const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = Math.min(
+  positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 90000),
+  90000
+);
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const GEMINI3_IDEA_MAX_BATCH_SIZE = positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 1);
+const GEMINI3_IDEA_MAX_BATCH_SIZE = Math.max(2, Math.min(positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 3), 3));
 const GEMINI3_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_GEMINI3_BATCH_CONCURRENCY', 2);
 const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 285000);
 const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
@@ -105,6 +108,16 @@ const PROMPT_SYSTEM_BUILDER_HTML_MARKER = 'PROMPT_SYSTEM_BUILDER_HTML_V1';
 const USE_DIRECT_GEMINI = booleanEnv('IDEA_USE_DIRECT_GEMINI', false);
 const DIRECT_GEMINI_API_KEY = USE_DIRECT_GEMINI ? (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '') : '';
 let directGeminiClient: GoogleGenAI | null = null;
+
+const LEAN_CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT = `You are a performance creative director generating production-ready vertical Meta video ad ideas.
+Follow Creative Idea Engine V3.1:
+- Pillar is a broad app-solvable pain point.
+- Every angle must include trigger_situation, coping_behavior, hidden_belief, angle_lens, angle_type, persuasion_mechanism, core_argument, and angle_differentiation_check.
+- Separate target viewer from on-screen character. Include video_character_concept, structured talent_profile, and character_direction when talent is used.
+- Hook uses 0-1.5s Visual Shock, 1.5-3.5s Context, 3.5-5s Curiosity Gap, each with a shot type cue.
+- Text overlay is punch; VO is bridge. They must not duplicate.
+- visual_scene_1/2/3 and production notes must be specific, executable, market-native, and Vietnamese. Voice/script_vo uses the requested market language.
+- script_vo must be timed entries. Return strict JSON only.`;
 
 const CREATIVE_ADS_GENERATION_RULES_V7 = `CREATIVE ADS GENERATION RULES (VERSION 7.0)
 ROLE:
@@ -1044,7 +1057,7 @@ async function callDirectGemini(
 function resolveIdeaModels(selected?: string): string[] {
   const primary = resolveModel(selected || 'gemini-3-pro');
   if (primary.includes('gemini-3-pro')) {
-    return [primary, 'gemini/gemini-2.5-flash'];
+    return [primary, 'gemini/gemini-2.5-pro'];
   }
   return [primary];
 }
@@ -3433,7 +3446,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           const directGeminiAvailable = Boolean(DIRECT_GEMINI_API_KEY) && model.startsWith('gemini/');
           let candidateText = directGeminiAvailable
             ? await callDirectGemini(model, prompt, {
-                systemInstruction: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
+                systemInstruction: LEAN_CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT,
                 temperature: generationTemperature,
                 maxOutputTokens: responseTokenBudget,
                 timeoutMs: budgetedTimeoutMs,
@@ -3442,7 +3455,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 
           if (!candidateText) {
             candidateText = await callAI([
-              { role: 'system', content: CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT },
+              { role: 'system', content: LEAN_CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT },
               { role: 'user', content: prompt },
             ], {
               model,
