@@ -2256,7 +2256,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
         return `${i + 1}. "${idea.title}" | type="${c?.creativeType || ''}" | pain="${c?.framework?.painpoint || ''}" | hook="${hookSummary}"`;
       }).join('\n');
 
-      const maxIdeasPerAngleRequest = Math.min(5, Math.max(1, effectiveQuantity));
+      const maxIdeasPerAngleRequest = Math.min(8, Math.max(1, effectiveQuantity));
       const sanitizedFilters = {
         ...generationBaseFilters,
         visualType: sanitizeVisualTypes(generationBaseFilters.visualType || []),

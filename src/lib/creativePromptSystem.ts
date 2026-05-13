@@ -129,7 +129,8 @@ function maxOverlayWordsPerLanguage(text: string): number {
 }
 
 function vietnameseOverlayPart(text: string): string {
-  return splitOverlayLanguageParts(text)[0] || text.trim();
+  const parts = splitOverlayLanguageParts(text);
+  return parts.find(part => looksVietnamese(part) && !looksEnglish(part)) || parts[0] || text.trim();
 }
 
 function stripOverlayTimePrefix(text: string): string {
@@ -1593,6 +1594,21 @@ function appendInlineSpeechToTimedScene(visual: string, timedSpeech: string): st
   return nextVisual;
 }
 
+function speechContentOnly(speech: string, fallbackVisual = ''): string {
+  return readSpeechText(speech)
+    .split(/\r?\n/)
+    .map(line => {
+      const parsed = parseTimedSpeechLine(line, fallbackVisual);
+      if (parsed?.text) return parsed.text;
+      return line
+        .replace(/^\s*\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*s\s*[-:]\s*/i, '')
+        .replace(/^\s*[^:]{2,80}:\s*/i, '')
+        .trim();
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
 function moveOnCameraVoiceoverToCharacterSpeech(
   visual: string,
   characterSpeech: string,
@@ -2008,7 +2024,7 @@ function createBriefValidationErrors(input: {
   if (visualImpliesOnCameraSpeech(input.visualScene1) && !hookCharacterSpeech) {
     errors.push('hook_character_speech is required when visual_scene_1 describes visible on-camera speech or dialogue');
   }
-  if (hookCharacterSpeech && countWords(hookCharacterSpeech) > 36) {
+  if (hookCharacterSpeech && countWords(speechContentOnly(hookCharacterSpeech, input.visualScene1)) > 36) {
     errors.push('hook_character_speech must be 36 words or fewer');
   }
   if (hookVoiceover && countWords(hookVoiceover) > 12) {
