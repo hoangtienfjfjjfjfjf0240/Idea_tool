@@ -88,14 +88,14 @@ const MAX_IDEAS_PER_AI_BATCH = 5;
 const MAX_IDEAS_PER_REQUEST = 10;
 const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS', 60000);
 const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = Math.min(
-  positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 90000),
-  90000
+  positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 60000),
+  60000
 );
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
-const GEMINI3_IDEA_MAX_BATCH_SIZE = Math.max(2, Math.min(positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 3), 3));
+const GEMINI3_IDEA_MAX_BATCH_SIZE = Math.max(3, Math.min(positiveIntEnv('IDEA_GEMINI3_MAX_BATCH_SIZE', 3), 3));
 const GEMINI3_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_GEMINI3_BATCH_CONCURRENCY', 2);
 const GEMINI3_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_GEMINI3_REQUEST_BUDGET_MS', 285000);
 const ENABLE_AI_RECOVERY_REFILL = booleanEnv('IDEA_ENABLE_AI_RECOVERY_REFILL', true);
@@ -331,11 +331,50 @@ function repairGeneratedIdeaValue(
   return value;
 }
 
+function inferShotTypeCue(text: string, fallback: string): string {
+  const normalized = normalizeCompareText(text);
+  if (/\b(?:split screen|split|side by side|before after|comparison|chia doi|so sanh)\b/.test(normalized)) return 'Split Screen';
+  if (/\b(?:screen|phone|app|ui|scan|barcode|qr|tap|finger|man hinh|dien thoai|quet|ma vach)\b/.test(normalized)) return 'POV';
+  if (/\b(?:face|eyes|reaction|expression|close up|mat|bieu cam|nhin)\b/.test(normalized)) return 'CU';
+  if (/\b(?:chart|number|label|packaging|bottle|pill|vitamin|data|barcode|nhan|lo thuoc|so lieu)\b/.test(normalized)) return 'Insert';
+  return fallback;
+}
+
+function ensureSceneShotTypeCue(text: string, fallback: string): string {
+  const scene = text.trim();
+  if (!scene || hasShotTypeCue(scene)) return scene;
+
+  const shotType = inferShotTypeCue(scene, fallback);
+  const rowPattern = /((?:Phase\s*\d+[^:]*|Sec(?:ond)?\s*\d[^:]*|\d+(?:[.,]\d+)?\s*(?:-|–|—|to)\s*\d+(?:[.,]\d+)?\s*s?[^:]*)\s*:\s*)(?!\s*(?:ECU|CU|MCU|MS|MLS|LS|POV|OTS|Insert(?:\s+Shot)?|Split\s+Screen)\s*:)/gi;
+  const repaired = scene.replace(rowPattern, `$1${shotType}: `);
+
+  return hasShotTypeCue(repaired) ? repaired : `${shotType}: ${scene}`;
+}
+
+function repairIdeaShotTypeCues(item: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...item };
+  const hook = { ...asRecord(next.hook) };
+  const body = { ...asRecord(next.body) };
+  const cta = { ...asRecord(next.cta) };
+
+  if (asText(hook.visual)) hook.visual = ensureSceneShotTypeCue(asText(hook.visual), 'POV');
+  if (asText(hook.script)) hook.script = ensureSceneShotTypeCue(asText(hook.script), 'POV');
+  if (asText(body.visual)) body.visual = ensureSceneShotTypeCue(asText(body.visual), 'MS');
+  if (asText(body.script)) body.script = ensureSceneShotTypeCue(asText(body.script), 'MS');
+  if (asText(cta.visual)) cta.visual = ensureSceneShotTypeCue(asText(cta.visual), 'Insert');
+  if (asText(cta.script)) cta.script = ensureSceneShotTypeCue(asText(cta.script), 'Insert');
+
+  next.hook = hook;
+  next.body = body;
+  next.cta = cta;
+  return next;
+}
+
 function repairGeneratedIdeaForValidation(
   item: Record<string, unknown>,
   metricLock?: HealthMetricKey | null
 ): Record<string, unknown> {
-  return asRecord(repairGeneratedIdeaValue(item, { metricLock }));
+  return repairIdeaShotTypeCues(asRecord(repairGeneratedIdeaValue(item, { metricLock })));
 }
 
 function normalizeFrameworkVisualFormat(value: string): string {
@@ -1631,7 +1670,7 @@ function getIdeaBatchTimeoutMs(model: string, batchQuantity: number) {
 }
 
 function getIdeaResponseTokenBudget(batchQuantity: number) {
-  return Math.max(5500, batchQuantity * 2200);
+  return Math.max(6500, batchQuantity * 2800);
 }
 
 function trimPromptText(text: string, maxLength = 160) {
