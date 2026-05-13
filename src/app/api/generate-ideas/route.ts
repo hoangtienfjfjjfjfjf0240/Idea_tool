@@ -1117,6 +1117,44 @@ function mergeRefinedIdeaWithOriginal(
   };
 }
 
+function applyExplicitRefineDirectives(ideaInput: unknown, instruction: string) {
+  const normalizedInstruction = normalizeCompareText(instruction);
+  const wants2dVisual = /\b(?:2d|2-d|2 chieu|hai chieu)\b/.test(normalizedInstruction);
+  if (!wants2dVisual) return ideaInput;
+
+  const rewriteVisualStyle = (value: string) => value
+    .replace(/\b3D\s+Soft[- ]?clay\b/gi, '2D animation')
+    .replace(/\bSoft[- ]?clay\s+3D\b/gi, '2D animation')
+    .replace(/\b3D\s+Animation\b/gi, '2D Animation')
+    .replace(/\b3D\b/g, '2D');
+
+  const rewriteValue = (value: unknown, key = ''): unknown => {
+    if (typeof value === 'string') {
+      if (/^(?:strategyCode|strategyCodes|strategyCodeMap|favoriteKeys|sourceHookId|sourceHookTitle)$/i.test(key)) {
+        return value;
+      }
+      return rewriteVisualStyle(value);
+    }
+    if (Array.isArray(value)) {
+      if (/^(?:strategyCodes|favoriteKeys)$/i.test(key)) return value;
+      return value.map(item => rewriteValue(item));
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => [
+          entryKey,
+          rewriteValue(entryValue, entryKey),
+        ])
+      );
+    }
+    return value;
+  };
+
+  const rewritten = asRecord(rewriteValue(ideaInput));
+  rewritten.creativeType = '2D Animation';
+  return rewritten;
+}
+
 function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
   const painpoints = Array.isArray(payload.painpoints)
     ? payload.painpoints.map(asText).filter(Boolean)
@@ -2909,9 +2947,11 @@ ${refineFramework}
 
 ## TASK
 Refine one existing production brief using the user instruction below.
+- The USER REFINE BRIEF is the highest-priority edit instruction for creative content.
 - Apply only the requested changes.
 - Preserve the same problem-solution chain unless the user explicitly changes it.
-- Preserve all existing meta strategy fields exactly: strategyCode, strategyCodes, strategyCodeMap, favorite keys, and source IDs.
+- Preserve all existing meta strategy fields exactly: strategyCode, strategyCodes, strategyCodeMap, favorite keys, and source IDs. Treat these strategy codes as tracking IDs, not as instructions that can override the USER REFINE BRIEF.
+- If the user asks to change visual style or space (for example 3D to 2D, UGC to animation, animation to real footage), update creativeType plus every hook/body/CTA visual and script field to match the new style. Do not mention the old style anywhere in visible production copy.
 - Keep or add meta.pspBridge so Hook connects the pain/emotion to the PSP before Body.
 - Body is only the demo/proof continuation; do not make Body the first place where PSP becomes relevant.
 - Keep visual, voice, and textOverlay separated for hook, body, and CTA.
@@ -2943,7 +2983,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       if (!text) {
         return NextResponse.json({
           success: true,
-          data: buildRefineEmergencyFallback(body),
+          data: applyExplicitRefineDirectives(buildRefineEmergencyFallback(body), instruction),
           meta: {
             warnings: ['Refine AI returned null; backend returned a schema-safe fallback using the current idea.'],
             fallbackCount: 1,
@@ -2954,20 +2994,21 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       if (!parsed) {
         return NextResponse.json({
           success: true,
-          data: buildRefineEmergencyFallback(body),
+          data: applyExplicitRefineDirectives(buildRefineEmergencyFallback(body), instruction),
           meta: {
             warnings: ['Refine AI returned non-JSON output; backend returned a schema-safe fallback using the current idea.'],
             fallbackCount: 1,
           },
         });
       }
+      const refinedIdea = mergeRefinedIdeaWithOriginal(parsed, originalIdea, {
+        duration: originalDuration,
+        appName,
+        pillar: asText(originalFramework.painpoint),
+      });
       return NextResponse.json({
         success: true,
-        data: mergeRefinedIdeaWithOriginal(parsed, originalIdea, {
-          duration: originalDuration,
-          appName,
-          pillar: asText(originalFramework.painpoint),
-        }),
+        data: applyExplicitRefineDirectives(refinedIdea, instruction),
       });
     }
 
