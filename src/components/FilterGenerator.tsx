@@ -1639,7 +1639,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const compactBrief = parseCompactCreativeBrief(ideaDescription);
     const generationBaseFilters = buildCompactGenerationFilters(filters, compactBrief, app);
     const selectedAnglesFromFilters = Array.from(new Set((generationBaseFilters.angle || []).map(angle => angle.trim()).filter(Boolean)));
-    const generatedAngleList = buildCompactAutoAngles(compactBrief, app, selectedAnglesFromFilters, autoAngleCount);
+    const generatedAngleList = selectedAnglesFromFilters.length > 0
+      ? selectedAnglesFromFilters
+      : buildCompactAutoAngles(compactBrief, app, [], autoAngleCount);
     const anglesToGenerate: Array<string | null> = generatedAngleList.length > 0 ? generatedAngleList : [null];
     const effectiveQuantity = Math.min(10, Math.max(1, compactBrief?.ideasPerAngle || quantity));
     const validationFilters = hidePspForCurrentApp

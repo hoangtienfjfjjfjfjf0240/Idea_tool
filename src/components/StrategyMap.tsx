@@ -492,12 +492,16 @@ function cleanAngleDisplayText(value: unknown) {
 function stripAngleInstructionText(value: unknown) {
   let text = cleanAngleDisplayText(value)
     .replace(/^\s*F\d+\s*=\s*Angle:\s*/i, '')
+    .replace(/^AUTO\s+ANGLE\s+\d+\/\d+\s*-\s*REQUIRED\s+angle_type\s*:\s*([^.]+)\.\s*/i, '$1: ')
+    .replace(/^AUTO\s+ANGLE\s+\d+\/\d+\s*-\s*REQUIRED\s+([^:.]+)[:.]\s*/i, '$1: ')
     .replace(/^ANGLE\s+TYPE\s+([^:]+):\s*/i, '$1: ')
     .replace(/^Góc\s+(\d+\/\d+)\s*-\s*angle_type\s+bắt buộc:\s*([^.]+)\.\s*/i, '$2: ')
     .replace(/^Góc\s+([^:]+):\s*/i, '$1: ');
 
   text = text
     .replace(/\s*Phải khác rõ các góc còn lại.*$/i, '')
+    .replace(/\s*Required angle_type:.*$/i, '')
+    .replace(/\s*Pick a distinct.*$/i, '')
     .replace(/\s*This angle must look visually different.*$/i, '')
     .replace(/\s*Yêu cầu thêm:.*$/i, '')
     .replace(/\s*App:\s*.*$/i, '')
@@ -517,8 +521,11 @@ function getAngleTypeFromText(...values: unknown[]) {
 
 function isInstructionalAngleLabel(value: unknown) {
   const normalized = normalizeWorkflowSearchText(value);
-  return /\bangle type bat buoc\b/.test(normalized)
+  return /\bauto angle\b/.test(normalized)
+    || /\brequired angle type\b/.test(normalized)
+    || /\bangle type bat buoc\b/.test(normalized)
     || /\bthis angle must look visually different\b/.test(normalized)
+    || /\bpick a distinct\b/.test(normalized)
     || /\bphai khac ro\b/.test(normalized)
     || /\bye?u cau them\b/.test(normalized)
     || /\bchon mot goc\b/.test(normalized)
@@ -529,7 +536,8 @@ function isGenericAngleLabel(value: unknown) {
   const normalized = normalizeWorkflowSearchText(value);
   return !normalized
     || /^(?:comparison|demo|tutorial|fact|pov|social|curiosity|relief|challenge|trend|fear)$/.test(normalized)
-    || /^goc \d+ \d+/.test(normalized);
+    || /^goc \d+ \d+/.test(normalized)
+    || /^auto angle \d+ \d+/.test(normalized);
 }
 
 function shortenAngleLabel(value: string, maxLength = 72) {
