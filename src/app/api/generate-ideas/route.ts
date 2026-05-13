@@ -1155,6 +1155,68 @@ function applyExplicitRefineDirectives(ideaInput: unknown, instruction: string) 
   return rewritten;
 }
 
+function buildRefineDirectiveBlock(instruction: string) {
+  const normalizedInstruction = normalizeCompareText(instruction);
+  const lines = [
+    'The user instruction is the winning requirement. Change the idea to match it, even when the old creativeType, labels, or scene wording disagree.',
+    'Do not do a light synonym pass. Rewrite the affected title, creativeType, hook, body, CTA, voice, and text overlays so the edit is obvious and production-ready.',
+    'Keep tracking metadata exactly, but never treat strategy codes as creative instructions.',
+  ];
+
+  if (/\b(?:2d|2-d|2 chieu|hai chieu)\b/.test(normalizedInstruction)) {
+    lines.push('Hard directive: final creative space is 2D. Set creativeType to "2D Animation" and rewrite all visual/script fields as flat 2D animation, illustrated panels, layered 2D motion, or vector-style scenes. Forbidden visible wording: 3D, 3D Animation, 3D Soft-clay, soft-clay 3D.');
+  }
+  if (/\b(?:3d|3-d|3 chieu|ba chieu)\b/.test(normalizedInstruction)) {
+    lines.push('Hard directive: final creative space is 3D. Make the visual/script fields clearly describe a 3D scene, dimensional objects, camera depth, and 3D motion.');
+  }
+  if (/\b(?:ugc|user generated|nguoi that|real person|quay that|live action)\b/.test(normalizedInstruction)) {
+    lines.push('Hard directive: final creative style is real-person UGC/live action. Use a human-shot vertical scene, natural phone camera, real props, and avoid animation-only wording unless the user asks for it.');
+  }
+
+  return lines.map(line => `- ${line}`).join('\n');
+}
+
+function getRefineInstructionViolations(ideaInput: unknown, instruction: string) {
+  const normalizedInstruction = normalizeCompareText(instruction);
+  const outputText = normalizeCompareText(JSON.stringify(ideaInput));
+  const violations: string[] = [];
+
+  if (/\b(?:2d|2-d|2 chieu|hai chieu)\b/.test(normalizedInstruction)) {
+    if (/\b3d\b|3-d|soft clay|soft-clay/.test(outputText)) {
+      violations.push('User asked for 2D, but output still contains 3D/soft-clay wording.');
+    }
+    if (!/\b2d\b|2-d|2 chieu|hai chieu|flat|vector|illustrat|animation/.test(outputText)) {
+      violations.push('User asked for 2D, but output does not clearly describe a 2D visual style.');
+    }
+  }
+
+  if (/\b(?:ugc|user generated|nguoi that|real person|quay that|live action)\b/.test(normalizedInstruction)) {
+    if (!/\bugc\b|real person|live action|handheld|phone camera|selfie|nguoi that|quay that/.test(outputText)) {
+      violations.push('User asked for UGC/live action, but output does not clearly switch to live footage.');
+    }
+  }
+
+  return violations;
+}
+
+function comparableRefineText(ideaInput: unknown) {
+  const idea = asRecord(ideaInput);
+  const keep = {
+    title: idea.title,
+    creativeType: idea.creativeType,
+    framework: idea.framework,
+    explanation: idea.explanation,
+    hook: idea.hook,
+    body: idea.body,
+    cta: idea.cta,
+  };
+  return normalizeCompareText(JSON.stringify(keep));
+}
+
+function isRefineMeaningfullyUnchanged(originalIdea: Record<string, unknown>, refinedIdea: unknown) {
+  return comparableRefineText(originalIdea) === comparableRefineText(refinedIdea);
+}
+
 function buildAngleEmergencyFallback(payload: Record<string, unknown>) {
   const painpoints = Array.isArray(payload.painpoints)
     ? payload.painpoints.map(asText).filter(Boolean)
@@ -2941,22 +3003,29 @@ export async function POST(request: NextRequest) {
           'Hook must include or preserve meta.pspBridge: the short bridge from viewer emotion/angle to PSP before Body starts.',
         ],
       });
-      const refinePrompt = `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
+      const refineDirectiveBlock = buildRefineDirectiveBlock(instruction);
+      const buildRefinePrompt = (failureNotes = '') => `${CREATIVE_IDEA_ENGINE_SYSTEM_PROMPT}
 
 ${refineFramework}
 
 ## TASK
 Refine one existing production brief using the user instruction below.
 - The USER REFINE BRIEF is the highest-priority edit instruction for creative content.
-- Apply only the requested changes.
+- Apply only the requested changes, but apply them visibly and meaningfully. A one-idea refine must not come back unchanged.
 - Preserve the same problem-solution chain unless the user explicitly changes it.
 - Preserve all existing meta strategy fields exactly: strategyCode, strategyCodes, strategyCodeMap, favorite keys, and source IDs. Treat these strategy codes as tracking IDs, not as instructions that can override the USER REFINE BRIEF.
 - If the user asks to change visual style or space (for example 3D to 2D, UGC to animation, animation to real footage), update creativeType plus every hook/body/CTA visual and script field to match the new style. Do not mention the old style anywhere in visible production copy.
 - Keep or add meta.pspBridge so Hook connects the pain/emotion to the PSP before Body.
 - Body is only the demo/proof continuation; do not make Body the first place where PSP becomes relevant.
 - Keep visual, voice, and textOverlay separated for hook, body, and CTA.
-- Translate or rewrite title, character speech, voice/video voiceover, text overlay, script_vo, and CTA into natural English.
+- Translate or rewrite title, character speech, voice/video voiceover, text overlay, script_vo, and CTA into natural English where the original output uses English, while keeping Vietnamese production notes natural where present.
 - Return exactly 1 JSON object, not an array.
+
+## USER EDIT INTENT - MUST BE REFLECTED IN OUTPUT
+${refineDirectiveBlock}
+Concrete user request: "${instruction}"
+Before returning, internally check: "Can the user visibly see this requested edit in title, creativeType, hook, body, and CTA?" If no, rewrite again before output.
+${failureNotes ? `\n## PREVIOUS OUTPUT FAILED QA\n${failureNotes}\nRegenerate the single refined idea using the same full rules and fix every QA failure.` : ''}
 
 [EXISTING IDEA JSON]
 ${JSON.stringify(originalIdea, null, 2)}
@@ -2972,6 +3041,7 @@ For this refine task, return only the single object body, not the surrounding ar
 
 ${CREATIVE_PROMPT_RULES}
 ${TOOL_COMPATIBILITY_GUARDRAILS}`;
+      const refinePrompt = buildRefinePrompt();
 
       const text = await askAI(refinePrompt, {
         model: resolveModel(selectedModel),
@@ -3001,11 +3071,38 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           },
         });
       }
-      const refinedIdea = mergeRefinedIdeaWithOriginal(parsed, originalIdea, {
+      let refinedIdea = mergeRefinedIdeaWithOriginal(parsed, originalIdea, {
         duration: originalDuration,
         appName,
         pillar: asText(originalFramework.painpoint),
       });
+      const qaIssues = getRefineInstructionViolations(refinedIdea, instruction);
+      if (isRefineMeaningfullyUnchanged(originalIdea, refinedIdea)) {
+        qaIssues.push('The refined idea is effectively unchanged from the existing idea.');
+      }
+
+      if (qaIssues.length > 0) {
+        const retryText = await askAI(buildRefinePrompt(qaIssues.join('\n- ')), {
+          model: resolveModel(selectedModel),
+          temperature: 0.75,
+          max_tokens: 8192,
+          useCreativePersona: false,
+          priority: 'high',
+        });
+        const retryParsed = retryText ? parseJson(retryText) : null;
+        if (retryParsed) {
+          const retryIdea = mergeRefinedIdeaWithOriginal(retryParsed, originalIdea, {
+            duration: originalDuration,
+            appName,
+            pillar: asText(originalFramework.painpoint),
+          });
+          const retryIssues = getRefineInstructionViolations(retryIdea, instruction);
+          if (!isRefineMeaningfullyUnchanged(originalIdea, retryIdea) || retryIssues.length <= qaIssues.length) {
+            refinedIdea = retryIdea;
+          }
+        }
+      }
+
       return NextResponse.json({
         success: true,
         data: applyExplicitRefineDirectives(refinedIdea, instruction),
