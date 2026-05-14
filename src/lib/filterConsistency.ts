@@ -155,14 +155,22 @@ export function detectTargetLanguageFromMarkets(targetMarkets: string[], coreUse
   const joined = normalizeForFilterMatching([...targetMarkets, ...coreUsers].join(' '));
   if (!joined) return null;
 
-  if (/\bnoi\s*tieng\s*(es|spanish|tay\s*ban\s*nha)\b|\btieng\s*es\b|\bspanish\b|\bespanol\b|\btay\s*ban\s*nha\b/.test(joined)) return 'Spanish';
-  if (/\bnoi\s*tieng\s*(pt|portuguese|bo\s*dao\s*nha)\b|\btieng\s*pt\b|\bportuguese\b|\bbrazil\b|\bbrasil\b|\bbo\s*dao\s*nha\b/.test(joined)) return 'Portuguese';
+  if (/\bnoi\s*tieng\s*(es|spanish|tay\s*ban\s*nha)\b|\btieng\s*es\b|\bspanish\b|\bespanol\b|\btay\s*ban\s*nha\b|\bspain\b|\bmexico\b|\bargentina\b|\bcolombia\b|\bchile\b|\bperu\b|\becuador\b|\bbolivia\b|\bparaguay\b|\buruguay\b|\bvenezuela\b|\blatam\b|\blatin\s*america\b/.test(joined)) return 'Spanish';
+  if (/\bnoi\s*tieng\s*(pt|portuguese|bo\s*dao\s*nha)\b|\btieng\s*pt\b|\bportuguese\b|\bportugal\b|\bbrazil\b|\bbrasil\b|\bbo\s*dao\s*nha\b/.test(joined)) return 'Portuguese';
   if (/\bnoi\s*tieng\s*(fr|french|france)\b|\btieng\s*(fr|france|phap)\b|\bfrench\b|\bfrancais\b|\bfrance\b|\bphap\b/.test(joined)) return 'French';
   if (/\bnoi\s*tieng\s*(de|german|duc)\b|\btieng\s*(de|duc)\b|\bgerman\b|\bgermany\b|\bdeutsch\b|\bduc\b|\bde\b/.test(joined)) return 'German';
   if (/\bnoi\s*tieng\s*(it|italian|y)\b|\btieng\s*(it|y)\b|\bitalian\b|\bitaly\b|\bit\b/.test(joined)) return 'Italian';
   if (/\bnoi\s*tieng\s*(jp|japanese|nhat)\b|\bjapanese\b|\bjapan\b|\bnhat\b|\bjp\b/.test(joined)) return 'Japanese';
   if (/\bnoi\s*tieng\s*(kr|korean|han)\b|\bkorean\b|\bkorea\b|\bhan\b|\bkr\b/.test(joined)) return 'Korean';
   if (/\bnoi\s*tieng\s*(vi|vietnamese|viet)\b|\bvietnamese\b|\bvietnam\b|\bviet\b|\bvn\b/.test(joined)) return 'Vietnamese';
+  if (/\bnoi\s*tieng\s*(nl|dutch)\b|\bdutch\b|\bnetherlands\b|\bholland\b/.test(joined)) return 'Dutch';
+  if (/\bnoi\s*tieng\s*(pl|polish)\b|\bpolish\b|\bpoland\b/.test(joined)) return 'Polish';
+  if (/\bnoi\s*tieng\s*(tr|turkish)\b|\bturkish\b|\bturkey\b/.test(joined)) return 'Turkish';
+  if (/\bnoi\s*tieng\s*(ar|arabic)\b|\barabic\b|\bsaudi\b|\buae\b|\bemirates\b|\bqatar\b|\bkuwait\b|\begypt\b/.test(joined)) return 'Arabic';
+  if (/\bnoi\s*tieng\s*(hi|hindi)\b|\bhindi\b|\bindia\b/.test(joined)) return 'Hindi';
+  if (/\bnoi\s*tieng\s*(sv|swedish)\b|\bswedish\b|\bsweden\b/.test(joined)) return 'Swedish';
+  if (/\bnoi\s*tieng\s*(no|norwegian)\b|\bnorwegian\b|\bnorway\b/.test(joined)) return 'Norwegian';
+  if (/\bnoi\s*tieng\s*(da|danish)\b|\bdanish\b|\bdenmark\b/.test(joined)) return 'Danish';
   if (/\bthai\b|\bthailand\b|\bthai\s*lan\b/.test(joined)) return 'Thai';
   if (/\bindonesian\b|\bindonesia\b/.test(joined)) return 'Indonesian';
   if (/\bmalay\b|\bmalaysia\b/.test(joined)) return 'Malay';
