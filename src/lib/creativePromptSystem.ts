@@ -1695,7 +1695,9 @@ function inferHookDurationSecondsFromTimingText(text: string): number | null {
 
 function getRule4MaxSceneCount(durationSeconds: number): number {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 1;
-  return Math.max(1, Math.min(4, Math.floor(durationSeconds / 2.5)));
+  if (durationSeconds <= 3.25) return 1;
+  if (durationSeconds <= 5.25) return 2;
+  return Math.max(1, Math.min(4, Math.ceil(durationSeconds / 2.5)));
 }
 
 function hasPacingCompliantHook(text: string): boolean {
@@ -1974,7 +1976,7 @@ function createBriefValidationErrors(input: {
     input.hookTextOverlay,
     input.ctaText,
   ].filter(Boolean).map(value => vietnameseOverlayPart(value || ''));
-  if (vietnameseTextFields.some(value => !looksVietnamese(value || ''))) {
+  if (/vietnam/i.test(input.language || '') && vietnameseTextFields.some(value => !looksVietnamese(value || ''))) {
     errors.push('hook text overlays, hook alternatives, and cta_text must be Vietnamese; only voice/speech fields use the market language');
   }
   if (/vietnam/i.test(input.language || '')) {

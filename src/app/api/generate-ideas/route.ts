@@ -93,7 +93,7 @@ const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMIN
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const QUICK_IDEA_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_QUICK_BATCH_TIMEOUT_MS', 75000);
-const QUICK_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_QUICK_REQUEST_BUDGET_MS', 120000);
+const QUICK_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_QUICK_REQUEST_BUDGET_MS', 150000);
 const QUICK_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_QUICK_MAX_BATCH_SIZE', 1), MAX_IDEAS_PER_AI_BATCH);
 const QUICK_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_QUICK_BATCH_CONCURRENCY', 3);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
@@ -818,7 +818,9 @@ function extractHookTimeRanges(text: string): Array<{ start: number; end: number
 
 function getRule4MaxSceneCount(durationSeconds: number): number {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 1;
-  return Math.max(1, Math.min(4, Math.floor(durationSeconds / 2.5)));
+  if (durationSeconds <= 3.25) return 1;
+  if (durationSeconds <= 5.25) return 2;
+  return Math.max(1, Math.min(4, Math.ceil(durationSeconds / 2.5)));
 }
 
 function validateHookPacingOutput(text: string): string[] {
@@ -4219,7 +4221,7 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = !isQuickGenerationMode && ENABLE_AI_RECOVERY_REFILL;
+      const shouldUseAiRefill = ENABLE_AI_RECOVERY_REFILL;
       const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP && !isGemini3Ideas;
 
       const runBatchPlanWithRecovery = async (
