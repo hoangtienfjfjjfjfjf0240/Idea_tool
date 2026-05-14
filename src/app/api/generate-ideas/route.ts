@@ -92,9 +92,9 @@ const GENERATE_IDEAS_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GATEWAY_TIMEOUT_MS'
 const GENERATE_IDEAS_GEMINI3_SMALL_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_GEMINI3_TIMEOUT_MS', 180000);
 const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 30000);
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
-const QUICK_IDEA_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_QUICK_BATCH_TIMEOUT_MS', 60000);
-const QUICK_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_QUICK_REQUEST_BUDGET_MS', 130000);
-const QUICK_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_QUICK_MAX_BATCH_SIZE', 2), MAX_IDEAS_PER_AI_BATCH);
+const QUICK_IDEA_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_QUICK_BATCH_TIMEOUT_MS', 45000);
+const QUICK_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_QUICK_REQUEST_BUDGET_MS', 75000);
+const QUICK_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_QUICK_MAX_BATCH_SIZE', 3), MAX_IDEAS_PER_AI_BATCH);
 const QUICK_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_QUICK_BATCH_CONCURRENCY', 3);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
@@ -3020,6 +3020,7 @@ CORE RULES
 - Hook context must come from country/core-user insight for ${market}. Use locally plausible home/work/public spaces, clothing, props, phone behavior, family/work norms, and app proof. Avoid stereotypes and avoid generic empty rooms.
 - Character visual is required in every idea. If a person appears, describe age/range, gender presentation when relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop. If no person appears, write "No talent - screen recording only" plus the UI/device visual cue.
 - visual_scene_1 must blend the production details directly inside the hook rows: character appearance, country/core-user hook context, camera angle/shot size, lighting/setting, and one QC dont-do cue. Do not output a separate production-detail block and do not leave these only in metadata fields.
+- Hook metadata fields are hook-only: scene_family, character_visual, country_visual_insight, hook_context_insight, camera_plan, visual_ref_notes, dont_do, hook_voice_vi, and hook_text_overlay must describe visual_scene_1 only. Do not mention anything after the hook window defined by the Hook Timing Rule: no Body, CTA, later app demo, payoff selfie, download screen, or post-hook continuation in those fields. Put post-hook Body camera/action details inside visual_scene_2 and CTA camera/action details inside visual_scene_3.
 - Never output Speaker 1/Speaker 2. If a visible person speaks, label the line by role/name from the scene: Cụ ông, Cụ bà, Người đàn ông, Người phụ nữ, Bác sĩ, Người bệnh, Host, Khách mời.
 - Camera plan is required in every idea: list hook/body/CTA shot sizes and camera angles using familiar labels such as Toàn cảnh/Wide, Trung cảnh/Medium, Cận/CU, Cực cận/ECU, POV, OTS, Insert, Split, Top-down, Tracking.
 - Voice direction is required: voice follows the visible character. If one visible character speaks, use hook_character_speech with that character role/name and place the same exact spoken line inside the matching visual_scene_1 timing row, e.g. 0-2.5s: Position anchor... Contact anchor... Physical action anchor... và Cụ ông nói "Ignoring that morning neck tension? It could be a silent warning".
@@ -3064,7 +3065,7 @@ OUTPUT JSON ONLY. Return this current schema:
             "character_visual": "Vietnamese: age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, prop; or No talent - screen recording only + UI/device cue",
             "country_visual_insight": "Vietnamese: why this visual fits ${market} and the selected core user",
             "hook_context_insight": "Vietnamese: country/core-user insight behind the hook context",
-            "camera_plan": "Vietnamese: hook/body/CTA shot sizes and camera angles. Use labels such as Toàn cảnh/Wide, Trung cảnh/Medium, Cận/CU, Cực cận/ECU, POV, OTS, Insert, Split, Top-down, Tracking",
+            "camera_plan": "Vietnamese hook-only: visual_scene_1 shot sizes and camera angles only. Do not mention anything after the hook window defined by the Hook Timing Rule. Use labels such as Wide, Medium, CU, ECU, POV, OTS, Insert, Split, Top-down, Tracking",
             "voice_direction": "Vietnamese: who speaks, voice tone, and how voice follows the visible character/timing row",
             "visual_scene_1": "0-2.5s: Vietnamese hook visual. Include Position anchor, Contact anchor, Physical action anchor, and if the character speaks add: và [nhân vật] nói \"exact hook_character_speech line\". 2.5-5s: Vietnamese continuation if needed.",
             "visual_scene_2": "Vietnamese body paragraph showing app/PSP action. Include Position anchor, Contact anchor, Physical action anchor.",
@@ -3077,7 +3078,7 @@ OUTPUT JSON ONLY. Return this current schema:
             "script_vo": "full VO, max 60 words",
             "cta_text": "Vietnamese / ${input.outputLanguage}, max 6 words per language",
             "cta_friction_reducer": "Free|No signup|30 seconds|1 tap",
-            "visual_ref_notes": "camera, lighting, talent direction, pacing",
+            "visual_ref_notes": "Vietnamese hook-only production reference for visual_scene_1: camera, lighting, talent direction, pacing. Do not describe Body or CTA.",
             "talent_profile": "specific profile or No talent - screen recording only",
             "dont_do": "specific QC warning, at least 5 words",
             "track": "A|B|C",
@@ -3205,6 +3206,7 @@ Language matrix rule:
 - Do NOT write the whole visual_scene in ${input.outputLanguage}. Only audience speech/voice snippets use ${input.outputLanguage}.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 must blend the hook production details directly into the timed hook rows: character appearance, country/core-user context, camera angle/shot size, lighting/setting, and one QC dont-do cue. Do not output a separate production-detail block and do not push these only into More details metadata.
+- Hook metadata fields are hook-only: scene_family, character_visual, country_visual_insight, hook_context_insight, camera_plan, visual_ref_notes, dont_do, hook_voice_vi, and hook_text_overlay must describe visual_scene_1 only. Do not mention anything after the hook window defined by the Hook Timing Rule: no Body, CTA, later app demo, payoff selfie, download screen, or post-hook continuation in those fields. Put post-hook Body camera/action details inside visual_scene_2 and CTA camera/action details inside visual_scene_3.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
 - hook_text_overlay or hook_vo must name the selected concrete metric/feature in the first hook beat when one exists. Use "blood pressure" directly for blood pressure, "heart rate" directly for heart rate, etc.; do not rely on vague phrases like "this number" or "something changed" before the viewer knows the topic.
 
@@ -3272,7 +3274,7 @@ Use this compact schema:
             "character_visual": "Vietnamese: age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, prop; or No talent - screen recording only + UI/device cue",
             "country_visual_insight": "Vietnamese: why this visual fits ${market} and the selected core user",
             "hook_context_insight": "Vietnamese: country/core-user insight behind the hook context",
-            "camera_plan": "Vietnamese: hook/body/CTA shot sizes and camera angles. Use labels such as Toàn cảnh/Wide, Trung cảnh/Medium, Cận/CU, Cực cận/ECU, POV, OTS, Insert, Split, Top-down, Tracking",
+            "camera_plan": "Vietnamese hook-only: visual_scene_1 shot sizes and camera angles only. Do not mention anything after the hook window defined by the Hook Timing Rule. Use labels such as Wide, Medium, CU, ECU, POV, OTS, Insert, Split, Top-down, Tracking",
             "voice_direction": "Vietnamese: who speaks, voice tone, and how voice follows the visible character/timing row",
             "visual_scene_1": "${pacingSafeVisualScene1Example} Include Position anchor, Contact anchor, and Physical action anchor clauses. Obey Rule 4 pacing.",
             "visual_scene_2": "Vietnamese body paragraph with narrative tension and app action. Include Position anchor, Contact anchor, and Physical action anchor clauses.",
@@ -3286,7 +3288,7 @@ Use this compact schema:
             "script_vo": "full VO, max 60 words",
             "cta_text": "Vietnamese / ${input.outputLanguage}, max 6 words per language",
             "cta_friction_reducer": "Free|No signup|30 seconds|1 tap",
-            "visual_ref_notes": "camera, lighting, talent direction, pacing",
+            "visual_ref_notes": "Vietnamese hook-only production reference for visual_scene_1: camera, lighting, talent direction, pacing. Do not describe Body or CTA.",
             "talent_profile": "specific profile or No talent - screen recording only",
             "dont_do": "specific QC warning",
             "track": "A|B|C",
@@ -3728,7 +3730,7 @@ Hard requirements:
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
 - title/script name, visual_scene prose, and production notes MUST be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text MUST be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. hook_vo, hook_character_speech, and script_vo MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese with full diacritics. Only quoted Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}; quoted Text hiện is bilingual.
-- visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
+- visual_ref_notes must describe hook/visual_scene_1 only: camera style, lighting, talent direction, and pacing. Do not describe Body or CTA there.`;
 
         const frameworkInjection = buildFrameworkInjection({
           appName,
@@ -3806,7 +3808,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - character_visual must specify age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; if no person appears, say "No talent - screen recording only" plus the UI/device visual cue.
-- camera_plan must specify hook/body/CTA shot sizes and camera angles using Toàn cảnh/Wide, Trung cảnh/Medium, Cận/CU, Cực cận/ECU, POV, OTS, Insert, Split, Top-down, or Tracking.
+- camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only. Do not describe anything after the hook window here; put post-hook Body/CTA details inside visual_scene_2/3.
 - title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text must be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, embed quoted spoken lines in the exact timing row where the character speaks; quoted Text hien is bilingual. Target market affects local setting, vibe, speech language, and second overlay language.
 - hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates the ${outputLanguage} side of hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
@@ -3814,7 +3816,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- character_visual must specify age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; camera_plan must specify hook/body/CTA shot sizes and camera angles.
+- character_visual must specify hook-only age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only.
 - visual_scene_1 must follow the Hook Timing Rule below. Include bilingual Text hien and Voiceover in the selected voice language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Duration: ${duration}
@@ -4609,7 +4611,7 @@ Hard requirements:
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - title/script name, visual_scene prose, and production notes MUST be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text MUST be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. hook_vo, hook_character_speech, and script_vo MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese with full diacritics. Only quoted Voiceover / CHARACTER SPEECH inside visual_scene uses ${outputLanguage}; quoted Text hiện is bilingual.
-- visual_ref_notes must include camera style, lighting, talent direction, and pacing.`;
+- visual_ref_notes must describe hook/visual_scene_1 only: camera style, lighting, talent direction, and pacing. Do not describe Body or CTA there.`;
 
     const outputSpec = buildCreativeBriefOutputSpec({
       quantity,
@@ -4640,7 +4642,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Keep hook_primary under 12 words.
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - character_visual must specify age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; if no person appears, say "No talent - screen recording only" plus the UI/device visual cue.
-- camera_plan must specify hook/body/CTA shot sizes and camera angles using Toàn cảnh/Wide, Trung cảnh/Medium, Cận/CU, Cực cận/ECU, POV, OTS, Insert, Split, Top-down, or Tracking.
+- camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only. Do not describe anything after the hook window here; put post-hook Body/CTA details inside visual_scene_2/3.
 - title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, and cta_text must be bilingual Vietnamese / ${outputLanguage} when ${outputLanguage} is not Vietnamese. Only hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, embed quoted spoken lines in the exact timing row where the character speaks; quoted Text hien is bilingual. Target market affects local setting, vibe, speech language, and second overlay language.
 - hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates the ${outputLanguage} side of hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
@@ -4648,7 +4650,7 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
 - Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
-- character_visual must specify age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; camera_plan must specify hook/body/CTA shot sizes and camera angles.
+- character_visual must specify hook-only age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only.
 - visual_scene_1 must follow the Hook Timing Rule below. Include bilingual Text hien and Voiceover in the selected voice language inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Keep the runtime social-first and flexible. Do not lock the concept to a fixed 15s/30s/60s format.

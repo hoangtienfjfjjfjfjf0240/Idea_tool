@@ -2295,8 +2295,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       let allData: Array<{ item: GeneratedIdeaApiItem; filtersSnapshot: FilterState }> = [];
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = () => selectedModel || '';
-      const maxAttemptsPerAngle = useFastGeneratePath ? 3 : 1;
-      const maxConcurrent = Math.min(3, generationTasks.length);
+      const maxAttemptsPerAngle = useFastGeneratePath ? 2 : 1;
+      const maxConcurrent = Math.min(useFastGeneratePath ? 4 : 3, generationTasks.length);
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
 
@@ -2785,8 +2785,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       { label: 'Character visual - ngoại hình', value: meta.characterVisual || meta.talentProfile },
       { label: 'Insight quốc gia', value: meta.countryVisualInsight || meta.marketInsight },
       { label: 'Bối cảnh hook', value: meta.hookContextInsight },
-      { label: 'Góc camera / shot plan', value: meta.cameraPlan },
-      { label: 'Visual ref', value: meta.visualRefNotes },
+      { label: 'Góc camera hook', value: meta.cameraPlan },
+      { label: 'Visual ref hook', value: meta.visualRefNotes },
       { label: 'Không làm', value: meta.dontDo },
     ]
       .map(item => {
@@ -4615,8 +4615,8 @@ Tao 3 idea`}
               { label: 'Character visual - ngoại hình', value: meta.characterVisual || meta.talentProfile },
               { label: 'Insight quốc gia', value: meta.countryVisualInsight || meta.marketInsight },
               { label: 'Bối cảnh hook', value: meta.hookContextInsight },
-              { label: 'Góc camera', value: meta.cameraPlan },
-              { label: 'Visual ref', value: meta.visualRefNotes },
+              { label: 'Góc camera hook', value: meta.cameraPlan },
+              { label: 'Visual ref hook', value: meta.visualRefNotes },
               { label: 'Không làm', value: meta.dontDo },
             ]
               .map(item => ({ ...item, value: cleanPreviewText(item.value) }))
