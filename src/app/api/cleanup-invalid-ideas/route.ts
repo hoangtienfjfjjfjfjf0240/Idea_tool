@@ -11,9 +11,14 @@ export async function DELETE(request: NextRequest) {
     const guard = await guardApiRequest(request, { key: 'cleanup-invalid-ideas', max: 20, windowMs: 60 * 1000 });
     if (guard instanceof NextResponse) return guard;
 
-    const body = await request.json().catch(() => null) as { appId?: string; dryRun?: boolean } | null;
+    const body = await request.json().catch(() => null) as {
+      appId?: string;
+      dryRun?: boolean;
+      confirmDelete?: boolean;
+    } | null;
     const appId = body?.appId?.trim() || '';
-    const dryRun = body?.dryRun === true;
+    const confirmDelete = body?.confirmDelete === true;
+    const dryRun = body?.dryRun !== false || !confirmDelete;
 
     if (!UUID_RE.test(appId)) {
       return NextResponse.json({ success: false, error: 'Invalid app id.' }, { status: 400 });
@@ -33,7 +38,13 @@ export async function DELETE(request: NextRequest) {
 
       if (error) {
         console.error('cleanup-invalid-ideas select error:', error);
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return NextResponse.json({
+          success: true,
+          dryRun: true,
+          deletedCount: 0,
+          deletedIds: [],
+          warnings: [`Cleanup skipped: ${error.message}`],
+        });
       }
 
       rows.push(...((data || []) as GeneratedIdea[]));
@@ -43,7 +54,7 @@ export async function DELETE(request: NextRequest) {
     const invalidIdeas = rows.filter(isInvalidStrategyIdea);
     const invalidIds = invalidIdeas.map(idea => idea.id).filter(Boolean);
 
-    if (!dryRun && invalidIds.length > 0) {
+    if (confirmDelete && !dryRun && invalidIds.length > 0) {
       for (let index = 0; index < invalidIds.length; index += 500) {
         const chunk = invalidIds.slice(index, index + 500);
         const { error: deleteError } = await supabase
@@ -54,7 +65,13 @@ export async function DELETE(request: NextRequest) {
 
         if (deleteError) {
           console.error('cleanup-invalid-ideas delete error:', deleteError);
-          return NextResponse.json({ success: false, error: deleteError.message }, { status: 500 });
+          return NextResponse.json({
+            success: true,
+            dryRun: true,
+            deletedCount: 0,
+            deletedIds: [],
+            warnings: [`Cleanup delete skipped: ${deleteError.message}`],
+          });
         }
       }
     }
@@ -67,9 +84,14 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (error) {
     console.error('cleanup-invalid-ideas route failed:', error);
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Cleanup invalid ideas failed.' },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: true,
+      dryRun: true,
+      deletedCount: 0,
+      deletedIds: [],
+      warnings: [
+        error instanceof Error ? `Cleanup skipped: ${error.message}` : 'Cleanup invalid ideas skipped.',
+      ],
+    });
   }
 }

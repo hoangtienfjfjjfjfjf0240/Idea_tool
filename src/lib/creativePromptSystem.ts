@@ -189,10 +189,10 @@ function buildScript(section: Record<string, unknown>): string {
   const textOverlay = readText(section.textOverlay) || readText(section.text_overlay) || readText(section.text);
   return [
     visual,
-    characterSpeech ? `[CHARACTER SPEECH] ${characterSpeech}` : '',
-    voiceover ? `[VOICEOVER] ${voiceover}` : '',
-    !characterSpeech && !voiceover && voice ? `[VOICE] ${voice}` : '',
-    textOverlay ? `[TEXT OVERLAY] ${textOverlay}` : '',
+    characterSpeech ? `Lời nhân vật: ${characterSpeech}` : '',
+    voiceover ? `Voiceover: ${voiceover}` : '',
+    !characterSpeech && !voiceover && voice ? `Voiceover: ${voice}` : '',
+    textOverlay ? `Text hiện: ${textOverlay}` : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -507,7 +507,7 @@ export const TOOL_COMPATIBILITY_GUARDRAILS = `## TOOL COMPATIBILITY GUARDRAILS -
 - Direct feature language: when the selected PSP/painpoint names a concrete metric/feature, hook_text_overlay or hook_vo must name it in the first beat instead of opening with vague "this number/this thing" wording.
 - Scene selection must follow Angle/Visual/Painpoint. Do not default to kitchen/living room/sofa/generic apartment; TV/editor/news/fact angles should use studio/newsroom/desk/lower-third/chart/infographic execution.
 - If a visible character speaks in any hook situation, fill hook_character_speech with the exact on-camera line; otherwise leave it empty.
-- If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines. hook_vo stays empty unless there is a true off-camera narrator.
+- If the hook is 2-person dialogue, podcast, interview, reaction, or friend/spouse exchange, hook_character_speech must contain role-labelled character lines using visible roles/names, never Speaker 1/Speaker 2. hook_vo stays empty unless there is a true off-camera narrator.
 - Off-camera narration belongs in hook_vo/script_vo. On-camera character lines never belong in hook_vo. On-screen copy belongs in hook_text_overlay/text_overlays.
 - Output scenes in the requested timeline: Hook 0-5, Body 5-18, CTA 18-25, while obeying the pacing limit.
 - Title, hook text/text overlay, CTA, visual scenes, and production notes are Vietnamese. Only character speech, voiceover, and script_vo follow the requested language.
@@ -758,6 +758,9 @@ Only hook_vo, hook_character_speech, and script_vo must be in ${options.language
 Visual scene prose, visual_ref_notes, talent_profile, dont_do, track_reason, and idea_reasoning must be Vietnamese for the production team.
 If a visible character speaks, keep hook_character_speech as the structured field AND embed the same exact spoken line inside the matching visual_scene_1 timing row, written as "và [nhân vật] nói \"...\"". Keep on-screen copy in hook_text_overlay/text_overlays.
 Every idea must also include hook_voice_vi as a Vietnamese translation with full Vietnamese diacritics of hook_vo + hook_character_speech for internal output cards.
+Every idea must include character_visual and camera_plan. character_visual must specify age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; if no person appears, use "No talent - screen recording only" plus the UI/device visual cue. camera_plan must specify hook/body/CTA shot sizes and camera angles such as Toan canh/Wide, Trung canh/Medium, Can/CU, Cuc can/ECU, POV, OTS, Insert, Split, Top-down, or Tracking.
+visual_scene_1 must blend the hook production details directly into the timed hook rows: character appearance, country/core-user context, camera angle/shot size, lighting/setting, and one QC dont-do cue. Do not output a separate production-detail block and do not leave these only in metadata fields.
+Never output Speaker 1/Speaker 2. For spoken lines, label the visible person by role/name from the scene, e.g. "Cụ ông", "Người đàn ông", "Người phụ nữ", "Bác sĩ", "Người bệnh"; if one person speaks, use only that character label.
 Use the selected market only for culture, setting, behavior, props, and vibe. Do not switch production prose away from Vietnamese.
 Each title must be Vietnamese, unique inside the batch, and name the visual setup/action. Do not reuse the same label for different visual structures.
 ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeType must stay "${options.visualType}". Use track only as internal production difficulty; track must not change creativeType.${options.visualType === 'Motion Graphic' ? ' Motion Graphic must be 2D motion graphics: animated typography, flat shapes/icons/charts/UI panels/data callouts. Do not use podcast, interview, host/guest, Speaker 1/Speaker 2, live-action, 3D, or full character animation.' : ''}` : ''}
@@ -777,7 +780,7 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
             "id": "P0-A0-I0",
             "hook_text_overlay": "Max 8 words in Vietnamese; on-screen hook text inside Scene 1 or Scene 2",
             "hook_vo": "Max 12 words in ${options.language}; off-camera narrator/video VO only; empty when hook_character_speech is filled; must differ from hook_text_overlay",
-            "hook_character_speech": "On-camera character line in ${options.language} if a visible character speaks in the hook. Must include time + speaker, e.g. 2.5-5s - Older man: line. For 2-person dialogue, use one timed role-labelled line per speaker. Empty string only if no visible speaker",
+            "hook_character_speech": "On-camera character line in ${options.language} if a visible character speaks in the hook. Must include time + visible role/name, e.g. 2.5-5s - Older man: line. Never use Speaker 1/Speaker 2. Empty string only if no visible speaker",
             "hook_voice_vi": "Vietnamese translation with full diacritics of hook_vo + hook_character_speech only; if both are empty, translate hook_text_overlay",
             "hook_archetype": "Stat Shock|Body Signal Question|Whisper Secret|POV Narrative|Counter-intuitive|Social Proof|Zoom Problem|Before After Demo|Question Accusation|Speed Ease Claim|Tutorial Opener|Trend Jack|Result First|Demo-Magic|Identity Personal|Challenge Dare",
             "hook_alt_1_text": "Alternative hook text overlay in Vietnamese, different archetype",
@@ -788,6 +791,11 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
             "hook_alt_2_archetype": "Must be different from primary and alt_1",
             "emotion_journey": "Hook Emotion -> Body Emotion -> CTA Emotion",
             "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
+            "character_visual": "Vietnamese: age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, prop; or No talent - screen recording only + UI/device cue",
+            "country_visual_insight": "Vietnamese: why this visual fits the selected market and core user",
+            "hook_context_insight": "Vietnamese: country/core-user insight behind the hook context",
+            "camera_plan": "Vietnamese: hook/body/CTA shot sizes and camera angles. Use labels such as Toan canh/Wide, Trung canh/Medium, Can/CU, Cuc can/ECU, POV, OTS, Insert, Split, Top-down, Tracking",
+            "voice_direction": "Vietnamese: who speaks, voice tone, and how voice follows the visible character/timing row",
             "visual_scene_1": "Sec 0-5 (THE HOOK - max 2 scenes/camera angles): Scene 1 (0-2.5s): [VISUAL SHOCK that depicts the pain point situation + if visible character speaks, add: và [nhân vật] nói \"exact hook_character_speech line\"]. Scene 2 (2.5-5s): [CONTEXT + CURIOSITY GAP, hook_text_overlay appears visually but do not quote it here]. ${visualAnchorClause} ${pacingClause}",
             "visual_scene_2": "Sec 5-18 (THE BODY): [body_motivation_pattern applied]. Include tension, app action, camera style, pacing, and key proof moments. ${visualAnchorClause}",
             "visual_scene_3": "Sec 18-25 (THE CTA): Resolution plus CTA visual. Show proof/payoff and app/download prompt. ${visualAnchorClause}",
@@ -834,6 +842,8 @@ ${options.visualType ? `Selected Visual/Theme is LOCKED: every idea's creativeTy
 14. emotion_journey must have 3 different emotions.
 15. track: A = no real person needed, B = real person/UGC, C = motion/animation/complex edit.
 16. visual_ref_notes must specify camera style, lighting, talent direction, and pacing.
+16a. character_visual must be production-executable: age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop; use "No talent - screen recording only" only for pure UI/screen demos.
+16b. camera_plan must name hook/body/CTA shot sizes and camera angles using Toan canh/Wide, Trung canh/Medium, Can/CU, Cuc can/ECU, POV, OTS, Insert, Split, Top-down, or Tracking.
 17. Keep every idea inside the exact selected pillar and selected angle. Do not drift into adjacent pain points.
 18. All scenes must assume Meta-native vertical 9:16.
 19. Angle must follow the formula: one angle_type + one market/framework approach + one visually different execution.
@@ -1499,10 +1509,10 @@ function pickSpeechTimeRange(visual: string): string {
 }
 
 function formatCharacterSpeechWithTiming(visual: string, speech: string): string {
-  const cleanSpeech = readSpeechText(speech);
+  const cleanSpeech = replaceGenericSpeakerLabels(speech, visual);
   if (!cleanSpeech) return '';
   const lines = cleanSpeech
-    .split(/\r?\n|\/\s*(?=(?:Speaker|Host|Guest|Doctor|Patient)\s*\d*\s*:)/i)
+    .split(/\r?\n|\/\s*(?=(?:Speaker|Host|Guest|Doctor|Patient|Cụ|Ông|Bà|Người|Bác sĩ|Người bệnh)\s*[^:]{0,40}:)/i)
     .map(line => line.trim())
     .filter(Boolean);
   if (lines.length === 0) return '';
@@ -1519,7 +1529,7 @@ function formatCharacterSpeechWithTiming(visual: string, speech: string): string
 }
 
 function parseTimedSpeechLine(line: string, fallbackVisual: string): { time: string; speaker: string; text: string } | null {
-  const clean = readSpeechText(line)
+  const clean = replaceGenericSpeakerLabels(line, fallbackVisual)
     .replace(/^["']|["']$/g, '')
     .trim();
   if (!clean) return null;
@@ -1624,11 +1634,12 @@ function moveOnCameraVoiceoverToCharacterSpeech(
   if (!spokenCharacter) return { characterSpeech: spokenVoiceover, voiceover: '' };
   if (isSameLine(spokenCharacter, spokenVoiceover)) return { characterSpeech: spokenCharacter, voiceover: '' };
 
-  const alreadyLabelled = /\b(?:speaker|host|guest|person|man|woman|doctor|patient|nhan vat|nguoi)\s*\d?\s*:/i.test(`${spokenVoiceover}\n${spokenCharacter}`);
+  const alreadyLabelled = /\b(?:speaker|host|guest|person|man|woman|doctor|patient|nhan vat|nguoi|cụ|ông|bà|bác sĩ|người)\s*\d?\s*:/i.test(`${spokenVoiceover}\n${spokenCharacter}`);
+  const [firstSpeaker, secondSpeaker] = speakerLabelsFromVisual(visual);
   return {
     characterSpeech: alreadyLabelled
-      ? `${spokenVoiceover}\n${spokenCharacter}`
-      : `Speaker 1: ${spokenVoiceover}\nSpeaker 2: ${spokenCharacter}`,
+      ? replaceGenericSpeakerLabels(`${spokenVoiceover}\n${spokenCharacter}`, visual)
+      : `${firstSpeaker}: ${spokenVoiceover}\n${secondSpeaker}: ${spokenCharacter}`,
     voiceover: '',
   };
 }
@@ -1779,6 +1790,25 @@ function stripRoleLabelsForVoiceover(text: string) {
     .replace(/\b(?:Host|Guest)\s*:\s*/gi, '')
     .replace(/\s*\/\s*/g, ' ')
     .trim();
+}
+
+function speakerLabelsFromVisual(visual: string): string[] {
+  const normalized = normalizeCompareText(visual);
+  if (/\b(?:cu ong|ong)\b/.test(normalized) && /\b(?:cu ba|ba)\b/.test(normalized)) return ['Cụ ông', 'Cụ bà'];
+  if (/\b(?:doctor|bac si)\b/.test(normalized) && /\b(?:patient|benh nhan|nguoi benh)\b/.test(normalized)) return ['Bác sĩ', 'Người bệnh'];
+  if (/\b(?:host|mc)\b/.test(normalized) && /\b(?:guest|khach moi)\b/.test(normalized)) return ['Host', 'Khách mời'];
+  if (/\b(?:man|dan ong|nam)\b/.test(normalized) && /\b(?:woman|phu nu|nu)\b/.test(normalized)) return ['Người đàn ông', 'Người phụ nữ'];
+  if (/\b(?:woman|phu nu|nu)\b/.test(normalized)) return ['Người phụ nữ', 'Người còn lại'];
+  if (/\b(?:man|dan ong|nam)\b/.test(normalized)) return ['Người đàn ông', 'Người còn lại'];
+  return [extractSpeakerLabel(visual), 'Người còn lại'];
+}
+
+function replaceGenericSpeakerLabels(text: string, visual: string): string {
+  const labels = speakerLabelsFromVisual(visual);
+  return readSpeechText(text)
+    .replace(/\[\s*Speaker\s*([12])\s*\]\s*:?\s*/gi, (_match, index: string) => `${labels[Math.max(0, Number(index) - 1)] || 'Nhân vật'}: `)
+    .replace(/\bSpeaker\s*([12])\s*:/gi, (_match, index: string) => `${labels[Math.max(0, Number(index) - 1)] || 'Nhân vật'}:`)
+    .replace(/\bSpeaker\s*([12])\b/gi, (_match, index: string) => labels[Math.max(0, Number(index) - 1)] || 'Nhân vật');
 }
 
 const HOOK_ARCHETYPE_LABELS: Record<string, string> = {

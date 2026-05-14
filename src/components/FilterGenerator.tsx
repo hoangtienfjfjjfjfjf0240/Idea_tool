@@ -2754,9 +2754,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const hookSpeech = getSectionSpokenLines(content.hook);
     const bodySpeech = getSectionSpokenLines(content.body);
     const ctaSpeech = getSectionSpokenLines(content.cta);
-    const hookVisual = normalizeHookTimingLabel(content.hook?.visual || content.hook?.script || '');
-    const bodyVisual = content.body?.visual || content.body?.script || '';
-    const ctaVisual = content.cta?.visual || content.cta?.script || '';
+    const hookVisual = normalizeHookTimingLabel(cleanVisualForDisplay(content.hook?.visual || content.hook?.script || ''));
+    const bodyVisual = cleanVisualForDisplay(content.body?.visual || content.body?.script || '');
+    const ctaVisual = cleanVisualForDisplay(content.cta?.visual || content.cta?.script || '');
     const hookSpeechInline = visualContainsSpokenLine(hookVisual, hookSpeech.characterSpeech);
     const bodySpeechInline = visualContainsSpokenLine(bodyVisual, bodySpeech.characterSpeech);
     const ctaSpeechInline = visualContainsSpokenLine(ctaVisual, ctaSpeech.characterSpeech);
@@ -2780,18 +2780,16 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       meta.hookAlt2 ? `[Phụ 2] ${meta.hookAlt2}` : '',
     ].filter(Boolean).join('\n');
     const hookVisualIncludesCopy = /\btext\s+hien\b|\bvoiceover\b/.test(normalizeCompareText(hookVisual));
-    const mainBodyVoiceover = bodySpeech.voiceover || content.body?.voice || '';
     const finalCtaText = ctaText || ctaSpeech.voiceover || content.cta?.endCard || '';
     const selectedInputLines = getResultInputChips(idea, content).map(chip => `${chip.label}: ${chip.value}`);
     const productionDetailLines = [
       { label: 'Scene family', value: meta.sceneFamily },
-      { label: 'Character visual', value: meta.characterVisual || meta.talentProfile },
-      { label: 'Country insight', value: meta.countryVisualInsight || meta.marketInsight },
-      { label: 'Hook context insight', value: meta.hookContextInsight },
-      { label: 'Camera angle / shot plan', value: meta.cameraPlan },
-      { label: 'Voice direction', value: meta.voiceDirection },
+      { label: 'Character visual - ngoại hình', value: meta.characterVisual || meta.talentProfile },
+      { label: 'Insight quốc gia', value: meta.countryVisualInsight || meta.marketInsight },
+      { label: 'Bối cảnh hook', value: meta.hookContextInsight },
+      { label: 'Góc camera / shot plan', value: meta.cameraPlan },
       { label: 'Visual ref', value: meta.visualRefNotes },
-      { label: 'Do not', value: meta.dontDo },
+      { label: 'Không làm', value: meta.dontDo },
     ]
       .map(item => {
         const value = cleanPreviewText(item.value);
@@ -2803,9 +2801,6 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       'INPUT DA CHON',
       ...selectedInputLines,
       '',
-      productionDetailLines.length ? 'PRODUCTION BLUEPRINT' : '',
-      ...productionDetailLines,
-      productionDetailLines.length ? '' : '',
       'TÌNH HUỐNG GỐC (PAIN POINT)',
       framework.painpoint || '',
       '',
@@ -2818,24 +2813,20 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       '',
       'Hook (5s đầu):',
       hookVisual || '',
+      ...productionDetailLines,
+      hookVoiceVi ? `[DỊCH HOOK VOICE] ${hookVoiceVi}` : '',
       hookText && !hookVisualIncludesCopy ? `Text hiện: "${hookText}"` : '',
-      hookSpeech.characterSpeech && !hookSpeechInline ? `Lời nhân vật: "${hookSpeech.characterSpeech}"` : '',
-      hookSpeech.voiceover && !hookVisualIncludesCopy ? `Voiceover: "${hookSpeech.voiceover}"` : '',
-      hookVoiceVi ? `Dịch hook voice: "${hookVoiceVi}"` : '',
+      hookSpeech.characterSpeech && !hookSpeechInline ? `Lời nhân vật: "${cleanSpeakerLabelsForDisplay(hookSpeech.characterSpeech)}"` : '',
       hookVariants ? `Biến thể hook:\n${hookVariants}` : '',
       '',
       bodyVisual ? `Diễn biến (Body): ${bodyVisual}` : 'Diễn biến (Body):',
       bodyText ? `Text body: "${bodyText}"` : '',
-      bodySpeech.characterSpeech && !bodySpeechInline ? `Lời nhân vật: "${bodySpeech.characterSpeech}"` : '',
-      mainBodyVoiceover ? `Voiceover chính: "${mainBodyVoiceover}"` : '',
+      bodySpeech.characterSpeech && !bodySpeechInline ? `Lời nhân vật: "${cleanSpeakerLabelsForDisplay(bodySpeech.characterSpeech)}"` : '',
       '',
       finalCtaText ? `Kêu gọi hành động (CTA): ${finalCtaText}` : 'Kêu gọi hành động (CTA):',
       ctaVisual ? `Visual CTA: ${ctaVisual}` : '',
-      ctaSpeech.characterSpeech && !ctaSpeechInline ? `Lời nhân vật CTA: "${ctaSpeech.characterSpeech}"` : '',
-      ctaSpeech.voiceover && ctaSpeech.voiceover !== finalCtaText ? `Voiceover CTA: "${ctaSpeech.voiceover}"` : '',
+      ctaSpeech.characterSpeech && !ctaSpeechInline ? `Lời nhân vật CTA: "${cleanSpeakerLabelsForDisplay(ctaSpeech.characterSpeech)}"` : '',
       content.cta?.endCard && content.cta.endCard !== finalCtaText ? `Màn hình kết: ${content.cta.endCard}` : '',
-      meta.visualRefNotes ? `Ghi chú quay dựng: ${meta.visualRefNotes}` : '',
-      meta.dontDo ? `Không làm: ${meta.dontDo}` : '',
     ].filter(line => String(line).trim()).join('\n');
 
     navigator.clipboard.writeText(readableText);
@@ -2931,6 +2922,25 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       return '';
     }
     return text;
+  };
+
+  const cleanSpeakerLabelsForDisplay = (value: unknown) => cleanPreviewText(value)
+    .replace(/\[\s*Speaker\s*([12])\s*\]\s*:?\s*/gi, '')
+    .replace(/\bSpeaker\s*[12]\s*:\s*/gi, '')
+    .replace(/\bSpeaker\s*[12]\b/gi, 'Nhân vật');
+
+  const cleanVisualForDisplay = (value: unknown) => {
+    if (typeof value !== 'string') return '';
+    return value
+      .replace(/^\s*\[(?:VOICE|VOICE VIDEO|VOICEOVER|DỊCH HOOK VOICE|DICH HOOK VOICE)\][^\r\n]*(?:\r?\n|$)/gim, '')
+      .replace(/^\s*\[(?:TEXT OVERLAY)\][^\r\n]*(?:\r?\n|$)/gim, '')
+      .replace(/\[(?:CHARACTER SPEECH)\]\s*/gi, '')
+      .replace(/\[(?:TEXT OVERLAY)\][^[]*$/gim, '')
+      .replace(/\[(?:VOICE|VOICE VIDEO|VOICEOVER|DỊCH HOOK VOICE|DICH HOOK VOICE)\][^[]*$/gim, '')
+      .replace(/\bSpeaker\s*[12]\s*:/gi, '')
+      .replace(/\bSpeaker\s*[12]\b/gi, 'Nhân vật')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   };
 
   const listFilterValues = (snapshot: FilterState | null | undefined, key: string, fallback: unknown = '') => {
@@ -4589,7 +4599,7 @@ Tao 3 idea`}
             const isFavorite = hasFavoriteIdeaKey(app.id, idea, favoriteIdeas);
             const hookData = isEditing ? editBuffer?.hook || {} : c?.hook || {};
             const isBuilderIdea = isBuilderIdeaContent(c);
-            const hookVisual = normalizeHookTimingLabel(hookData?.visual || hookData?.script || '');
+            const hookVisual = normalizeHookTimingLabel(cleanVisualForDisplay(hookData?.visual || hookData?.script || ''));
             const hookDuration = isBuilderIdea ? 3 : getHookDurationSeconds(hookData);
             const hookSpeech = getSectionSpokenLines(hookData);
             const hookText = hookData?.textOverlay || hookData?.text || '';
@@ -4604,13 +4614,12 @@ Tao 3 idea`}
             const meta = (c?.meta || {}) as Record<string, unknown>;
             const productionDetails = [
               { label: 'Scene family', value: meta.sceneFamily },
-              { label: 'Character visual', value: meta.characterVisual || meta.talentProfile },
-              { label: 'Country insight', value: meta.countryVisualInsight || meta.marketInsight },
-              { label: 'Hook context', value: meta.hookContextInsight },
-              { label: 'Camera angle', value: meta.cameraPlan },
-              { label: 'Voice direction', value: meta.voiceDirection },
+              { label: 'Character visual - ngoại hình', value: meta.characterVisual || meta.talentProfile },
+              { label: 'Insight quốc gia', value: meta.countryVisualInsight || meta.marketInsight },
+              { label: 'Bối cảnh hook', value: meta.hookContextInsight },
+              { label: 'Góc camera', value: meta.cameraPlan },
               { label: 'Visual ref', value: meta.visualRefNotes },
-              { label: 'Do not', value: meta.dontDo },
+              { label: 'Không làm', value: meta.dontDo },
             ]
               .map(item => ({ ...item, value: cleanPreviewText(item.value) }))
               .filter(item => item.value);
@@ -4718,10 +4727,17 @@ Tao 3 idea`}
                     ) : (
                       <div className="rounded-lg border border-red-100 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
                         <p className="whitespace-pre-line">{hookVisual || 'Hook visual will appear here.'}</p>
-                        {hookSpeech.characterSpeech && !hookSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {hookSpeech.characterSpeech}</p>}
-                        {hookSpeech.voiceover && !hookPreviewIncludesCopy && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {hookSpeech.voiceover}</p>}
-                        {hookSpeech.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {hookSpeech.legacyVoice}</p>}
-                        {hookVoiceVi && <p className="text-gray-800 whitespace-pre-line">[DỊCH HOOK VOICE] {hookVoiceVi}</p>}
+                        {productionDetails.length > 0 && (
+                          <div className="mt-2 space-y-1.5">
+                            {productionDetails.map(item => (
+                              <p key={item.label} className="text-sm leading-6 text-gray-700">
+                                <span className="font-bold text-red-700">[{item.label}]</span> {item.value}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {hookSpeech.characterSpeech && !hookSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">Lời nhân vật: {cleanSpeakerLabelsForDisplay(hookSpeech.characterSpeech)}</p>}
+                        {hookVoiceVi && <p className="mt-1 text-gray-800 whitespace-pre-line">[DỊCH HOOK VOICE] {hookVoiceVi}</p>}
                         {hookText && !hookPreviewIncludesCopy && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>
@@ -4817,27 +4833,12 @@ Tao 3 idea`}
                     </div>
                   )}
 
-                  {productionDetails.length > 0 && (
-                    <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <span className="mb-3 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                        Production Blueprint
-                      </span>
-                      <div className="space-y-2">
-                        {productionDetails.map(item => (
-                          <p key={item.label} className="text-sm leading-6 text-gray-700">
-                            <span className="font-bold text-slate-700">[{item.label}]</span> {item.value}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Body + CTA shown only when the card is expanded, being edited, or refined. */}
                   {[{ key: 'body', label: '📖 BODY (10-25s)', bg: 'bg-sky-50', border: 'border-sky-100', title: 'text-sky-600' },
                   { key: 'cta', label: '🔥 CTA', bg: 'bg-emerald-50', border: 'border-emerald-100', title: 'text-emerald-600' },
                   ].map(sec => {
                     const secData = isEditing ? editBuffer?.[sec.key] : (c?.[sec.key] || {});
-                    const visualContent = secData?.visual || secData?.script || '';
+                    const visualContent = cleanVisualForDisplay(secData?.visual || secData?.script || '');
                     const spokenLines = getSectionSpokenLines(secData);
                     const characterSpeechInline = visualContainsSpokenLine(visualContent, spokenLines.characterSpeech);
                     const textOverlay = secData?.textOverlay || secData?.text || '';
@@ -4873,9 +4874,7 @@ Tao 3 idea`}
                         ) : (
                           <div className="rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-sm leading-6 text-gray-700">
                             <p className="whitespace-pre-line">[VISUAL] {visualContent || '-'}</p>
-                            {spokenLines.characterSpeech && !characterSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">[CHARACTER SPEECH] {spokenLines.characterSpeech}</p>}
-                            {spokenLines.voiceover && <p className="text-gray-800 whitespace-pre-line">[VOICE VIDEO] {spokenLines.voiceover}</p>}
-                            {spokenLines.legacyVoice && <p className="text-gray-800 whitespace-pre-line">[VOICE] {spokenLines.legacyVoice}</p>}
+                            {spokenLines.characterSpeech && !characterSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">Lời nhân vật: {cleanSpeakerLabelsForDisplay(spokenLines.characterSpeech)}</p>}
                             {textOverlay && <p className="text-gray-800">[TEXT OVERLAY] {textOverlay}</p>}
                             {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
                             {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}
