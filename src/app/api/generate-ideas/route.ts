@@ -4337,10 +4337,12 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
         for (const [chunkIndex, settledPlan] of settledPlans.entries()) {
           const plan = plansInFlight[chunkIndex];
           if (settledPlan.status === 'fulfilled') {
-            const uniquePlanIdeas = dedupeIdeas(
-              settledPlan.value,
-              [...aggregatedIdeas, ...chunkIdeas]
-            ).slice(0, plan.batchQuantity);
+            const uniquePlanIdeas = isQuickGenerationMode
+              ? settledPlan.value.slice(0, plan.batchQuantity)
+              : dedupeIdeas(
+                  settledPlan.value,
+                  [...aggregatedIdeas, ...chunkIdeas]
+                ).slice(0, plan.batchQuantity);
             if (uniquePlanIdeas.length < Math.min(settledPlan.value.length, plan.batchQuantity)) {
               batchErrors.push(
                 `Batch ${plan.batchStartIndex + 1}-${plan.batchStartIndex + plan.batchQuantity} had duplicate ideas after parallel merge.`
