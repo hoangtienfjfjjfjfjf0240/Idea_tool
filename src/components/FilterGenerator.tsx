@@ -2197,17 +2197,15 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     const compactBrief = parseCompactCreativeBrief(rawBrief);
     const isQuickBriefMode = Boolean(compactBrief && rawBrief);
     const useFastGeneratePath = true;
+    const selectedAnglesFromCurrentFilters = Array.from(new Set((filters.angle || []).map(angle => angle.trim()).filter(Boolean)));
     const generationBaseFilters = buildCompactGenerationFilters(filters, compactBrief, app, isQuickBriefMode);
-    const selectedAnglesFromFilters = Array.from(new Set((generationBaseFilters.angle || []).map(angle => angle.trim()).filter(Boolean)));
+    const selectedAnglesFromGenerationFilters = Array.from(new Set((generationBaseFilters.angle || []).map(angle => angle.trim()).filter(Boolean)));
     const generatedAngleList = isQuickBriefMode
-      ? [
-          selectedAnglesFromFilters[0]
-            || compactBrief?.angleRequest
-            || compactBrief?.trend
-            || '',
-        ].filter(Boolean)
-      : selectedAnglesFromFilters.length > 0
-        ? selectedAnglesFromFilters
+      ? selectedAnglesFromCurrentFilters.length > 0
+        ? selectedAnglesFromCurrentFilters
+        : buildCompactAutoAngles(compactBrief, app, [], compactBrief?.requestedAngleCount || autoAngleCount)
+      : selectedAnglesFromGenerationFilters.length > 0
+        ? selectedAnglesFromGenerationFilters
         : buildCompactAutoAngles(compactBrief, app, [], autoAngleCount);
     const anglesToGenerate: Array<string | null> = generatedAngleList.length > 0 ? generatedAngleList : [null];
     const effectiveQuantity = Math.min(10, Math.max(1, compactBrief?.ideasPerAngle || quantity));
