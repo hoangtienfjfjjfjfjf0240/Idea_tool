@@ -2296,7 +2296,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       const failedGenerationMessages: string[] = [];
       const getAttemptModel = () => selectedModel || '';
       const maxAttemptsPerAngle = useFastGeneratePath ? 2 : 1;
-      const maxConcurrent = Math.min(useFastGeneratePath ? 4 : 3, generationTasks.length);
+      const maxConcurrent = Math.min(3, generationTasks.length);
       const buildInRunIdeasSummary = () => {
         if (allData.length === 0) return '';
 

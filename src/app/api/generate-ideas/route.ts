@@ -4219,8 +4219,8 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
       const aggregatedIdeas: Record<string, unknown>[] = [];
       const batchErrors: string[] = [];
       let fallbackCount = 0;
-      const shouldUseAiRefill = isQuickGenerationMode || (ENABLE_AI_RECOVERY_REFILL && false);
-      const shouldUseLocalFallback = ENABLE_LOCAL_FALLBACK_TOPUP && !isGemini3Ideas;
+      const shouldUseAiRefill = !isQuickGenerationMode && ENABLE_AI_RECOVERY_REFILL;
+      const shouldUseLocalFallback = isQuickGenerationMode || (ENABLE_LOCAL_FALLBACK_TOPUP && !isGemini3Ideas);
 
       const runBatchPlanWithRecovery = async (
         plan: IdeaBatchPlan,
