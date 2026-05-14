@@ -2404,7 +2404,8 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
             const result = await res.json().catch(() => null) as GenerateIdeasApiResponse | null;
             const aiItems = res.ok && result?.success && Array.isArray(result.data) ? result.data : [];
-            if (!res.ok || !result?.success || aiItems.length === 0) {
+            const cleanAiItems = aiItems.filter(item => !isLocalFallbackIdea(item));
+            if (!res.ok || !result?.success || cleanAiItems.length === 0) {
               const warningDetail = result?.meta?.warnings?.filter(Boolean).slice(0, 2).join(' | ');
               const apiError = result?.error || `Angle ${task.angleIndex + 1} không có idea hợp lệ từ API.`;
               if (warningDetail) throw new Error(`${apiError} ${warningDetail}`);
@@ -2418,7 +2419,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               console.warn(`[generate-ideas] Angle ${task.angleIndex + 1} used ${result.meta?.fallbackCount} fallback ideas.`);
             }
 
-            const addedCount = collectUniqueItems(aiItems);
+            const addedCount = collectUniqueItems(cleanAiItems);
             if (collected.length >= task.requestQuantity) {
               return mapCollectedResults();
             }
