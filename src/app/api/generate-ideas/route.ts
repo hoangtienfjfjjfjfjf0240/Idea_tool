@@ -94,7 +94,7 @@ const GENERATE_IDEAS_RETRY_TIMEOUT_MS = positiveIntEnv('IDEA_RETRY_TIMEOUT_MS', 
 const GENERATE_IDEAS_REQUEST_AI_BUDGET_MS = positiveIntEnv('IDEA_REQUEST_BUDGET_MS', 90000);
 const QUICK_IDEA_BATCH_TIMEOUT_MS = positiveIntEnv('IDEA_QUICK_BATCH_TIMEOUT_MS', 75000);
 const QUICK_IDEA_REQUEST_BUDGET_MS = positiveIntEnv('IDEA_QUICK_REQUEST_BUDGET_MS', 150000);
-const QUICK_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_QUICK_MAX_BATCH_SIZE', 1), MAX_IDEAS_PER_AI_BATCH);
+const QUICK_IDEA_MAX_BATCH_SIZE = Math.min(positiveIntEnv('IDEA_QUICK_MAX_BATCH_SIZE', 3), MAX_IDEAS_PER_AI_BATCH);
 const QUICK_IDEA_BATCH_CONCURRENCY = positiveIntEnv('IDEA_QUICK_BATCH_CONCURRENCY', 3);
 const GENERATE_IDEAS_MIN_CALL_TIMEOUT_MS = 5000;
 const MAX_IDEA_MODEL_CANDIDATES = positiveIntEnv('IDEA_MODEL_CANDIDATES', 2);
@@ -991,10 +991,10 @@ function detectMarketLang(targetMarkets: string[], coreUsers: string[]): string 
 }
 
 function readCoreUserDimensionLabel(value: string): string {
-  const normalized = normalizeCompareText(value);
+  const raw = value.trim();
   const prefix = 'core user - ';
-  if (!normalized.startsWith(prefix) || !normalized.includes(':')) return '';
-  return normalized.slice(prefix.length, normalized.indexOf(':')).trim();
+  if (!raw.toLowerCase().startsWith(prefix) || !raw.includes(':')) return '';
+  return normalizeCompareText(raw.slice(prefix.length, raw.indexOf(':')));
 }
 
 function readCoreUserDimensionValue(value: string): string {
@@ -1015,6 +1015,11 @@ function isCoreUserMarketValue(value: string): boolean {
   return /\b(?:quoc gia|market|country)\b/.test(label);
 }
 
+function looksLikeCoreUserCountryValue(value: string): boolean {
+  const normalized = normalizeCompareText(readCoreUserDimensionValue(value));
+  return /\b(?:us|usa|united states|america|my|uk|united kingdom|canada|australia|vietnam|viet nam|vn|japan|jp|korea|kr|germany|german|france|french|spain|spanish|portugal|brazil|brasil|thailand|thai lan|indonesia|malaysia|italy|netherlands|holland|poland|turkey|saudi|uae|qatar|kuwait|egypt|india|sweden|norway|denmark|mexico|argentina|colombia|chile|peru|ecuador|bolivia|paraguay|uruguay|venezuela)\b/.test(normalized);
+}
+
 function getCoreUserLanguageValues(coreUsers: string[]): string[] {
   return coreUsers
     .filter(isCoreUserLanguageValue)
@@ -1024,9 +1029,23 @@ function getCoreUserLanguageValues(coreUsers: string[]): string[] {
 
 function getCoreUserMarketValues(coreUsers: string[]): string[] {
   return coreUsers
-    .filter(value => isCoreUserMarketValue(value) || (!readCoreUserDimensionLabel(value) && !isCoreUserLanguageValue(value)))
+    .filter(value => isCoreUserMarketValue(value) || (!readCoreUserDimensionLabel(value) && looksLikeCoreUserCountryValue(value)))
     .map(readCoreUserDimensionValue)
     .filter(Boolean);
+}
+
+function getInvalidCoreUserLanguageValues(coreUsers: string[]): string[] {
+  return getCoreUserLanguageValues(coreUsers)
+    .filter(value => !normalizeOutputLanguageLabel(value));
+}
+
+function getCoreUserVoiceTargetError(coreUsers: string[]): string {
+  const invalidLanguages = getInvalidCoreUserLanguageValues(coreUsers);
+  if (invalidLanguages.length > 0) {
+    return `Invalid Core User language: ${invalidLanguages.join(', ')}. Use a supported language or leave it empty so country decides the voice language.`;
+  }
+
+  return '';
 }
 
 // Map frontend model names to gateway model identifiers
@@ -1154,7 +1173,7 @@ function mergeRefinedIdeaWithOriginal(
       merged.script = asText(originalSection.script) || originalVisual;
     }
 
-    ['textOverlay', 'text', 'characterSpeech', 'voiceover', 'voice', 'viTranslation', 'endCard'].forEach(key => {
+    ['textOverlay', 'text', 'textOverlayViTranslation', 'characterSpeech', 'voiceover', 'voice', 'viTranslation', 'endCard'].forEach(key => {
       if (!asText(merged[key]) && asText(originalSection[key])) {
         merged[key] = originalSection[key];
       }
@@ -1841,6 +1860,12 @@ function buildIdeaBatchPlans(totalRequestedQuantity: number, maxBatchSize = MAX_
   return plans;
 }
 
+function getQuickIdeaInitialBatchSize(requestedQuantity: number) {
+  const normalizedQuantity = Math.max(1, Math.floor(requestedQuantity));
+  if (normalizedQuantity === 3) return 3;
+  return Math.min(normalizedQuantity, QUICK_IDEA_MAX_BATCH_SIZE);
+}
+
 function getIdeaBatchTimeoutMs(model: string, batchQuantity: number) {
   if (model.includes('gemini-3-pro')) {
     return batchQuantity <= 3
@@ -2345,13 +2370,13 @@ function inferGenerationCopyLanguage(input: {
   ideaDescription?: string;
   targetLang: string;
 }) {
-  const targetLanguage = normalizeOutputLanguageLabel(input.targetLang);
-  if (targetLanguage) return targetLanguage;
-
   for (const languageValue of input.explicitLanguageValues || []) {
     const explicitLanguage = normalizeOutputLanguageLabel(languageValue);
     if (explicitLanguage) return explicitLanguage;
   }
+
+  const targetLanguage = normalizeOutputLanguageLabel(input.targetLang);
+  if (targetLanguage) return targetLanguage;
 
   const briefText = [
     ...input.coreUserValues,
@@ -2751,6 +2776,10 @@ function normalizeLeanCreativeOutput(
     const angleType = readLooseText(angleRecord, ['angle_type', 'angleType'], 'Curiosity');
     const angleDesc = readLooseText(angleRecord, ['angle_desc', 'angleDesc'], `Idea for ${angleName}`);
     const rawHookText = readLooseText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'hook_primary', 'hookPrimary']);
+    const hookTextOverlayVi = readLooseText(
+      ideaRecord,
+      ['hook_text_overlay_vi', 'hookTextOverlayVi', 'hook_text_overlay_vi_translation', 'hookTextOverlayViTranslation']
+    );
     const rawHookVo = readLooseText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover']);
     let hookCharacterSpeech = readLooseText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'characterSpeech'], '');
     let hookVoiceVi = readLooseText(
@@ -2792,21 +2821,35 @@ function normalizeLeanCreativeOutput(
       .map(item => {
         const time = readLooseText(item, ['time']);
         const text = readLooseText(item, ['text']);
-        return time && text ? `${time}: ${text}` : text;
+        const viText = readLooseText(item, ['vi_text', 'viText', 'text_vi', 'textVi', 'vi_translation', 'viTranslation']);
+        return time && text
+          ? { time, text, viText }
+          : text
+            ? { time: '', text, viText }
+            : null;
       })
-      .filter(Boolean);
+      .filter((item): item is { time: string; text: string; viText: string } => Boolean(item));
 
-    const bodyOverlay = overlayTextAt(overlays, /\b(?:6|9|12|15)\b/, readLooseText(asRecord(ideaRecord.body), ['textOverlay', 'text'], 'See the result'));
-    const ctaOverlay = overlayTextAt(overlays, /\b(?:18|22|25)\b/, readLooseText(asRecord(ideaRecord.cta), ['textOverlay', 'text'], ctaText));
+    const overlayLines = overlays.map(item => item.time ? `${item.time}: ${item.text}` : item.text);
+    const overlayViAt = (pattern: RegExp, fallback = '') =>
+      overlays.find(item => pattern.test(item.time))?.viText || fallback;
+    const bodyOverlay = overlayTextAt(overlayLines, /\b(?:6|9|12|15)\b/, readLooseText(asRecord(ideaRecord.body), ['textOverlay', 'text'], 'See the result'));
+    const ctaOverlay = overlayTextAt(overlayLines, /\b(?:18|22|25)\b/, readLooseText(asRecord(ideaRecord.cta), ['textOverlay', 'text'], ctaText));
+    const bodyOverlayVi = overlayViAt(/\b(?:6|9|12|15)\b/, readLooseText(asRecord(ideaRecord.body), ['textOverlayViTranslation', 'text_overlay_vi_translation', 'textViTranslation', 'text_vi_translation']));
+    const ctaOverlayVi = overlayViAt(/\b(?:18|22|25)\b/, readLooseText(asRecord(ideaRecord.cta), ['textOverlayViTranslation', 'text_overlay_vi_translation', 'textViTranslation', 'text_vi_translation']));
     const track = readLooseText(ideaRecord, ['track'], 'B').toUpperCase();
     const safeTrack = ['A', 'B', 'C'].includes(track) ? track : 'B';
     const lockedCreativeType = defaults.visualType?.trim() ? normalizeFrameworkVisualFormat(defaults.visualType) : '';
-    const visualRefNotes = readLooseText(ideaRecord, ['visual_ref_notes', 'visualRefNotes']);
-    const talentProfile = readLooseText(ideaRecord, ['talent_profile', 'talentProfile'], 'No talent specified');
+    const explicitCameraPlan = readLooseText(ideaRecord, ['camera_plan', 'cameraPlan']);
+    const visualRefNotes = readLooseText(ideaRecord, ['visual_ref_notes', 'visualRefNotes'], explicitCameraPlan || visualScene1);
+    const cameraPlan = explicitCameraPlan || visualRefNotes;
+    const explicitCharacterVisual = readLooseText(ideaRecord, ['character_visual', 'characterVisual']);
+    const explicitTalentProfile = readLooseText(ideaRecord, ['talent_profile', 'talentProfile']);
+    const characterVisual = explicitCharacterVisual || explicitTalentProfile || 'No talent specified';
+    const talentProfile = explicitTalentProfile || characterVisual;
     const marketInsight = readLooseText(ideaRecord, ['market_insight', 'marketInsight']);
     const countryVisualInsight = readLooseText(ideaRecord, ['country_visual_insight', 'countryVisualInsight'], marketInsight || visualRefNotes);
     const hookContextInsight = readLooseText(ideaRecord, ['hook_context_insight', 'hookContextInsight'], visualScene1);
-    const cameraPlan = readLooseText(ideaRecord, ['camera_plan', 'cameraPlan'], visualRefNotes);
 
     return normalizeIdeaOutput({
       id: `P0-A${defaults.angleIndex}-I${ideaIndex}`,
@@ -2833,7 +2876,7 @@ function normalizeLeanCreativeOutput(
         ideaReasoning: readLooseText(ideaRecord, ['idea_reasoning', 'ideaReasoning'], angleDesc),
         visualRefNotes,
         talentProfile,
-        characterVisual: readLooseText(ideaRecord, ['character_visual', 'characterVisual'], talentProfile),
+        characterVisual,
         marketInsight,
         countryVisualInsight,
         hookContextInsight,
@@ -2844,7 +2887,7 @@ function normalizeLeanCreativeOutput(
         track: safeTrack,
         trackReason: readLooseText(ideaRecord, ['track_reason', 'trackReason']),
         priority: readLooseText(ideaRecord, ['priority'], 'A').toUpperCase(),
-        overlaySequence: overlays,
+        overlaySequence: overlayLines,
       },
       framework: {
         coreUser: defaults.coreUser,
@@ -2860,6 +2903,7 @@ function normalizeLeanCreativeOutput(
         voiceover: hookVo,
         voice: hookVo || hookCharacterSpeech,
         textOverlay: hookText,
+        textOverlayViTranslation: hookTextOverlayVi,
         text: hookText,
         script: visualScene1,
         viTranslation: hookVoiceVi,
@@ -2869,6 +2913,7 @@ function normalizeLeanCreativeOutput(
         voiceover: scriptVo,
         voice: scriptVo,
         textOverlay: bodyOverlay,
+        textOverlayViTranslation: bodyOverlayVi,
         text: bodyOverlay,
         script: visualScene2,
       },
@@ -2877,6 +2922,7 @@ function normalizeLeanCreativeOutput(
         voiceover: ctaText,
         voice: ctaText,
         textOverlay: ctaOverlay,
+        textOverlayViTranslation: ctaOverlayVi,
         text: ctaOverlay,
         script: visualScene3,
         endCard: `${defaults.appName} - ${ctaText}`,
@@ -2896,82 +2942,963 @@ function buildQuickSceneLaneBlock(input: {
   totalQuantity: number;
   visualType: string;
   market: string;
+  appCategory: string;
+  appName: string;
 }): string {
   if (input.totalQuantity <= 1) return '';
 
-  const lanes = [
+  const categorySignal = normalizeCompareText(`${input.appCategory} ${input.appName}`);
+  const isHealthLike = /\b(?:health|wellness|medical|heart|cardiac|fitness|suc khoe|the hinh)\b/.test(categorySignal);
+  const isUtilityLike = /\b(?:utility|cleaner|storage|phone|tool|clean|tien ich|dung luong)\b/.test(categorySignal);
+  const isAiLike = /\b(?:ai|artificial intelligence|photo editor|avatar|interior|design|decor|room|nha|phong)\b/.test(categorySignal);
+  const isFinanceLike = /\b(?:finance|bank|budget|money|wallet|invest|loan|tai chinh)\b/.test(categorySignal);
+  const isEducationLike = /\b(?:education|learning|language|study|school|course|giao duc|hoc)\b/.test(categorySignal);
+  const isSocialLike = /\b(?:social|dating|creator|community|mang xa hoi)\b/.test(categorySignal);
+  const isGameLike = /\b(?:game|gaming|puzzle|tro choi)\b/.test(categorySignal);
+  const lanes = isHealthLike ? [
     {
       sceneFamily: 'morning routine',
-      context: 'bedside, kitchen counter, pill box, first phone check, family/home habit',
-      camera: 'medium wide setup -> close-up prop -> POV phone proof',
+      symptomFamily: 'neck tension after waking, not dizziness',
+      socialContext: 'alone before the household wakes',
+      objectAnchor: 'wrinkled pillow plus bedside phone',
+      visualMetaphor: 'subtle red pulse ring tightening around the neck',
+      proofMechanism: 'quick phone check card',
+      context: 'bedside, first phone check, home habit',
+      camera: 'medium wide setup -> close-up neck/hand -> POV phone proof',
       voice: 'single visible character, quiet first-person concern',
     },
     {
       sceneFamily: 'home office stress',
-      context: 'desk, laptop call, calendar pressure, notification or spreadsheet as proof object',
+      symptomFamily: 'desk-bound shoulder and neck pressure',
+      socialContext: 'solo worker under deadline pressure',
+      objectAnchor: 'calendar-packed laptop plus espresso cup',
+      visualMetaphor: 'notification blocks visually compress the shoulders',
+      proofMechanism: 'trend reminder surfaced from the app',
+      context: 'desk, laptop call, calendar pressure',
       camera: 'over-shoulder -> close-up screen/hand -> split UI',
       voice: 'character speaks while reacting to the work moment',
     },
     {
       sceneFamily: 'commute or parking lot',
-      context: 'car seat, bus stop, elevator, appointment reminder, bag or keys as blocker',
+      symptomFamily: 'pulsing sensation while resting in the car',
+      socialContext: 'commuter alone between tasks',
+      objectAnchor: 'steering wheel plus car keys',
+      visualMetaphor: 'dashboard warning light echoes the neck pulse',
+      proofMechanism: 'saved measurement prompt',
+      context: 'car seat, appointment reminder, pause before driving',
       camera: 'wide establishing -> handheld medium -> phone POV',
       voice: 'short breathy line from the person in the scene',
     },
     {
       sceneFamily: 'pharmacy or store aisle',
-      context: 'shelf labels, receipt, product comparison, public errand behavior native to the market',
+      symptomFamily: 'head pressure mistaken for ordinary fatigue',
+      socialContext: 'public errand among other shoppers',
+      objectAnchor: 'shelf label plus basket receipt',
+      visualMetaphor: 'aisle labels blur while one warning stays sharp',
+      proofMechanism: 'finger-on-camera capture shown clearly',
+      context: 'shelf labels, public errand behavior native to the market',
       camera: 'tracking aisle shot -> close-up label -> top-down phone check',
       voice: 'character whisper or direct thought tied to the visible prop',
     },
     {
       sceneFamily: 'family check-in',
-      context: 'dining table, sofa edge, spouse/parent/child concern, shared phone screen as social proof',
+      symptomFamily: 'missed self-check noticed by someone close',
+      socialContext: 'spouse or adult child notices a change',
+      objectAnchor: 'breakfast mug plus shared phone screen',
+      visualMetaphor: 'speech bubble transforms into a pulse line',
+      proofMechanism: 'shared trend summary',
+      context: 'dining table, sofa edge, family concern',
       camera: 'two-shot wide -> reaction close-up -> over-shoulder phone',
       voice: 'visible character answers the family member; use visible role/name labels, never Speaker 1/2',
     },
     {
       sceneFamily: 'before appointment prep',
-      context: 'clinic waiting room, form, notes app, calendar, app log as reference before speaking to a professional',
+      symptomFamily: 'uncertain recall of repeated symptoms',
+      socialContext: 'patient preparing to explain the pattern',
+      objectAnchor: 'clinic form plus notes app',
+      visualMetaphor: 'scattered notes align into one clean line',
+      proofMechanism: 'app history log ready for reference',
+      context: 'clinic waiting room, form, notes app, calendar',
       camera: 'POV form -> close-up hand/phone -> medium waiting room',
       voice: 'calm first-person line, no diagnosis or treatment promise',
     },
     {
       sceneFamily: 'grocery or daily errand',
-      context: 'basket, nutrition label, queue, small practical decision, market-native packaging/colors',
+      symptomFamily: 'unexpected tiredness during a normal errand',
+      socialContext: 'shopper navigating a routine task',
+      objectAnchor: 'basket handle plus receipt strip',
+      visualMetaphor: 'receipt strip becomes a pulse trend line',
+      proofMechanism: 'single-tap check result',
+      context: 'basket, queue, small practical decision, market-native packaging/colors',
       camera: 'wide aisle -> macro prop -> fast match cut to app UI',
       voice: 'character voice follows the hand action and object choice',
     },
     {
       sceneFamily: 'gym locker or post-walk pause',
-      context: 'locker, towel, water bottle, smartwatch/phone comparison, recovery moment without medical claims',
+      symptomFamily: 'recovery uncertainty after light activity',
+      socialContext: 'peer nearby but the decision stays personal',
+      objectAnchor: 'water bottle plus towel',
+      visualMetaphor: 'condensation droplets gather into measurement dots',
+      proofMechanism: 'watch-versus-phone comparison',
+      context: 'locker, towel, recovery moment without medical claims',
       camera: 'low angle locker -> close-up wrist/phone -> POV app action',
       voice: 'visible character says a short self-check line',
     },
     {
       sceneFamily: 'travel day',
-      context: 'airport/ride-share/hotel room, carry-on, reminder, unfamiliar routine disrupting the normal habit',
+      symptomFamily: 'routine disruption causing skipped checks',
+      socialContext: 'traveler managing the day alone',
+      objectAnchor: 'boarding pass plus carry-on handle',
+      visualMetaphor: 'flight path bends into a trend line',
+      proofMechanism: 'missed-reminder history',
+      context: 'airport, ride-share, or hotel room, unfamiliar routine',
       camera: 'wide location cue -> close-up carry-on/phone -> split-screen reminder',
       voice: 'first-person voice tied to travel friction',
     },
     {
       sceneFamily: 'comment reply or social proof',
-      context: 'viewer comment, saved screenshot, friend message, skeptical question answered with app proof',
+      symptomFamily: 'skepticism about a subtle warning sign',
+      socialContext: 'creator responding to a viewer question',
+      objectAnchor: 'comment screenshot plus saved example',
+      visualMetaphor: 'comment bubble expands into a proof card',
+      proofMechanism: 'screen-recorded walkthrough',
+      context: 'viewer comment, saved screenshot, social proof',
       camera: 'screen-record style -> comment close-up -> creator reaction/phone POV',
       voice: 'character answers the visible comment directly',
+    },
+    {
+      sceneFamily: 'laundry or household chore',
+      symptomFamily: 'brief breathlessness during a light chore',
+      socialContext: 'older adult alone in a familiar home task',
+      objectAnchor: 'laundry basket plus smartwatch',
+      visualMetaphor: 'fabric fold becomes a pulse waveform',
+      proofMechanism: 'before/after check card',
+      context: 'laundry room, hallway, ordinary home movement',
+      camera: 'wide hallway -> close-up hand on basket -> insert phone screen',
+      voice: 'short self-observation while pausing the chore',
+    },
+    {
+      sceneFamily: 'park bench after walk',
+      symptomFamily: 'unusual recovery pause after gentle walking',
+      socialContext: 'friend waits nearby but does not speak first',
+      objectAnchor: 'park bench plus reusable water bottle',
+      visualMetaphor: 'bench slats animate into rising bars',
+      proofMechanism: 'comparison against previous check',
+      context: 'park, neighborhood path, local leisure habit',
+      camera: 'wide outdoor cue -> medium seated pause -> ECU phone result',
+      voice: 'visible character voices the realization',
+    },
+  ] : isUtilityLike ? [
+    {
+      sceneFamily: 'storage warning interruption',
+      symptomFamily: 'critical storage full at the worst moment',
+      socialContext: 'solo user missing a personal moment',
+      objectAnchor: 'camera shutter plus red storage alert',
+      visualMetaphor: 'memory bar slams shut like a door',
+      proofMechanism: 'before/after storage meter',
+      context: 'birthday, concert, child moment, or travel photo capture',
+      camera: 'POV phone capture -> ECU storage alert -> split before/after UI',
+      voice: 'frustrated first-person reaction',
+    },
+    {
+      sceneFamily: 'duplicate photo avalanche',
+      symptomFamily: 'duplicate clutter hiding the real file',
+      socialContext: 'parent organizing family memories',
+      objectAnchor: 'photo grid plus duplicate stack',
+      visualMetaphor: 'identical tiles multiply until one clean album remains',
+      proofMechanism: 'duplicate-group scan result',
+      context: 'couch, family album, weekend cleanup',
+      camera: 'top-down phone -> macro duplicate stack -> clean gallery reveal',
+      voice: 'visible character names the exact clutter problem',
+    },
+    {
+      sceneFamily: 'email overload desk',
+      symptomFamily: 'important item buried in noise',
+      socialContext: 'busy worker under deadline',
+      objectAnchor: 'invoice email plus spam flood',
+      visualMetaphor: 'paper pile parts to reveal one highlighted message',
+      proofMechanism: 'bulk cleanup count',
+      context: 'desk, laptop, deadline, inbox pressure',
+      camera: 'OTS laptop -> CU inbox badge -> phone cleanup result',
+      voice: 'character speaks while hunting the missing item',
+    },
+    {
+      sceneFamily: 'ios update blocked',
+      symptomFamily: 'system update stopped by lack of space',
+      socialContext: 'older user asking a relative for help',
+      objectAnchor: 'update screen plus charging cable',
+      visualMetaphor: 'progress wheel freezes behind a storage wall',
+      proofMechanism: 'space reclaimed counter',
+      context: 'living room, sofa, help from family member',
+      camera: 'two-shot -> insert update screen -> close-up reclaimed space',
+      voice: 'visible character asks the practical question',
+    },
+    {
+      sceneFamily: 'battery heat moment',
+      symptomFamily: 'phone slowing down from junk-heavy load',
+      socialContext: 'solo commuter using maps or camera',
+      objectAnchor: 'hot phone plus low-battery icon',
+      visualMetaphor: 'heat haze clears after cleanup',
+      proofMechanism: 'junk-file breakdown card',
+      context: 'car, bus stop, or train platform',
+      camera: 'handheld medium -> ECU warm phone -> UI cleanup proof',
+      voice: 'short irritated line from the user',
+    },
+    {
+      sceneFamily: 'download blocked checkout',
+      symptomFamily: 'cannot install a needed app in the moment',
+      socialContext: 'shopper or traveler under time pressure',
+      objectAnchor: 'QR code plus install button',
+      visualMetaphor: 'install arrow hits a full box then clears through',
+      proofMechanism: 'one-tap free-space action',
+      context: 'store checkout, airport gate, parking meter',
+      camera: 'wide cue -> close-up QR/install -> POV success state',
+      voice: 'character reacts to the immediate blocker',
+    },
+    {
+      sceneFamily: 'creator export failure',
+      symptomFamily: 'video export stopped by storage clutter',
+      socialContext: 'creator preparing to post',
+      objectAnchor: 'timeline editor plus failed export bar',
+      visualMetaphor: 'video timeline fragments unclog into one smooth line',
+      proofMechanism: 'large-file finder',
+      context: 'creator desk, tripod, ring light',
+      camera: 'OTS editor -> CU failure badge -> phone cleanup reveal',
+      voice: 'creator speaks to camera while fixing the blocker',
+    },
+    {
+      sceneFamily: 'morning maintenance ritual',
+      symptomFamily: 'small recurring cleanup ignored for weeks',
+      socialContext: 'solo routine user',
+      objectAnchor: 'coffee mug plus notification badge',
+      visualMetaphor: 'tiny badges sweep into one clean checkmark',
+      proofMechanism: 'daily cleanup summary',
+      context: 'kitchen counter, morning habit',
+      camera: 'medium wide -> macro badge -> top-down phone summary',
+      voice: 'calm self-check line',
+    },
+    {
+      sceneFamily: 'family shared-device rescue',
+      symptomFamily: 'shared device clutter causing friction',
+      socialContext: 'parent and child together',
+      objectAnchor: 'tablet photos plus school video',
+      visualMetaphor: 'messy stickers reorganize into labeled folders',
+      proofMechanism: 'category cleanup view',
+      context: 'dining table, homework, family media',
+      camera: 'two-shot -> insert device -> reaction close-up',
+      voice: 'adult answers the child, not a narrator',
+    },
+    {
+      sceneFamily: 'travel gallery cleanup',
+      symptomFamily: 'trip photos impossible to sort after the fact',
+      socialContext: 'traveler reviewing memories alone',
+      objectAnchor: 'boarding pass plus overflowing gallery',
+      visualMetaphor: 'photo trail turns into a tidy map route',
+      proofMechanism: 'album organization preview',
+      context: 'hotel bed, airport lounge, suitcase nearby',
+      camera: 'wide travel cue -> POV gallery -> clean album reveal',
+      voice: 'first-person reflection tied to travel clutter',
+    },
+  ] : isAiLike ? [
+    {
+      sceneFamily: 'before-after reveal',
+      symptomFamily: 'blank starting point becomes a finished result',
+      socialContext: 'solo creator seeking confidence',
+      objectAnchor: 'original image plus transformed output',
+      visualMetaphor: 'split screen blooms from dull to vivid',
+      proofMechanism: 'instant before/after comparison',
+      context: 'bedroom mirror, desk, room photo, or creator workspace',
+      camera: 'result-first wide -> split comparison -> POV prompt',
+      voice: 'astonished first-person result reaction',
+    },
+    {
+      sceneFamily: 'friend challenge',
+      symptomFamily: 'social doubt about whether AI can match taste',
+      socialContext: 'friend dares the user',
+      objectAnchor: 'chat bubble plus source photo',
+      visualMetaphor: 'chat bubble unfolds into generated options',
+      proofMechanism: 'multiple variant carousel',
+      context: 'group chat, sofa, cafe, or creator collab',
+      camera: 'screen-record -> two-shot reaction -> option grid',
+      voice: 'visible character answers the dare',
+    },
+    {
+      sceneFamily: 'trend remix',
+      symptomFamily: 'wanting a current style without knowing how to make it',
+      socialContext: 'creator adapting a trend',
+      objectAnchor: 'reference reel plus prompt chip',
+      visualMetaphor: 'trend tiles snap into a personalized version',
+      proofMechanism: 'reference-to-result progression',
+      context: 'short-form creator setup, phone stand, ring light',
+      camera: 'vertical screen capture -> close-up reference -> result punch-in',
+      voice: 'creator names the transformation',
+    },
+    {
+      sceneFamily: 'decision paralysis',
+      symptomFamily: 'too many style choices blocking action',
+      socialContext: 'user asking a partner or friend for input',
+      objectAnchor: 'moodboard plus three generated options',
+      visualMetaphor: 'floating swatches align into one clear board',
+      proofMechanism: 'ranked recommendation',
+      context: 'living room, closet, decor board, or photo shortlist',
+      camera: 'top-down options -> reaction CU -> UI recommendation',
+      voice: 'character says the uncertainty out loud',
+    },
+    {
+      sceneFamily: 'identity experiment',
+      symptomFamily: 'wanting to see a new self or style safely',
+      socialContext: 'solo user exploring identity',
+      objectAnchor: 'selfie plus style selector',
+      visualMetaphor: 'mirror reflection cycles through identities',
+      proofMechanism: 'side-by-side variants',
+      context: 'mirror, wardrobe, bedroom, profile setup',
+      camera: 'mirror medium -> selfie POV -> variant carousel',
+      voice: 'first-person curiosity line',
+    },
+    {
+      sceneFamily: 'client deadline rescue',
+      symptomFamily: 'creative deadline with no usable concept yet',
+      socialContext: 'freelancer or marketer under pressure',
+      objectAnchor: 'brief doc plus empty canvas',
+      visualMetaphor: 'empty canvas fills from one typed phrase',
+      proofMechanism: 'prompt-to-output sequence',
+      context: 'studio desk, laptop, sticky notes',
+      camera: 'OTS brief -> typing insert -> finished result reveal',
+      voice: 'creator narrates the pressure moment',
+    },
+    {
+      sceneFamily: 'shopping confidence',
+      symptomFamily: 'fear of choosing the wrong product/style',
+      socialContext: 'shopper comparing options',
+      objectAnchor: 'product page plus generated preview',
+      visualMetaphor: 'floating product cards settle onto the correct choice',
+      proofMechanism: 'preview-in-context result',
+      context: 'store aisle, online cart, room preview',
+      camera: 'tracking product -> phone POV -> contextual preview',
+      voice: 'character reacts to seeing the answer before buying',
+    },
+    {
+      sceneFamily: 'family makeover reaction',
+      symptomFamily: 'wanting buy-in before making a change',
+      socialContext: 'family members react together',
+      objectAnchor: 'shared tablet plus original room/photo',
+      visualMetaphor: 'room layers peel into alternate looks',
+      proofMechanism: 'family voting on variants',
+      context: 'living room, dining table, shared tablet',
+      camera: 'two-shot -> tablet insert -> reaction montage',
+      voice: 'one visible family member leads the line',
+    },
+    {
+      sceneFamily: 'saved inspiration gap',
+      symptomFamily: 'lots of saved ideas but no way to execute them',
+      socialContext: 'solo user after endless scrolling',
+      objectAnchor: 'saved folder plus messy screenshots',
+      visualMetaphor: 'screenshots stack into one generated concept',
+      proofMechanism: 'reference board synthesis',
+      context: 'late-night bed scroll, Pinterest-like folder',
+      camera: 'POV scroll -> macro folder -> generated board reveal',
+      voice: 'quiet realization from the user',
+    },
+    {
+      sceneFamily: 'public share moment',
+      symptomFamily: 'wanting a result worth posting',
+      socialContext: 'creator showing followers',
+      objectAnchor: 'share sheet plus final image',
+      visualMetaphor: 'likes animate only after the transformed result appears',
+      proofMechanism: 'post-ready export',
+      context: 'creator station, cafe, or street-style setup',
+      camera: 'selfie medium -> export insert -> social feed reveal',
+      voice: 'creator speaks directly to followers',
+    },
+  ] : isFinanceLike ? [
+    {
+      sceneFamily: 'payday disappearing act',
+      symptomFamily: 'salary vanishes without clear explanation',
+      socialContext: 'solo worker checking account after payday',
+      objectAnchor: 'salary notification plus expense list',
+      visualMetaphor: 'money stream leaks through tiny holes',
+      proofMechanism: 'category breakdown chart',
+      context: 'bedside, commute, lunch break, or desk',
+      camera: 'POV bank alert -> close-up reaction -> dashboard reveal',
+      voice: 'first-person money question',
+    },
+    {
+      sceneFamily: 'couple budget talk',
+      symptomFamily: 'shared spending misalignment',
+      socialContext: 'partners planning together',
+      objectAnchor: 'receipt pile plus shared phone',
+      visualMetaphor: 'two columns merge into one monthly plan',
+      proofMechanism: 'shared budget summary',
+      context: 'dining table, Sunday planning, coffee mugs',
+      camera: 'two-shot -> receipt insert -> OTS phone',
+      voice: 'one partner answers the other directly',
+    },
+    {
+      sceneFamily: 'checkout hesitation',
+      symptomFamily: 'impulse purchase versus goal',
+      socialContext: 'shopper deciding alone',
+      objectAnchor: 'cart button plus savings goal',
+      visualMetaphor: 'cart icon weighs against a goal jar',
+      proofMechanism: 'goal impact preview',
+      context: 'e-commerce screen, cafe, store queue',
+      camera: 'screen POV -> reaction CU -> split decision card',
+      voice: 'short internal debate from visible character',
+    },
+    {
+      sceneFamily: 'bill stack evening',
+      symptomFamily: 'due dates scattered across services',
+      socialContext: 'parent managing household admin',
+      objectAnchor: 'paper bills plus calendar',
+      visualMetaphor: 'scattered due dates snap onto one timeline',
+      proofMechanism: 'upcoming bills tracker',
+      context: 'kitchen table, after dinner, family background',
+      camera: 'top-down bills -> hand sort -> app reminder view',
+      voice: 'visible parent names the pressure',
+    },
+    {
+      sceneFamily: 'first investment confusion',
+      symptomFamily: 'not knowing where to start',
+      socialContext: 'new investor asking a friend',
+      objectAnchor: 'watchlist plus explainer card',
+      visualMetaphor: 'fog clears from a simple path',
+      proofMechanism: 'guided allocation explainer',
+      context: 'cafe, coworking space, laptop open',
+      camera: 'two-shot -> screen insert -> clean chart CU',
+      voice: 'learner voices the uncertainty',
+    },
+    {
+      sceneFamily: 'debt snowball moment',
+      symptomFamily: 'multiple payments feel impossible to sequence',
+      socialContext: 'solo user seeking control',
+      objectAnchor: 'loan cards plus payment calendar',
+      visualMetaphor: 'snowball shrinks as tasks reorder',
+      proofMechanism: 'repayment order plan',
+      context: 'night desk, notebook, calculator',
+      camera: 'wide desk -> macro card stack -> app plan',
+      voice: 'quiet relief line',
+    },
+    {
+      sceneFamily: 'small business cashflow',
+      symptomFamily: 'sales look good but cash still feels tight',
+      socialContext: 'shop owner reviewing the day',
+      objectAnchor: 'cash drawer plus POS screen',
+      visualMetaphor: 'sales bars separate from cashflow river',
+      proofMechanism: 'cash-in/cash-out view',
+      context: 'closing time, counter, small shop',
+      camera: 'wide shop -> close-up drawer -> tablet dashboard',
+      voice: 'owner asks the practical question',
+    },
+    {
+      sceneFamily: 'travel overspend check',
+      symptomFamily: 'trip budget drifting in real time',
+      socialContext: 'traveler with friend group',
+      objectAnchor: 'boarding pass plus expense split',
+      visualMetaphor: 'route line bends when costs spike',
+      proofMechanism: 'trip spending tracker',
+      context: 'airport, hotel lobby, street food stop',
+      camera: 'wide travel cue -> receipt insert -> group phone view',
+      voice: 'traveler calls out the surprise',
+    },
+    {
+      sceneFamily: 'savings milestone',
+      symptomFamily: 'motivation drops without visible progress',
+      socialContext: 'solo user celebrating a small win',
+      objectAnchor: 'goal jar plus progress ring',
+      visualMetaphor: 'coins fill a transparent milestone line',
+      proofMechanism: 'goal progress comparison',
+      context: 'morning coffee, desk, commute',
+      camera: 'medium -> ECU progress -> smile reaction',
+      voice: 'short proud line',
+    },
+    {
+      sceneFamily: 'scam avoidance',
+      symptomFamily: 'uncertain transfer feels suspicious',
+      socialContext: 'older user double-checking with family',
+      objectAnchor: 'transfer screen plus alert badge',
+      visualMetaphor: 'red thread connects warning clues',
+      proofMechanism: 'risk flag explanation',
+      context: 'living room, call with family member',
+      camera: 'two-shot/phone call -> screen insert -> alert proof',
+      voice: 'visible user voices the doubt',
+    },
+  ] : isEducationLike ? [
+    {
+      sceneFamily: 'late-night study stall',
+      symptomFamily: 'reading without retention',
+      socialContext: 'solo learner after work',
+      objectAnchor: 'highlighted notes plus unfinished lesson',
+      visualMetaphor: 'blurred lines reorganize into memory cards',
+      proofMechanism: 'quiz recall score',
+      context: 'desk, night lamp, coffee mug',
+      camera: 'OTS notes -> tired CU -> app quiz reveal',
+      voice: 'learner admits the exact block',
+    },
+    {
+      sceneFamily: 'commute micro-lesson',
+      symptomFamily: 'no long study window',
+      socialContext: 'busy worker alone on transit',
+      objectAnchor: 'earbuds plus five-minute lesson',
+      visualMetaphor: 'train stops become lesson checkpoints',
+      proofMechanism: 'streak preserved',
+      context: 'bus, metro, elevator wait',
+      camera: 'wide commute -> phone POV -> progress insert',
+      voice: 'short practical self-talk',
+    },
+    {
+      sceneFamily: 'parent homework rescue',
+      symptomFamily: 'child stuck and parent unsure how to help',
+      socialContext: 'parent-child pair',
+      objectAnchor: 'worksheet plus tablet',
+      visualMetaphor: 'question mark unfolds into step cards',
+      proofMechanism: 'guided explanation',
+      context: 'dining table, school bag, evening',
+      camera: 'two-shot -> worksheet insert -> reaction CU',
+      voice: 'parent answers the child',
+    },
+    {
+      sceneFamily: 'language speaking freeze',
+      symptomFamily: 'knowing words but freezing aloud',
+      socialContext: 'learner practicing before a real interaction',
+      objectAnchor: 'mic button plus phrase card',
+      visualMetaphor: 'speech bubbles gain color as confidence rises',
+      proofMechanism: 'pronunciation feedback',
+      context: 'cafe order, mirror practice, travel prep',
+      camera: 'medium rehearsal -> mic ECU -> feedback screen',
+      voice: 'visible learner practices the line',
+    },
+    {
+      sceneFamily: 'exam countdown',
+      symptomFamily: 'too much syllabus, no priority',
+      socialContext: 'student comparing progress with peers',
+      objectAnchor: 'calendar plus topic checklist',
+      visualMetaphor: 'messy papers fold into a route map',
+      proofMechanism: 'adaptive study plan',
+      context: 'library, dorm desk, group table',
+      camera: 'wide library -> checklist close-up -> plan reveal',
+      voice: 'student names the deadline pressure',
+    },
+    {
+      sceneFamily: 'career upskill lunch break',
+      symptomFamily: 'wanting promotion but lacking time',
+      socialContext: 'professional learning quietly at work',
+      objectAnchor: 'lunch box plus certificate path',
+      visualMetaphor: 'calendar gaps light up as usable lessons',
+      proofMechanism: 'bite-size module completion',
+      context: 'office pantry, desk lunch, coworking',
+      camera: 'medium -> phone insert -> badge reveal',
+      voice: 'first-person ambition line',
+    },
+    {
+      sceneFamily: 'mistake replay',
+      symptomFamily: 'repeating the same error',
+      socialContext: 'solo learner reviewing feedback',
+      objectAnchor: 'wrong answer plus explanation',
+      visualMetaphor: 'red mark rewinds into a clear path',
+      proofMechanism: 'mistake history',
+      context: 'tablet desk, notebook, quiet room',
+      camera: 'top-down notebook -> ECU correction -> app history',
+      voice: 'learner notices the pattern',
+    },
+    {
+      sceneFamily: 'friend challenge quiz',
+      symptomFamily: 'motivation slump',
+      socialContext: 'friends competing lightly',
+      objectAnchor: 'scoreboard plus chat challenge',
+      visualMetaphor: 'chat bubbles turn into a live leaderboard',
+      proofMechanism: 'duel result',
+      context: 'group chat, cafe, sofa',
+      camera: 'screen-record -> reaction two-shot -> scoreboard',
+      voice: 'visible friend issues the dare',
+    },
+    {
+      sceneFamily: 'teacher prep shortcut',
+      symptomFamily: 'lesson prep taking too long',
+      socialContext: 'teacher preparing for a class',
+      objectAnchor: 'lesson plan plus blank worksheet',
+      visualMetaphor: 'blank page populates into structured blocks',
+      proofMechanism: 'auto-generated plan',
+      context: 'teacher desk, classroom before bell',
+      camera: 'wide classroom -> OTS laptop -> printout reveal',
+      voice: 'teacher names the time pressure',
+    },
+    {
+      sceneFamily: 'weekend catch-up',
+      symptomFamily: 'falling behind after missing days',
+      socialContext: 'solo learner rebuilding momentum',
+      objectAnchor: 'calendar gap plus streak tracker',
+      visualMetaphor: 'broken streak reconnects bead by bead',
+      proofMechanism: 'catch-up path',
+      context: 'bedroom desk, weekend morning',
+      camera: 'medium -> calendar CU -> app catch-up card',
+      voice: 'calm comeback line',
+    },
+  ] : isSocialLike ? [
+    {
+      sceneFamily: 'first message paralysis',
+      symptomFamily: 'not knowing what to say first',
+      socialContext: 'single user preparing to connect',
+      objectAnchor: 'match card plus draft bubble',
+      visualMetaphor: 'blank bubble fills with a natural opener',
+      proofMechanism: 'suggested message variants',
+      context: 'bed, cafe, commute, late-night scroll',
+      camera: 'POV profile -> reaction CU -> message suggestion',
+      voice: 'visible user voices the hesitation',
+    },
+    {
+      sceneFamily: 'creator engagement dip',
+      symptomFamily: 'good content getting weak interaction',
+      socialContext: 'creator addressing followers',
+      objectAnchor: 'analytics chart plus latest post',
+      visualMetaphor: 'flat line lifts after one content tweak',
+      proofMechanism: 'before/after engagement card',
+      context: 'creator desk, ring light, editing setup',
+      camera: 'selfie intro -> chart insert -> creator reaction',
+      voice: 'creator speaks directly to audience',
+    },
+    {
+      sceneFamily: 'friend-group planning chaos',
+      symptomFamily: 'plans buried in chat',
+      socialContext: 'multiple friends coordinating',
+      objectAnchor: 'group chat plus poll card',
+      visualMetaphor: 'chat bubbles collapse into one decision',
+      proofMechanism: 'poll result',
+      context: 'group chat, cafe, weekend planning',
+      camera: 'screen-record -> reaction montage -> poll reveal',
+      voice: 'one visible friend leads the line',
+    },
+    {
+      sceneFamily: 'safety check before meeting',
+      symptomFamily: 'uncertain trust in a new connection',
+      socialContext: 'user checking with a close friend',
+      objectAnchor: 'profile screen plus safety badge',
+      visualMetaphor: 'profile pieces lock into a shield',
+      proofMechanism: 'verification signal',
+      context: 'bedroom mirror, cafe, leaving home',
+      camera: 'two-shot -> phone insert -> badge close-up',
+      voice: 'visible user asks the real question',
+    },
+    {
+      sceneFamily: 'comment reply momentum',
+      symptomFamily: 'good questions going unanswered',
+      socialContext: 'creator responding to community',
+      objectAnchor: 'comment stack plus reply card',
+      visualMetaphor: 'one highlighted comment branches into content ideas',
+      proofMechanism: 'reply workflow',
+      context: 'studio desk, phone tripod',
+      camera: 'screen capture -> creator reaction -> reply flow',
+      voice: 'creator answers one visible comment',
+    },
+    {
+      sceneFamily: 'quiet user finding community',
+      symptomFamily: 'wanting belonging without posting loudly',
+      socialContext: 'introvert joining a niche group',
+      objectAnchor: 'interest tags plus community feed',
+      visualMetaphor: 'small tag lights connect into a constellation',
+      proofMechanism: 'matching community cards',
+      context: 'sofa, library, after-work unwind',
+      camera: 'medium solo -> tag close-up -> feed reveal',
+      voice: 'soft first-person line',
+    },
+    {
+      sceneFamily: 'date recap with friend',
+      symptomFamily: 'uncertain whether the interaction went well',
+      socialContext: 'friend debrief after a date',
+      objectAnchor: 'voice note plus chat recap',
+      visualMetaphor: 'scattered moments reorder into signals',
+      proofMechanism: 'conversation summary',
+      context: 'rideshare, sidewalk, bedroom mirror',
+      camera: 'two-shot or call split -> phone insert -> recap card',
+      voice: 'visible friend relationship drives the line',
+    },
+    {
+      sceneFamily: 'trend participation',
+      symptomFamily: 'wanting to join without feeling late',
+      socialContext: 'creator with followers',
+      objectAnchor: 'trend sound plus draft post',
+      visualMetaphor: 'trend wave catches the post at the right time',
+      proofMechanism: 'timing recommendation',
+      context: 'creator room, street clip, cafe',
+      camera: 'vertical selfie -> trend audio insert -> schedule card',
+      voice: 'creator calls out the moment',
+    },
+    {
+      sceneFamily: 'local event discovery',
+      symptomFamily: 'missing nearby people and plans',
+      socialContext: 'friends deciding where to go',
+      objectAnchor: 'map pin plus event card',
+      visualMetaphor: 'empty map blooms with nearby circles',
+      proofMechanism: 'distance-based match',
+      context: 'street corner, cafe, apartment lobby',
+      camera: 'wide local cue -> map POV -> group reaction',
+      voice: 'one friend voices the discovery',
+    },
+    {
+      sceneFamily: 'profile makeover',
+      symptomFamily: 'good person, weak first impression',
+      socialContext: 'friend helping with profile',
+      objectAnchor: 'profile card plus photo picker',
+      visualMetaphor: 'dim profile sharpens into a clear spotlight',
+      proofMechanism: 'profile score improvement',
+      context: 'mirror, sofa, cafe table',
+      camera: 'two-shot -> phone insert -> before/after profile',
+      voice: 'friend gives the visible line',
+    },
+  ] : isGameLike ? [
+    {
+      sceneFamily: 'one-more-level commute',
+      symptomFamily: 'short idle time needing fast payoff',
+      socialContext: 'solo player on transit',
+      objectAnchor: 'phone plus train timer',
+      visualMetaphor: 'station dots turn into level nodes',
+      proofMechanism: 'instant match start',
+      context: 'bus, metro, queue, elevator wait',
+      camera: 'wide commute -> phone POV -> score burst',
+      voice: 'player reacts to the challenge',
+    },
+    {
+      sceneFamily: 'friend leaderboard dare',
+      symptomFamily: 'wanting bragging rights',
+      socialContext: 'friends competing',
+      objectAnchor: 'chat challenge plus leaderboard',
+      visualMetaphor: 'chat bubbles stack into a podium',
+      proofMechanism: 'rank jump',
+      context: 'group chat, sofa, cafe',
+      camera: 'screen record -> reaction two-shot -> leaderboard reveal',
+      voice: 'visible friend issues the dare',
+    },
+    {
+      sceneFamily: 'boss fight comeback',
+      symptomFamily: 'stuck at one hard moment',
+      socialContext: 'solo gamer chasing mastery',
+      objectAnchor: 'boss health bar plus retry button',
+      visualMetaphor: 'failed attempts forge into one stronger move',
+      proofMechanism: 'power-up preview',
+      context: 'gaming chair, handheld console, desk',
+      camera: 'OTS gameplay -> ECU hands -> victory wide',
+      voice: 'player names the frustration',
+    },
+    {
+      sceneFamily: 'puzzle aha moment',
+      symptomFamily: 'brain craving a satisfying solve',
+      socialContext: 'solo thinker',
+      objectAnchor: 'puzzle board plus final tile',
+      visualMetaphor: 'scattered pieces click into a glowing pattern',
+      proofMechanism: 'streak or solve time',
+      context: 'bed, cafe, waiting room',
+      camera: 'top-down board -> close-up tile -> reaction CU',
+      voice: 'quiet realization line',
+    },
+    {
+      sceneFamily: 'lunch-break squad',
+      symptomFamily: 'need quick social fun',
+      socialContext: 'coworkers playing together',
+      objectAnchor: 'shared table plus party lobby',
+      visualMetaphor: 'lunch items transform into team icons',
+      proofMechanism: 'party invite accepted',
+      context: 'office pantry, campus table, break room',
+      camera: 'group wide -> phone insert -> synced reaction',
+      voice: 'one teammate leads the line',
+    },
+    {
+      sceneFamily: 'collector reveal',
+      symptomFamily: 'wanting rare reward anticipation',
+      socialContext: 'player sharing with followers or friends',
+      objectAnchor: 'loot chest plus collection slot',
+      visualMetaphor: 'particles spiral into the missing item',
+      proofMechanism: 'drop reveal',
+      context: 'creator desk, bedroom, live reaction',
+      camera: 'selfie setup -> chest ECU -> collection reveal',
+      voice: 'player builds suspense aloud',
+    },
+    {
+      sceneFamily: 'daily streak save',
+      symptomFamily: 'almost breaking a habit',
+      socialContext: 'solo player keeping momentum',
+      objectAnchor: 'streak counter plus reminder badge',
+      visualMetaphor: 'fading flame reignites',
+      proofMechanism: 'streak preserved',
+      context: 'nightstand, commute, before sleep',
+      camera: 'medium -> timer insert -> win reaction',
+      voice: 'short relief line',
+    },
+    {
+      sceneFamily: 'skill flex clip',
+      symptomFamily: 'wanting a shareable highlight',
+      socialContext: 'player posting to community',
+      objectAnchor: 'replay clip plus share button',
+      visualMetaphor: 'combo trail draws a signature',
+      proofMechanism: 'instant replay export',
+      context: 'stream setup, couch, mobile clip',
+      camera: 'gameplay capture -> face reaction -> share sheet',
+      voice: 'player hypes the moment',
+    },
+    {
+      sceneFamily: 'parent-child co-op',
+      symptomFamily: 'wanting easy shared fun',
+      socialContext: 'parent and child together',
+      objectAnchor: 'two devices plus shared mission',
+      visualMetaphor: 'two trails merge into one win badge',
+      proofMechanism: 'co-op completion',
+      context: 'living room, weekend afternoon',
+      camera: 'two-shot -> device inserts -> celebration wide',
+      voice: 'child or parent leads, not narrator',
+    },
+    {
+      sceneFamily: 'mystery reveal',
+      symptomFamily: 'curiosity about what happens next',
+      socialContext: 'solo explorer',
+      objectAnchor: 'locked door plus clue item',
+      visualMetaphor: 'shadowed map uncovers one glowing route',
+      proofMechanism: 'unlock animation',
+      context: 'fantasy board, AR map, escape puzzle',
+      camera: 'POV exploration -> clue ECU -> reveal wide',
+      voice: 'player whispers the question',
+    },
+  ] : [
+    {
+      sceneFamily: 'morning routine',
+      symptomFamily: 'first-use friction',
+      socialContext: 'solo user at home',
+      objectAnchor: 'bedside object plus phone',
+      visualMetaphor: 'messy items snap into one ordered line',
+      proofMechanism: 'instant before/after state',
+      context: 'bedside, kitchen counter, first phone check, family/home habit',
+      camera: 'medium wide setup -> close-up prop -> POV phone proof',
+      voice: 'single visible character, quiet first-person concern',
+    },
+    {
+      sceneFamily: 'home office stress',
+      symptomFamily: 'time pressure',
+      socialContext: 'solo worker under deadline pressure',
+      objectAnchor: 'laptop plus calendar',
+      visualMetaphor: 'stacked tasks collapse into a clean queue',
+      proofMechanism: 'dashboard reduction',
+      context: 'desk, laptop call, calendar pressure',
+      camera: 'over-shoulder -> close-up screen/hand -> split UI',
+      voice: 'character speaks while reacting to the work moment',
+    },
+    {
+      sceneFamily: 'commute or parking lot',
+      symptomFamily: 'on-the-go friction',
+      socialContext: 'commuter between tasks',
+      objectAnchor: 'keys plus bag',
+      visualMetaphor: 'route line reroutes around the blocker',
+      proofMechanism: 'one-tap completion',
+      context: 'car seat, bus stop, elevator, appointment reminder',
+      camera: 'wide establishing -> handheld medium -> phone POV',
+      voice: 'short breathy line from the person in the scene',
+    },
+    {
+      sceneFamily: 'store aisle',
+      symptomFamily: 'choice overload',
+      socialContext: 'shopper in public',
+      objectAnchor: 'shelf label plus receipt',
+      visualMetaphor: 'noisy labels dim while one option stays bright',
+      proofMechanism: 'comparison result',
+      context: 'shelf labels, product comparison, public errand behavior native to the market',
+      camera: 'tracking aisle shot -> close-up label -> top-down phone check',
+      voice: 'character whisper or direct thought tied to the visible prop',
+    },
+    {
+      sceneFamily: 'family check-in',
+      symptomFamily: 'coordination gap',
+      socialContext: 'two people making one decision',
+      objectAnchor: 'shared table plus phone',
+      visualMetaphor: 'two speech bubbles merge into one checklist',
+      proofMechanism: 'shared screen',
+      context: 'dining table, sofa edge, family concern',
+      camera: 'two-shot wide -> reaction close-up -> over-shoulder phone',
+      voice: 'visible character answers the family member; use visible role/name labels, never Speaker 1/2',
+    },
+    {
+      sceneFamily: 'before appointment prep',
+      symptomFamily: 'memory gap',
+      socialContext: 'user preparing to explain something clearly',
+      objectAnchor: 'form plus notes app',
+      visualMetaphor: 'scattered notes align into one clean line',
+      proofMechanism: 'organized history log',
+      context: 'waiting room, form, notes app, calendar',
+      camera: 'POV form -> close-up hand/phone -> medium waiting room',
+      voice: 'calm first-person line',
+    },
+    {
+      sceneFamily: 'daily errand',
+      symptomFamily: 'small repeated hassle',
+      socialContext: 'solo user in a routine task',
+      objectAnchor: 'basket plus receipt strip',
+      visualMetaphor: 'receipt strip becomes a progress line',
+      proofMechanism: 'saved shortcut',
+      context: 'basket, queue, small practical decision, market-native packaging/colors',
+      camera: 'wide aisle -> macro prop -> fast match cut to app UI',
+      voice: 'character voice follows the hand action and object choice',
+    },
+    {
+      sceneFamily: 'locker or post-activity pause',
+      symptomFamily: 'recovery or reset moment',
+      socialContext: 'peer nearby but user acts independently',
+      objectAnchor: 'water bottle plus towel',
+      visualMetaphor: 'droplets gather into a progress pattern',
+      proofMechanism: 'quick comparison card',
+      context: 'locker, towel, reset moment',
+      camera: 'low angle locker -> close-up prop -> POV app action',
+      voice: 'visible character says a short self-check line',
+    },
+    {
+      sceneFamily: 'travel day',
+      symptomFamily: 'routine disruption',
+      socialContext: 'traveler managing the day alone',
+      objectAnchor: 'boarding pass plus carry-on',
+      visualMetaphor: 'flight path bends into a task line',
+      proofMechanism: 'reminder history',
+      context: 'airport, ride-share, hotel room, unfamiliar routine',
+      camera: 'wide location cue -> close-up carry-on/phone -> split-screen reminder',
+      voice: 'first-person voice tied to travel friction',
+    },
+    {
+      sceneFamily: 'comment reply or social proof',
+      symptomFamily: 'skepticism',
+      socialContext: 'creator answering a viewer',
+      objectAnchor: 'comment screenshot plus saved example',
+      visualMetaphor: 'comment bubble expands into a proof card',
+      proofMechanism: 'screen-recorded walkthrough',
+      context: 'viewer comment, saved screenshot, social proof',
+      camera: 'screen-record style -> comment close-up -> creator reaction/phone POV',
+      voice: 'character answers the visible comment directly',
+    },
+    {
+      sceneFamily: 'household chore',
+      symptomFamily: 'hidden repetition',
+      socialContext: 'solo user in a familiar routine',
+      objectAnchor: 'laundry basket plus timer',
+      visualMetaphor: 'fabric folds become progress bars',
+      proofMechanism: 'before/after state',
+      context: 'laundry room, hallway, ordinary home movement',
+      camera: 'wide hallway -> close-up prop -> insert phone screen',
+      voice: 'short self-observation while pausing the chore',
+    },
+    {
+      sceneFamily: 'park bench or outdoor pause',
+      symptomFamily: 'post-task reflection',
+      socialContext: 'friend nearby but not leading the scene',
+      objectAnchor: 'bench plus reusable bottle',
+      visualMetaphor: 'bench slats animate into rising bars',
+      proofMechanism: 'comparison against previous state',
+      context: 'park, neighborhood path, local leisure habit',
+      camera: 'wide outdoor cue -> medium seated pause -> ECU result',
+      voice: 'visible character voices the realization',
     },
   ];
 
   const assigned = Array.from({ length: input.batchQuantity }, (_, offset) => {
     const globalSlot = input.batchStartIndex + offset;
     const lane = lanes[globalSlot % lanes.length];
-    return `${globalSlot + 1}/${input.totalQuantity}: scene_family="${lane.sceneFamily}" | context=${lane.context} | camera=${lane.camera} | voice=${lane.voice}`;
+    return `${globalSlot + 1}/${input.totalQuantity}: scene_family="${lane.sceneFamily}" | symptom_family=${lane.symptomFamily} | social_context=${lane.socialContext} | object_anchor=${lane.objectAnchor} | visual_metaphor=${lane.visualMetaphor} | proof_mechanism=${lane.proofMechanism} | context=${lane.context} | camera=${lane.camera} | voice=${lane.voice}`;
   }).join('\n');
 
   return `SLOT DIVERSITY PLAN
 Visual type remains locked as "${input.visualType}" for every slot.
 Market/context must feel native to: ${input.market || 'selected market'}.
-For each idea, use the assigned scene_family exactly and build a different first frame, prop, camera action, and voice opening:
+For each idea, use every assigned slot dimension exactly. Build a different concept before changing the room: symptom/problem family, social context, object anchor, visual metaphor, proof mechanism, first frame, prop, camera action, and voice opening must stay distinct across slots. Do not satisfy this plan with room-only or camera-only variation:
 ${assigned}`;
 }
 
@@ -3013,6 +3940,8 @@ function buildFastQuickGeneratePrompt(input: {
     totalQuantity: input.totalQuantity,
     visualType: input.visualType,
     market,
+    appCategory: input.appCategory,
+    appName: input.appName,
   });
 
   return `FAST GENERATE MODE
@@ -3045,7 +3974,8 @@ ${slotDiversityPlan}
 CORE RULES
 - Generate exactly ${input.quantity} ideas.
 - Selected inputs are locked. If quick_brief conflicts with selected chips, keep selected chips unless quick_brief is more specific inside the same meaning.
-- Make every idea visually different: different scene_family, first frame, daily context, object/blocker, camera action, proof object, and payoff.
+- Make every idea conceptually different, not only visually different: different symptom/problem family, social context, object anchor, visual metaphor, proof mechanism, scene_family, first frame, daily context, camera action, and payoff.
+- Across one full request, do not reuse the same symptom/body-area family, social relationship, hero prop, visual metaphor, or proof mechanism unless the brief explicitly locks one of them.
 - If generating more than 1 idea, at most ONE idea in the full request may use dizziness/falling/collapse/holding head as the hook. Do not make near-identical "person gets dizzy and falls" ideas.
 - Choose unique scene_family labels from varied market-native moments, for example: morning routine, home office, commute/parking lot, pharmacy aisle, gym locker, telehealth note, family check-in, grocery trip, travel day, smartwatch comparison, desk stress, before-doctor-visit prep.
 - Hook context must come from country/core-user insight for ${market}. Use locally plausible home/work/public spaces, clothing, props, phone behavior, family/work norms, and app proof. Avoid stereotypes and avoid generic empty rooms.
@@ -3060,11 +3990,12 @@ CORE RULES
 - title, visual_scene_1/2/3, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, visual_ref_notes, talent_profile, dont_do are Vietnamese.
 - hook_vo, hook_character_speech, script_vo are in ${input.outputLanguage}. hook_voice_vi is Vietnamese translation with full diacritics.
 - hook_text_overlay, text_overlays.text, cta_text are in ${input.outputLanguage}.
+- hook_text_overlay_vi and text_overlays.vi_text are Vietnamese translations with full diacritics of the on-screen text.
 ${buildAudienceLanguageRule(input.outputLanguage)}
 - visual_scene_1 must include timing rows and obey pacing: 5s max 2 camera rows; 8-10s max 3-4 rows; each row about 2.5s+. Spoken voice must be embedded in the exact row where the character speaks, not only listed below the scene.
 - Every visual_scene_1/2/3 must literally include Position anchor, Contact anchor, and Physical action anchor clauses.
 
-OUTPUT JSON ONLY. Return this current schema:
+OUTPUT JSON ONLY. Return this lean schema. Backend will normalize the remaining helper metadata after generation:
 [
   {
     "pillar_index": 0,
@@ -3078,22 +4009,13 @@ OUTPUT JSON ONLY. Return this current schema:
         "ideas": [
           {
             "id": "P0-A0-I0",
-            "creativeType": "${input.visualType}",
             "title": "ten kich ban tieng Viet ngan",
+            "scene_family": "assigned unique scene family label, not reused in the full request",
             "hook_text_overlay": "${input.outputLanguage} only, max 8 words",
+            "hook_text_overlay_vi": "Vietnamese translation of hook_text_overlay",
             "hook_vo": "max 12 words, different from overlay",
             "hook_character_speech": "same visible-character line embedded inside visual_scene_1, with time + visible character role/name; never Speaker 1/Speaker 2; empty only if nobody visible speaks",
             "hook_voice_vi": "Vietnamese translation of hook voice/speech",
-            "hook_archetype": "taxonomy label",
-            "hook_alt_1_text": "short alt hook",
-            "hook_alt_1_vo": "short alt VO",
-            "hook_alt_1_archetype": "different taxonomy label",
-            "hook_alt_2_text": "short alt hook",
-            "hook_alt_2_vo": "short alt VO",
-            "hook_alt_2_archetype": "different taxonomy label",
-            "emotion_journey": "Hook -> Body -> CTA",
-            "body_motivation_pattern": "Reveal|Demo-Story|Escalate|Compare|Transform",
-            "scene_family": "assigned unique scene family label, not reused in the full request",
             "character_visual": "Vietnamese: age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, prop; or No talent - screen recording only + UI/device cue",
             "country_visual_insight": "Vietnamese: why this visual fits ${market} and the selected core user",
             "hook_context_insight": "Vietnamese: country/core-user insight behind the hook context",
@@ -3103,27 +4025,21 @@ OUTPUT JSON ONLY. Return this current schema:
             "visual_scene_2": "Vietnamese body paragraph showing app/PSP action. Include Position anchor, Contact anchor, Physical action anchor.",
             "visual_scene_3": "Vietnamese CTA/payoff visual. Include Position anchor, Contact anchor, Physical action anchor.",
             "text_overlays": [
-              {"time":"0-2.5s","text":"hook text in ${input.outputLanguage}"},
-              {"time":"6-9s","text":"body text in ${input.outputLanguage}"},
-              {"time":"18-22s","text":"CTA text in ${input.outputLanguage}"}
+              {"time":"0-2.5s","text":"hook text in ${input.outputLanguage}","vi_text":"Vietnamese translation"},
+              {"time":"6-9s","text":"body text in ${input.outputLanguage}","vi_text":"Vietnamese translation"},
+              {"time":"18-22s","text":"CTA text in ${input.outputLanguage}","vi_text":"Vietnamese translation"}
             ],
             "script_vo": "full VO, max 60 words",
             "cta_text": "${input.outputLanguage} only, max 6 words",
-            "cta_friction_reducer": "Free|No signup|30 seconds|1 tap",
-            "visual_ref_notes": "Vietnamese hook-only production reference for visual_scene_1: camera, lighting, talent direction, pacing. Do not describe Body or CTA.",
-            "talent_profile": "specific profile or No talent - screen recording only",
-            "dont_do": "specific QC warning, at least 5 words",
-            "track": "A|B|C",
-            "track_reason": "one sentence",
-            "priority": "A|B|C",
-            "estimated_thumb_stop": "Low|Medium|High",
-            "idea_reasoning": "one sentence"
+            "visual_ref_notes": "Vietnamese hook-only production reference for visual_scene_1: camera, lighting, talent direction, pacing. Do not describe Body or CTA."
           }
         ]
       }
     ]
   }
-]`;
+]
+
+Do not spend tokens on helper metadata such as hook alternatives, hook archetypes, emotion_journey, body_motivation_pattern, cta_friction_reducer, talent_profile, dont_do, track, track_reason, priority, estimated_thumb_stop, or idea_reasoning unless a field is already needed to clarify the creative. Backend will normalize those fields after generation.`;
 }
 
 function buildLeanGeneratePrompt(input: {
@@ -3229,6 +4145,7 @@ Operator note priority:
 Language matrix rule:
 - title/script name, visual_scene_1/2/3, and production notes MUST be written in Vietnamese.
 - hook_text_overlay, text_overlays.text, and cta_text are actual on-video text and MUST be written in ${input.outputLanguage}.
+- hook_text_overlay_vi and text_overlays.vi_text MUST be Vietnamese translations with full diacritics of the on-video text.
 - hook_vo, hook_character_speech, and script_vo MUST be written in ${input.outputLanguage}; these are the only audience speech/voice fields that follow the selected market language.
 ${buildAudienceLanguageRule(input.outputLanguage)}
 - hook_vo and hook_character_speech must be direct, pain-led, and emotion-led. In the first hook beat they must name the visible blocker/consequence from the selected pain point and make the selected emotion (${emotionJourney}) obvious; do not use generic soft lines. If hook_character_speech is used, also embed the same line inside the matching visual_scene_1 timing row with the visible character action, e.g. "và Cụ ông nói \"...\"". Never use Speaker 1/Speaker 2.
@@ -3291,6 +4208,7 @@ Use this compact schema:
             "creativeType": "${input.visualType}",
             "title": "tên kịch bản tiếng Việt ngắn, 3-7 từ",
             "hook_text_overlay": "${input.outputLanguage} only, max 8 words",
+            "hook_text_overlay_vi": "Vietnamese translation of hook_text_overlay",
             "hook_vo": "max 12 words, different from text",
             "hook_character_speech": "",
             "hook_voice_vi": "Vietnamese translation of hook voice/speech",
@@ -3313,10 +4231,10 @@ Use this compact schema:
             "visual_scene_2": "Vietnamese body paragraph with narrative tension and app action. Include Position anchor, Contact anchor, and Physical action anchor clauses.",
             "visual_scene_3": "Vietnamese CTA/payoff visual with app store or download prompt. Include Position anchor, Contact anchor, and Physical action anchor clauses.",
             "text_overlays": [
-              {"time":"${hookTextWindow}","text":"hook text in ${input.outputLanguage}"},
-              {"time":"6-9s","text":"body text in ${input.outputLanguage}"},
-              {"time":"12-15s","text":"proof text in ${input.outputLanguage}"},
-              {"time":"18-22s","text":"CTA text in ${input.outputLanguage}"}
+              {"time":"${hookTextWindow}","text":"hook text in ${input.outputLanguage}","vi_text":"Vietnamese translation"},
+              {"time":"6-9s","text":"body text in ${input.outputLanguage}","vi_text":"Vietnamese translation"},
+              {"time":"12-15s","text":"proof text in ${input.outputLanguage}","vi_text":"Vietnamese translation"},
+              {"time":"18-22s","text":"CTA text in ${input.outputLanguage}","vi_text":"Vietnamese translation"}
             ],
             "script_vo": "full VO, max 60 words",
             "cta_text": "${input.outputLanguage} only, max 6 words",
@@ -3582,6 +4500,10 @@ Chỉ trả về JSON array string. Không markdown.`;
       const trendingStructures = asStringList(body.trendingStructures);
       const solutionValues = asStringList(filters.solution);
       const coreUserValues = asStringList(filters.coreUser);
+      const coreUserVoiceTargetError = getCoreUserVoiceTargetError(coreUserValues);
+      if (coreUserVoiceTargetError) {
+        return NextResponse.json({ success: false, error: coreUserVoiceTargetError }, { status: 400 });
+      }
       const coreUserLanguageValues = getCoreUserLanguageValues(coreUserValues);
       const coreUserMarketValues = getCoreUserMarketValues(coreUserValues);
       const emotionValues = asStringList(filters.emotion);
@@ -3633,7 +4555,7 @@ Chỉ trả về JSON array string. Không markdown.`;
       const isGemini3Ideas = primaryModel.includes('gemini-3-pro');
       const batchPlans = buildIdeaBatchPlans(
         requestedQuantity,
-        isQuickGenerationMode ? QUICK_IDEA_MAX_BATCH_SIZE : isGemini3Ideas ? GEMINI3_IDEA_MAX_BATCH_SIZE : MAX_IDEAS_PER_AI_BATCH
+        isQuickGenerationMode ? getQuickIdeaInitialBatchSize(requestedQuantity) : isGemini3Ideas ? GEMINI3_IDEA_MAX_BATCH_SIZE : MAX_IDEAS_PER_AI_BATCH
       );
       const aiBudgetStartedAt = Date.now();
       const requestAiBudgetMs = isQuickGenerationMode
@@ -3758,11 +4680,12 @@ Hard requirements:
 - visual_scene_2 must be Sec 5-18 with narrative tension and a real app action.
 - visual_scene_3 must be Sec 18-25 with CTA plus cta_friction_reducer.
 - hook_text_overlay is in ${outputLanguage}, max 8 words. hook_vo is max 12 words. They must not duplicate.
+- hook_text_overlay_vi and text_overlays.vi_text are Vietnamese translations with full diacritics of the on-screen text.
 - If visible talent speaks, fill hook_character_speech with the exact on-camera line.
 - visual_scene_1, visual_scene_2, visual_scene_3, visual_ref_notes, talent_profile, dont_do, and all production notes MUST be Vietnamese.
 - visual_scene_1, visual_scene_2, and visual_scene_3 MUST each include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - visual_scene_1 MUST obey Rule 4 pacing: 5s max 2 scenes/camera angles; 8-10s max 3-4 scenes/camera angles; fewer scenes are allowed.
-- title/script name, visual_scene prose, and production notes MUST be Vietnamese. hook_text_overlay, text_overlays.text, cta_text, hook_vo, hook_character_speech, and script_vo MUST be ${outputLanguage}. hook_voice_vi MUST be Vietnamese with full diacritics. Only quoted Voiceover / CHARACTER SPEECH / Text hiện inside visual_scene uses ${outputLanguage}.
+- title/script name, visual_scene prose, and production notes MUST be Vietnamese. hook_text_overlay, text_overlays.text, cta_text, hook_vo, hook_character_speech, and script_vo MUST be ${outputLanguage}. hook_text_overlay_vi, text_overlays.vi_text, and hook_voice_vi MUST be Vietnamese with full diacritics. Only quoted Voiceover / CHARACTER SPEECH / Text hiện inside visual_scene uses ${outputLanguage}.
 ${buildAudienceLanguageRule(outputLanguage)}
 - visual_ref_notes must describe hook/visual_scene_1 only: camera style, lighting, talent direction, and pacing. Do not describe Body or CTA there.`;
 
@@ -3843,14 +4766,14 @@ ${TOOL_COMPATIBILITY_GUARDRAILS}`;
 - Every idea must include visual_scene_1, visual_scene_2, visual_scene_3, hook_voice_vi, script_vo, cta_text, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, visual_ref_notes, talent_profile, dont_do, track, track_reason, priority.
 - character_visual must specify age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; if no person appears, say "No talent - screen recording only" plus the UI/device visual cue.
 - camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only. Do not describe anything after the hook window here; put post-hook Body/CTA details inside visual_scene_2/3.
-- title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, cta_text, hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. In visual_scene rows, embed quoted spoken lines in the exact timing row where the character speaks; quoted Text hien also uses ${outputLanguage}. Target market affects local setting, vibe, and audience-copy language.
+- title/script name, visual scenes, and production notes must be Vietnamese. hook_text_overlay, text_overlays.text, cta_text, hook_vo, hook_character_speech, and script_vo use ${outputLanguage}. hook_text_overlay_vi and text_overlays.vi_text are Vietnamese translations with full diacritics. In visual_scene rows, embed quoted spoken lines in the exact timing row where the character speaks; quoted Text hien also uses ${outputLanguage}. Target market affects local setting, vibe, and audience-copy language.
 ${buildAudienceLanguageRule(outputLanguage)}
 - hook_voice_vi must be Vietnamese with full diacritics; it translates hook_vo + hook_character_speech, and only if both are empty translates the ${outputLanguage} side of hook_text_overlay.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
           : `Generate ${plan.batchQuantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
-- Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
+- Return hook_text_overlay, hook_text_overlay_vi, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, text_overlays with vi_text, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
 - character_visual must specify hook-only age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only.
 - visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in ${outputLanguage} inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.
@@ -4498,6 +5421,10 @@ Do not output local fallback/template ideas. Do not make health claims.`, {
     const trendingStructures = asStringList(body.trendingStructures);
     const solutionValues = asStringList(filters.solution);
     const coreUserValues = asStringList(filters.coreUser);
+    const coreUserVoiceTargetError = getCoreUserVoiceTargetError(coreUserValues);
+    if (coreUserVoiceTargetError) {
+      return NextResponse.json({ success: false, error: coreUserVoiceTargetError }, { status: 400 });
+    }
     const coreUserLanguageValues = getCoreUserLanguageValues(coreUserValues);
     const coreUserMarketValues = getCoreUserMarketValues(coreUserValues);
     const emotionValues = asStringList(filters.emotion);
@@ -4688,7 +5615,7 @@ ${buildAudienceLanguageRule(outputLanguage)}
 - Each idea must stay inside the selected pain point, selected PSP, selected angle, and selected visual type.`
       : `Generate ${quantity} production-ready full ideas for the selected filter combination.
 - Use Creative Idea Engine V2.1 schema and timeline.
-- Return hook_text_overlay, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, text_overlays, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
+- Return hook_text_overlay, hook_text_overlay_vi, hook_vo, hook_character_speech, hook_voice_vi, hook_archetype, hook_alt_1_text/vo/archetype, hook_alt_2_text/vo/archetype, emotion_journey, body_motivation_pattern, character_visual, country_visual_insight, hook_context_insight, camera_plan, voice_direction, text_overlays with vi_text, cta_friction_reducer, estimated_thumb_stop, and idea_reasoning.
 - character_visual must specify hook-only age/range, gender presentation if relevant, skin tone, ethnicity/country cue, hair, outfit, body language, and prop when a person appears; camera_plan must specify hook/visual_scene_1 shot sizes and camera angles only.
 - visual_scene_1 must follow the Hook Timing Rule below. Include Text hien and Voiceover in ${outputLanguage} inside an existing timing row when needed.
 - Every visual_scene_1/2/3 must include Position anchor, Contact anchor, and Physical action anchor clauses inside the visual text.

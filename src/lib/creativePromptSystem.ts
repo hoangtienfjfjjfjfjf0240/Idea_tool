@@ -264,6 +264,13 @@ function normalizeSection(
     voiceover,
     voice: legacyVoice || voiceover || characterSpeech,
     textOverlay: normalizedTextOverlay,
+    textOverlayViTranslation: readText(
+      section.textOverlayViTranslation,
+      readText(
+        section.text_overlay_vi_translation,
+        readText(section.textViTranslation, readText(section.text_vi_translation))
+      )
+    ),
     text: normalizedText,
     viTranslation: readText(
       section.viTranslation,
@@ -626,19 +633,22 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "characterSpeech": "Natural on-camera talent speech in ${options.language}, usually 1 vivid sentence; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
     "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point",
+    "textOverlayViTranslation": "Vietnamese translation of textOverlay",
     "viTranslation": "Vietnamese translation of hook characterSpeech + voiceover only; if both are empty, translate textOverlay"
   },
   "body": {
     "visual": "Detailed body visual in Vietnamese, 2-3 dense production sentences covering the transition from blocker to demo, the exact product action, and the visible proof beat. ${visualAnchorClause} ${pacingClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
-    "textOverlay": "Short body text in ${options.language} that reinforces the same pain-to-solution chain"
+    "textOverlay": "Short body text in ${options.language} that reinforces the same pain-to-solution chain",
+    "textOverlayViTranslation": "Vietnamese translation of textOverlay"
   },
   "cta": {
     "visual": "Detailed CTA visual in Vietnamese, 1-2 concrete production sentences covering the final proof frame, the app/result screen, and the exact CTA beat. ${visualAnchorClause} ${pacingClause}",
     "characterSpeech": "On-camera character/talent speech in ${options.language}; empty string if nobody speaks on camera",
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "textOverlay": "Short CTA text in ${options.language}",
+    "textOverlayViTranslation": "Vietnamese translation of textOverlay",
     "endCard": "${options.appName} + short tagline"
   }`
     : `  "hook": {
@@ -648,6 +658,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "voiceover": "Off-camera narrator or video voice in ${options.language}, usually 1 vivid sentence; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Readable on-screen hook text in ${options.language}, around 6-16 words, specific to the selected pain point",
+    "textOverlayViTranslation": "Vietnamese translation of textOverlay",
     "viTranslation": "Vietnamese translation of hook characterSpeech + voiceover only; if both are empty, translate textOverlay",
     "viewerProfile": "${options.language} description of who stops scrolling",
     "viewerEmotion": "${options.language} description of what the viewer feels",
@@ -660,6 +671,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short body text in ${options.language}",
+    "textOverlayViTranslation": "Vietnamese translation of textOverlay",
     "viTranslation": "Optional Vietnamese recap of body speech/voiceover + text"
   },
   "cta": {
@@ -668,6 +680,7 @@ export function buildIdeaOutputSpec(options: IdeaOutputSpecOptions): string {
     "voiceover": "Off-camera narrator or video voice in ${options.language}; empty string if no narrator voice",
     "voice": "Legacy compatibility line: same as characterSpeech or voiceover, not a merged script",
     "textOverlay": "Short CTA text in ${options.language}",
+    "textOverlayViTranslation": "Vietnamese translation of textOverlay",
     "viTranslation": "Optional Vietnamese recap of CTA speech/voiceover + text",
     "endCard": "${options.appName} + short tagline"
   }`;
@@ -2242,16 +2255,24 @@ export function normalizeCreativeBriefOutput(
         const estimatedThumbStop = readFirstText(ideaRecord, ['estimated_thumb_stop', 'estimatedThumbStop']);
         const ideaReasoning = readFirstText(ideaRecord, ['idea_reasoning', 'ideaReasoning']);
         const textOverlayRecords = readArray(ideaRecord.text_overlays ?? ideaRecord.textOverlays);
-        const textOverlays = textOverlayRecords
+        const textOverlayEntries = textOverlayRecords
           .map(record => {
             const time = readFirstText(record, ['time']);
             const text = readFirstText(record, ['text']);
-            return time && text ? `${time}: ${text}` : text;
+            const viText = readFirstText(record, ['vi_text', 'viText', 'text_vi', 'textVi', 'vi_translation', 'viTranslation']);
+            return text ? { time, text, viText } : null;
           })
+          .filter((entry): entry is { time: string; text: string; viText: string } => Boolean(entry));
+        const textOverlays = textOverlayEntries
+          .map(entry => entry.time ? `${entry.time}: ${entry.text}` : entry.text)
           .filter(Boolean);
         let hookCharacterSpeech = readSpeechText(readFirstText(ideaRecord, ['hook_character_speech', 'hookCharacterSpeech', 'character_speech', 'characterSpeech']));
         let hookVoiceover = readSpeechText(readFirstText(ideaRecord, ['hook_vo', 'hookVoiceover', 'hook_voiceover', 'voiceover', 'voice_over']));
         let hookTextOverlay = readFirstText(ideaRecord, ['hook_text_overlay', 'hookTextOverlay', 'text_overlay', 'textOverlay']);
+        const hookTextOverlayVi = readFirstText(
+          ideaRecord,
+          ['hook_text_overlay_vi', 'hookTextOverlayVi', 'hook_text_overlay_vi_translation', 'hookTextOverlayViTranslation']
+        );
         let hookVoiceVi = readFirstText(ideaRecord, ['hook_voice_vi', 'hookVoiceVi', 'hook_vi_translation', 'hookViTranslation', 'vi_translation', 'viTranslation']);
         let visualScene1 = readFirstText(ideaRecord, ['visual_scene_1', 'visualScene1']);
         let visualScene2 = readFirstText(ideaRecord, ['visual_scene_2', 'visualScene2']);
@@ -2474,8 +2495,10 @@ export function normalizeCreativeBriefOutput(
         acceptedOpeningScenes.push(visualScene1);
         acceptedIdeaSignatures.push(ideaDiversitySignature);
         acceptedTitles.push(scriptTitle);
-        const bodyOverlay = stripOverlayTimePrefix(textOverlays.find(line => /\b(?:6|9|12|15)\b/.test(line)) || hookAlt1);
-        const ctaOverlay = stripOverlayTimePrefix(textOverlays.find(line => /\b(?:18|22|25)\b/.test(line)) || ctaText);
+        const bodyOverlayEntry = textOverlayEntries.find(entry => /\b(?:6|9|12|15)\b/.test(entry.time));
+        const ctaOverlayEntry = textOverlayEntries.find(entry => /\b(?:18|22|25)\b/.test(entry.time));
+        const bodyOverlay = stripOverlayTimePrefix(bodyOverlayEntry ? `${bodyOverlayEntry.time}: ${bodyOverlayEntry.text}` : textOverlays.find(line => /\b(?:6|9|12|15)\b/.test(line)) || hookAlt1);
+        const ctaOverlay = stripOverlayTimePrefix(ctaOverlayEntry ? `${ctaOverlayEntry.time}: ${ctaOverlayEntry.text}` : textOverlays.find(line => /\b(?:18|22|25)\b/.test(line)) || ctaText);
 
         items.push(normalizeIdeaOutput({
           id,
@@ -2538,6 +2561,7 @@ export function normalizeCreativeBriefOutput(
             voiceover: hookVoiceover,
             voice: hookVoiceover || hookCharacterSpeech,
             textOverlay: hookTextOverlay || hookPrimary,
+            textOverlayViTranslation: hookTextOverlayVi,
             text: hookTextOverlay || hookPrimary,
             viTranslation: hookVoiceVi,
             viewerProfile: defaults.coreUser || '',
@@ -2550,6 +2574,7 @@ export function normalizeCreativeBriefOutput(
             voiceover: scriptVo,
             voice: scriptVo,
             textOverlay: bodyOverlay,
+            textOverlayViTranslation: bodyOverlayEntry?.viText || '',
             text: bodyOverlay,
             viTranslation: scriptVo,
           },
@@ -2558,6 +2583,7 @@ export function normalizeCreativeBriefOutput(
             voiceover: ctaText,
             voice: ctaText,
             textOverlay: ctaOverlay,
+            textOverlayViTranslation: ctaOverlayEntry?.viText || '',
             text: ctaOverlay,
             viTranslation: ctaText,
             endCard: `${defaults.appName} - ${ctaText}`,

@@ -120,6 +120,7 @@ export interface IdeaContent {
     voiceover?: string;
     script?: string;
     textOverlay?: string;
+    textOverlayViTranslation?: string;
     viTranslation?: string;
     viewerProfile?: string;
     viewerEmotion?: string;
@@ -134,6 +135,7 @@ export interface IdeaContent {
     voiceover?: string;
     script?: string;
     textOverlay?: string;
+    textOverlayViTranslation?: string;
     viTranslation?: string;
   };
   cta: {
@@ -145,6 +147,7 @@ export interface IdeaContent {
     voiceover?: string;
     script?: string;
     textOverlay?: string;
+    textOverlayViTranslation?: string;
     viTranslation?: string;
   };
 }

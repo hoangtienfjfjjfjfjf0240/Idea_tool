@@ -417,6 +417,10 @@ type IdeaApiSection = {
   text?: string;
   textOverlay?: string;
   text_overlay?: string;
+  textOverlayViTranslation?: string;
+  text_overlay_vi_translation?: string;
+  textViTranslation?: string;
+  text_vi_translation?: string;
   viTranslation?: string;
   vi_translation?: string;
   hookVoiceVi?: string;
@@ -840,6 +844,12 @@ function getCoreUserDisplayValue(item: string): string {
   return item.startsWith(`${CORE_USER_DIMENSION_PREFIX} - `) && item.includes(marker)
     ? item.slice(item.indexOf(marker) + marker.length)
     : item;
+}
+
+function isRecognizedCoreUserLanguageItem(item: string): boolean {
+  if (getCoreUserDimension(item) !== 'language') return true;
+  const value = normalizeCompareText(getCoreUserDisplayValue(item));
+  return /\b(?:english|en|spanish|es|vietnamese|vi|viet nam|japanese|jp|korean|ko|german|de|french|fr|portuguese|pt|thai|indonesian|malay|italian|it|dutch|nl|polish|pl|turkish|tr|arabic|ar|hindi|hi|swedish|sv|norwegian|no|danish|da|tieng anh|tieng tay ban nha|tieng viet|tieng nhat|tieng han|tieng duc|tieng phap|tieng bo dao nha)\b/.test(value);
 }
 
 type AngleTypeLabel = 'Fact' | 'POV' | 'Comparison' | 'Demo' | 'Trend' | 'Social' | 'Curiosity' | 'Relief' | 'Tutorial' | 'Challenge' | 'Fear';
@@ -2083,6 +2093,12 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
 
   const getGenerationValidationMessage = (filtersToCheck: FilterState, plannedAngles: string[]): string => {
     if ((filtersToCheck.coreUser || []).length === 0) return 'Chưa chọn Core User.';
+    const invalidCoreUserLanguage = (filtersToCheck.coreUser || []).find(item =>
+      getCoreUserDimension(item) === 'language' && !isRecognizedCoreUserLanguageItem(item)
+    );
+    if (invalidCoreUserLanguage) {
+      return `Ngôn ngữ Core User không hợp lệ: ${getCoreUserDisplayValue(invalidCoreUserLanguage)}. Hãy dùng ngôn ngữ chuẩn hoặc để trống để hệ thống lấy theo Quốc gia / Market.`;
+    }
     if ((filtersToCheck.solution || []).length === 0) return 'Chưa chọn Tính năng / Giải pháp.';
     if ((filtersToCheck.emotion || []).length === 0) return 'Chưa chọn Emotion Trigger.';
     if (sanitizeVisualTypes(filtersToCheck.visualType || []).length === 0) return 'Chưa chọn Dạng Visual.';
@@ -2549,6 +2565,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               durationSeconds: getHookDurationSeconds(item.hook),
               script: item.hook?.script || item.hook?.visual || '',
               textOverlay: item.hook?.textOverlay || item.hook?.text_overlay || '',
+              textOverlayViTranslation: item.hook?.textOverlayViTranslation || item.hook?.text_overlay_vi_translation || item.hook?.textViTranslation || item.hook?.text_vi_translation || '',
               visual: item.hook?.visual || item.hook?.script || '',
               text: item.hook?.textOverlay || item.hook?.text_overlay || item.hook?.text || '',
               characterSpeech: getSectionCharacterSpeech(item.hook),
@@ -2559,6 +2576,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
             body: {
               script: item.body?.script || item.body?.visual || '',
               textOverlay: item.body?.textOverlay || item.body?.text_overlay || '',
+              textOverlayViTranslation: item.body?.textOverlayViTranslation || item.body?.text_overlay_vi_translation || item.body?.textViTranslation || item.body?.text_vi_translation || '',
               visual: item.body?.visual || item.body?.script || '',
               text: item.body?.textOverlay || item.body?.text_overlay || item.body?.text || '',
               characterSpeech: getSectionCharacterSpeech(item.body),
@@ -2573,6 +2591,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
               voice: item.cta?.voice || '',
               text: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
               textOverlay: item.cta?.textOverlay || item.cta?.text_overlay || item.cta?.text || '',
+              textOverlayViTranslation: item.cta?.textOverlayViTranslation || item.cta?.text_overlay_vi_translation || item.cta?.textViTranslation || item.cta?.text_vi_translation || '',
               endCard: item.cta?.endCard || item.cta?.end_card || '',
             },
           },
@@ -2815,6 +2834,7 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
       ...productionDetailLines,
       hookVoiceVi ? `[DỊCH HOOK VOICE] ${hookVoiceVi}` : '',
       hookText && !hookVisualIncludesCopy ? `Text hiện: "${hookText}"` : '',
+      content.hook?.textOverlayViTranslation ? `Dịch text hiện: "${content.hook.textOverlayViTranslation}"` : '',
       hookSpeech.characterSpeech && !hookSpeechInline ? `Lời nhân vật: "${cleanSpeakerLabelsForDisplay(hookSpeech.characterSpeech)}"` : '',
       hookVariants ? `Biến thể hook:\n${hookVariants}` : '',
       '',
@@ -3250,9 +3270,9 @@ export const FilterGenerator: React.FC<FilterGeneratorProps> = ({ app, currentSc
     setEditBuffer({
       title: idea.title || '',
       explanation: c.explanation || '',
-      hook: { durationSeconds: getHookDurationSeconds(c.hook), script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', visual: c.hook?.visual || '', text: c.hook?.text || '', characterSpeech: getSectionCharacterSpeech(c.hook), voiceover: getSectionVoiceover(c.hook), voice: c.hook?.voice || '' },
-      body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', visual: c.body?.visual || '', text: c.body?.text || '', characterSpeech: getSectionCharacterSpeech(c.body), voiceover: getSectionVoiceover(c.body), voice: c.body?.voice || '' },
-      cta: { script: c.cta?.script || '', visual: c.cta?.visual || '', characterSpeech: getSectionCharacterSpeech(c.cta), voiceover: getSectionVoiceover(c.cta), voice: c.cta?.voice || '', text: c.cta?.text || '', textOverlay: c.cta?.textOverlay || '', endCard: c.cta?.endCard || '' },
+      hook: { durationSeconds: getHookDurationSeconds(c.hook), script: c.hook?.script || '', textOverlay: c.hook?.textOverlay || '', textOverlayViTranslation: c.hook?.textOverlayViTranslation || '', visual: c.hook?.visual || '', text: c.hook?.text || '', characterSpeech: getSectionCharacterSpeech(c.hook), voiceover: getSectionVoiceover(c.hook), voice: c.hook?.voice || '' },
+      body: { script: c.body?.script || '', textOverlay: c.body?.textOverlay || '', textOverlayViTranslation: c.body?.textOverlayViTranslation || '', visual: c.body?.visual || '', text: c.body?.text || '', characterSpeech: getSectionCharacterSpeech(c.body), voiceover: getSectionVoiceover(c.body), voice: c.body?.voice || '' },
+      cta: { script: c.cta?.script || '', visual: c.cta?.visual || '', characterSpeech: getSectionCharacterSpeech(c.cta), voiceover: getSectionVoiceover(c.cta), voice: c.cta?.voice || '', text: c.cta?.text || '', textOverlay: c.cta?.textOverlay || '', textOverlayViTranslation: c.cta?.textOverlayViTranslation || '', endCard: c.cta?.endCard || '' },
     });
   };
 
@@ -4738,6 +4758,7 @@ Tao 3 idea`}
                         {hookSpeech.characterSpeech && !hookSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">Lời nhân vật: {cleanSpeakerLabelsForDisplay(hookSpeech.characterSpeech)}</p>}
                         {hookVoiceVi && <p className="mt-1 text-gray-800 whitespace-pre-line">[DỊCH HOOK VOICE] {hookVoiceVi}</p>}
                         {hookText && !hookPreviewIncludesCopy && <p className="text-gray-800">[TEXT OVERLAY] {hookText}</p>}
+                        {hookData?.textOverlayViTranslation && <p className="text-gray-800">[DỊCH TEXT OVERLAY] {hookData.textOverlayViTranslation}</p>}
                         {primaryHook && showPrimaryHookLine && <p className="mt-2 font-semibold text-gray-900">+ {primaryHook}</p>}
                       </div>
                     )}
@@ -4841,6 +4862,7 @@ Tao 3 idea`}
                     const spokenLines = getSectionSpokenLines(secData);
                     const characterSpeechInline = visualContainsSpokenLine(visualContent, spokenLines.characterSpeech);
                     const textOverlay = secData?.textOverlay || secData?.text || '';
+                    const textOverlayViTranslation = secData?.textOverlayViTranslation || '';
                     const endCard = sec.key === 'cta' ? (secData?.endCard || '') : '';
                     return (
                       <div key={sec.key} className={`mb-3 ${sec.bg} rounded-xl p-4 border ${sec.border}`}>
@@ -4875,6 +4897,7 @@ Tao 3 idea`}
                             <p className="whitespace-pre-line">[VISUAL] {visualContent || '-'}</p>
                             {spokenLines.characterSpeech && !characterSpeechInline && <p className="mt-1 text-gray-800 whitespace-pre-line">Lời nhân vật: {cleanSpeakerLabelsForDisplay(spokenLines.characterSpeech)}</p>}
                             {textOverlay && <p className="text-gray-800">[TEXT OVERLAY] {textOverlay}</p>}
+                            {textOverlayViTranslation && <p className="text-gray-800">[DỊCH TEXT OVERLAY] {textOverlayViTranslation}</p>}
                             {textOverlay && <p className="mt-2 font-semibold text-gray-900">+ {textOverlay}</p>}
                             {sec.key === 'cta' && endCard && <p className="mt-2 text-xs text-gray-500">+ {endCard}</p>}
                           </div>
